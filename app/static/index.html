@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Transfer Success Predictor</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header>
+    <h1>⚽ Transfer Success Predictor</h1>
+    <p>
+      Predicts how a football transfer is likely to go, trained on ~6,700 real transfers
+      (2013&ndash;2025) using pre-transfer performance, age, fee, and destination club
+      strength. Success score blends first-year performance change, market-value growth,
+      and playing time &mdash; not opinion.
+    </p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Known transfers, scored by the model</h2>
+      <div class="examples-grid" id="examples">Loading...</div>
+    </section>
+
+    <section class="card">
+      <h2>Predict a transfer</h2>
+      <div class="form-grid">
+        <div class="field">
+          <label for="player-search">Player</label>
+          <input id="player-search" type="text" placeholder="Search a player, e.g. Haaland" autocomplete="off" />
+          <div class="autocomplete-list" id="player-list"></div>
+          <div id="player-chip"></div>
+        </div>
+        <div class="field">
+          <label for="club-search">Destination club</label>
+          <input id="club-search" type="text" placeholder="Search a club, e.g. Real Madrid" autocomplete="off" />
+          <div class="autocomplete-list" id="club-list"></div>
+          <div id="club-chip"></div>
+        </div>
+        <div class="field">
+          <label for="fee">Transfer fee (&euro;m)</label>
+          <input id="fee" type="number" min="0" step="0.5" value="50" />
+        </div>
+        <div class="field">
+          <label for="age-override">Age at transfer (auto-filled, editable)</label>
+          <input id="age-override" type="number" min="15" max="42" step="0.1" />
+        </div>
+      </div>
+      <button class="predict-btn" id="predict-btn" disabled>Predict success</button>
+      <div class="error-box" id="error-box"></div>
+
+      <div class="result" id="result">
+        <div class="score-display">
+          <div class="big" id="score-value">-</div>
+          <div class="score-label">/ 100 predicted success score</div>
+        </div>
+        <div class="comparables">
+          <h2>Most similar historical transfers</h2>
+          <div id="comparables-list"></div>
+        </div>
+        <p class="disclaimer">
+          The model's typical error on unseen (2023+) transfers is about
+          <span id="mae-value">-</span> points on this 0&ndash;100 scale &mdash; treat this as a
+          rough signal shaped by real outcomes, not a certainty. Transfer success is
+          inherently noisy: injuries, tactics, and squad fit matter as much as the
+          numbers here.
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+{
+  "numeric_features": [
+    "age_at_transfer",
+    "height_in_cm",
+    "pre_apps",
+    "pre_minutes",
+    "pre_goals_p90",
+    "pre_ga_p90",
+    "pre_mins_per_app",
+    "log_transfer_fee",
+    "log_value_before",
+    "fee_to_value_ratio",
+    "club_quality_ratio",
+    "log_from_club_value",
+    "log_to_club_value"
+  ],
+  "categorical_features": [
+    "position",
+    "foot",
+    "from_domestic_competition_id",
+    "to_domestic_competition_id"
+  ],
+  "target": "success_score",
+  "test_mae": 14.04,
+  "test_r2": 0.25,
+  "baseline_mae": 16.55,
+  "n_train": 4276,
+  "n_test": 2204
+}
