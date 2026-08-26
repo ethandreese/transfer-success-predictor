@@ -5,9 +5,13 @@ Build a per-transfer training dataset from the raw Transfermarkt CSVs
 For every transfer we compute:
   - pre-transfer features: age, position, physical attributes, fee, market
     value, and performance in the player's final year at the old club
-  - a post-hoc "success score" (0-100) blending performance delta,
-    market value growth, and playing time in the player's first year at
-    the new club
+  - a post-hoc "success score" (0-100) blending performance level/delta,
+    market value growth, playing time, and value-for-money, all measured
+    over the player's *entire tenure* at the new club (from the transfer
+    until their next departure, or "now" if they're still there) rather
+    than a fixed first-year window. A fixed window either penalizes slow
+    starters who took time to adapt, or misses a player who started hot
+    and faded once the honeymoon period ended.
 
 Only the pre-transfer features are used as model inputs; the success score
 is the training label.
@@ -24,10 +28,11 @@ RAW_DIR = os.environ.get(
 )
 OUT_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "transfers_processed.csv")
 
-WINDOW_DAYS = 365
+PRE_WINDOW_DAYS = 365
 MIN_APPS_PER_WINDOW = 10
 MIN_DATE = pd.Timestamp("2013-01-01")
-MAX_DATE = pd.Timestamp.today().normalize() - pd.Timedelta(days=WINDOW_DAYS + 14)
+MAX_DATE = pd.Timestamp.today().normalize()
+REFERENCE_NOW = pd.Timestamp.today().normalize()
 
 
 def load_transfers():
@@ -47,6 +52,13 @@ def load_transfers():
     df["to_club_id"] = df["to_club_id"].astype(int)
     df = df.reset_index(drop=True)
     df["transfer_idx"] = df.index
+
+    # Tenure at the new club runs until the player's next transfer (any
+    # destination), or until "now" if they haven't moved again since.
+    df = df.sort_values(["player_id", "transfer_date"])
+    df["tenure_end"] = df.groupby("player_id")["transfer_date"].shift(-1)
+    df["tenure_end"] = df["tenure_end"].fillna(REFERENCE_NOW)
+    df = df.sort_values("transfer_idx").reset_index(drop=True)
     return df
 
 
@@ -105,22 +117,24 @@ def load_valuations():
 
 def compute_windowed_appearance_stats(transfers, appearances):
     merged = appearances.merge(
-        transfers[["transfer_idx", "player_id", "transfer_date", "from_club_id", "to_club_id"]],
+        transfers[["transfer_idx", "player_id", "transfer_date", "tenure_end", "from_club_id", "to_club_id"]],
         on="player_id",
         how="inner",
     )
 
-    window = pd.Timedelta(days=WINDOW_DAYS)
+    pre_window = pd.Timedelta(days=PRE_WINDOW_DAYS)
 
     pre_mask = (
         (merged["player_club_id"] == merged["from_club_id"])
         & (merged["date"] < merged["transfer_date"])
-        & (merged["date"] >= merged["transfer_date"] - window)
+        & (merged["date"] >= merged["transfer_date"] - pre_window)
     )
+    # Post window spans the player's *entire tenure* at the new club, not a
+    # fixed first year - see module docstring.
     post_mask = (
         (merged["player_club_id"] == merged["to_club_id"])
         & (merged["date"] > merged["transfer_date"])
-        & (merged["date"] <= merged["transfer_date"] + window)
+        & (merged["date"] <= merged["tenure_end"])
     )
 
     def agg(mask, prefix):
@@ -138,13 +152,13 @@ def compute_windowed_appearance_stats(transfers, appearances):
     return pre, post
 
 
-def nearest_valuation(transfers, valuations, direction, tolerance_days, suffix):
-    left = transfers[["transfer_idx", "player_id", "transfer_date"]].sort_values("transfer_date")
+def nearest_valuation(transfers, valuations, on_col, direction, tolerance_days, suffix):
+    left = transfers[["transfer_idx", "player_id", on_col]].sort_values(on_col)
     right = valuations.rename(columns={"market_value_in_eur": f"value_{suffix}"})
     out = pd.merge_asof(
         left,
         right,
-        left_on="transfer_date",
+        left_on=on_col,
         right_on="date",
         by="player_id",
         direction=direction,
@@ -187,11 +201,15 @@ def main():
 
     print("Attaching market valuations...")
     df = df.reset_index()
-    pre_val = nearest_valuation(df, valuations, "backward", 730, "before")
-    post_val = nearest_valuation(df, valuations, "forward", 500, "after")
+    pre_val = nearest_valuation(df, valuations, "transfer_date", "backward", 730, "before")
+    # Value "after" is taken near the end of the tenure (or now, if still
+    # there) rather than a fixed point, to match the full-tenure window.
+    post_val = nearest_valuation(df, valuations, "tenure_end", "nearest", 400, "after")
     df["value_before"] = df["transfer_idx"].map(pre_val)
     df["value_after"] = df["transfer_idx"].map(post_val)
     df["value_before"] = df["value_before"].fillna(df["market_value_in_eur"])
+    df["tenure_days"] = (df["tenure_end"] - df["transfer_date"]).dt.days
+    df["still_at_club"] = df["tenure_end"] >= REFERENCE_NOW
 
     print("Attaching player and club attributes...")
     club_value_proxy = compute_club_value_proxy(players)
@@ -217,14 +235,33 @@ def main():
     df = df[valid].copy()
 
     print("Computing composite success scores...")
+    # Performance level/delta are ranked *within position group* - goal
+    # contributions per 90 minutes isn't comparable between a striker and a
+    # centre-back, and ranking against the whole dataset drowns out real
+    # differences among attackers (everyone not a defender/keeper clusters
+    # near the top).
+    df["perf_level_pct"] = df.groupby("position")["post_ga_p90"].rank(pct=True) * 100
     perf_delta = df["post_ga_p90"] - df["pre_ga_p90"]
+    df["perf_delta_pct"] = perf_delta.groupby(df["position"]).rank(pct=True) * 100
+
     value_growth = df["value_after"] / df["value_before"].clip(lower=1)
-    playing_time = df["post_apps"]
+    df["value_growth_pct"] = percentile_rank(value_growth)
+
+    df["playing_time_pct"] = percentile_rank(df["post_apps"])
+
+    # Value-for-money: did performance level justify what was paid relative
+    # to the player's own market value at the time, rather than relative to
+    # every other transfer's fee (which makes any nine-figure fee look
+    # "expensive" even when it's a bargain for that specific player).
+    fee_to_value_pct = percentile_rank(df["transfer_fee"].fillna(0) / df["value_before"].clip(lower=1))
+    df["value_for_money_pct"] = percentile_rank(df["perf_level_pct"] - fee_to_value_pct)
 
     df["success_score"] = (
-        0.5 * percentile_rank(perf_delta)
-        + 0.3 * percentile_rank(value_growth)
-        + 0.2 * percentile_rank(playing_time)
+        0.30 * df["perf_level_pct"]
+        + 0.15 * df["perf_delta_pct"]
+        + 0.20 * df["value_growth_pct"]
+        + 0.10 * df["playing_time_pct"]
+        + 0.25 * df["value_for_money_pct"]
     ).round(1)
 
     cols = [
@@ -237,6 +274,9 @@ def main():
         "pre_apps", "pre_minutes", "pre_goals", "pre_assists",
         "pre_ga_p90", "pre_goals_p90", "pre_mins_per_app",
         "post_apps", "post_minutes", "post_goals", "post_assists", "post_ga_p90",
+        "tenure_days", "still_at_club",
+        "perf_level_pct", "perf_delta_pct", "value_growth_pct",
+        "playing_time_pct", "value_for_money_pct",
         "success_score",
     ]
     out = df[cols].sort_values("transfer_date")

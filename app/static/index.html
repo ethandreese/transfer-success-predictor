@@ -10,10 +10,11 @@
   <header>
     <h1>⚽ Transfer Success Predictor</h1>
     <p>
-      Predicts how a football transfer is likely to go, trained on ~6,700 real transfers
-      (2013&ndash;2025) using pre-transfer performance, age, fee, and destination club
-      strength. Success score blends first-year performance change, market-value growth,
-      and playing time &mdash; not opinion.
+      Predicts how a football transfer is likely to go, trained on ~7,300 real transfers
+      (2013&ndash;2026) using pre-transfer performance, age, fee, and destination club
+      strength. Success score blends performance level and change, market-value growth,
+      playing time, and value for money &mdash; measured over the player's <em>entire</em>
+      tenure at the new club, not just year one.
     </p>
   </header>
 
@@ -56,15 +57,20 @@
           <div class="score-label">/ 100 predicted success score</div>
         </div>
         <div class="comparables">
+          <h2>Why this score</h2>
+          <div id="explanation-list"></div>
+        </div>
+        <div class="comparables">
           <h2>Most similar historical transfers</h2>
           <div id="comparables-list"></div>
         </div>
         <p class="disclaimer">
           The model's typical error on unseen (2023+) transfers is about
-          <span id="mae-value">-</span> points on this 0&ndash;100 scale &mdash; treat this as a
-          rough signal shaped by real outcomes, not a certainty. Transfer success is
-          inherently noisy: injuries, tactics, and squad fit matter as much as the
-          numbers here.
+          <span id="mae-value">-</span> points on this 0&ndash;100 scale (R&sup2;
+          <span id="r2-value">-</span>) &mdash; predicting a player's *entire* tenure at a new
+          club from pre-transfer stats alone is genuinely hard, since injuries, tactics,
+          and squad fit over multiple years matter as much as the numbers here. Treat
+          this as a rough signal, not a certainty.
         </p>
       </div>
     </section>

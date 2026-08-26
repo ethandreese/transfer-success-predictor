@@ -21,9 +21,28 @@
     "to_domestic_competition_id"
   ],
   "target": "success_score",
-  "test_mae": 14.04,
-  "test_r2": 0.25,
-  "baseline_mae": 16.55,
-  "n_train": 4276,
-  "n_test": 2204
+  "test_mae": 15.79,
+  "test_r2": 0.066,
+  "baseline_mae": 16.71,
+  "n_train": 4379,
+  "n_test": 2664,
+  "reference_values": {
+    "age_at_transfer": 25.352498288843258,
+    "height_in_cm": 183.0,
+    "pre_apps": 27.0,
+    "pre_minutes": 1729.0,
+    "pre_goals_p90": 0.0923076923076923,
+    "pre_ga_p90": 0.2035048049745619,
+    "pre_mins_per_app": 70.76923076923077,
+    "log_transfer_fee": 0.0,
+    "log_value_before": 15.201805169084134,
+    "fee_to_value_ratio": 0.0,
+    "club_quality_ratio": 1.2507856693903203,
+    "log_from_club_value": 18.74312650358419,
+    "log_to_club_value": 18.949100682014663,
+    "position": "Attack",
+    "foot": "right",
+    "from_domestic_competition_id": "IT1",
+    "to_domestic_competition_id": "GB1"
+  }
 }

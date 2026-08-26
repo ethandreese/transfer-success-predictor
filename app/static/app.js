@@ -10,6 +10,18 @@ function scoreColor(score) {
   return "var(--accent-bad)";
 }
 
+function renderBreakdown(breakdown) {
+  return breakdown.map(b => `
+    <div class="breakdown-row" title="${b.description}">
+      <span class="breakdown-label">${b.label}</span>
+      <div class="breakdown-bar-track">
+        <div class="breakdown-bar-fill" style="width:${b.value}%; background:${scoreColor(b.value)}"></div>
+      </div>
+      <span class="breakdown-value">${b.value}</span>
+    </div>
+  `).join("");
+}
+
 async function loadExamples() {
   const el = document.getElementById("examples");
   try {
@@ -19,11 +31,16 @@ async function loadExamples() {
       el.textContent = "No examples available.";
       return;
     }
+    const years = (days) => (days / 365.25).toFixed(1);
     el.innerHTML = data.map(ex => `
       <div class="example-card">
         <div class="name">${ex.name}</div>
         <div class="route">${ex.from_club} &rarr; ${ex.to_club} (${ex.transfer_date.slice(0, 7)})</div>
         <div class="score" style="color:${scoreColor(ex.success_score)}">${ex.success_score}</div>
+        <div class="tenure-note">
+          Scored over ${years(ex.tenure_days)} years at the club${ex.still_at_club ? " (still there)" : " (before leaving)"}
+        </div>
+        <div class="breakdown">${renderBreakdown(ex.breakdown)}</div>
       </div>
     `).join("");
   } catch (e) {
@@ -146,12 +163,26 @@ document.getElementById("predict-btn").addEventListener("click", async () => {
     scoreEl.textContent = data.success_score;
     scoreEl.style.color = scoreColor(data.success_score);
     document.getElementById("mae-value").textContent = data.model_test_mae;
+    document.getElementById("r2-value").textContent = data.model_test_r2;
     document.getElementById("comparables-list").innerHTML = data.comparable_transfers.map(c => `
       <div class="comp-row">
         <span>${c.name} (${c.from_club} &rarr; ${c.to_club}, ${c.transfer_date.slice(0, 7)})</span>
         <span style="color:${scoreColor(c.success_score)}">${c.success_score}</span>
       </div>
     `).join("");
+    document.getElementById("explanation-list").innerHTML = data.explanation.map(e => {
+      const positive = e.contribution >= 0;
+      const width = Math.min(Math.abs(e.contribution) * 4, 100);
+      return `
+        <div class="explain-row">
+          <span class="explain-label">${e.label}</span>
+          <div class="explain-bar-track">
+            <div class="explain-bar-fill ${positive ? "pos" : "neg"}" style="width:${width}%"></div>
+          </div>
+          <span class="explain-value">${positive ? "+" : ""}${e.contribution}</span>
+        </div>
+      `;
+    }).join("");
   } catch (e) {
     errorBox.textContent = e.message;
   }

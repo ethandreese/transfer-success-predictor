@@ -74,6 +74,55 @@ h2 {
 .example-card .name { font-weight: 600; }
 .example-card .route { color: var(--muted); font-size: 0.85rem; margin: 0.2rem 0 0.5rem; }
 .example-card .score { font-size: 1.6rem; font-weight: 700; }
+.example-card .tenure-note { color: var(--muted); font-size: 0.72rem; margin: 0.2rem 0 0.6rem; }
+
+.breakdown { display: flex; flex-direction: column; gap: 0.3rem; }
+
+.breakdown-row {
+  display: grid;
+  grid-template-columns: 5.2rem 1fr 1.8rem;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.7rem;
+}
+
+.breakdown-label { color: var(--muted); }
+
+.breakdown-bar-track {
+  height: 5px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.breakdown-bar-fill { height: 100%; }
+
+.breakdown-value { text-align: right; color: var(--muted); }
+
+.explain-row {
+  display: grid;
+  grid-template-columns: 11rem 1fr 3rem;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+  padding: 0.35rem 0;
+}
+
+.explain-label { color: var(--text); }
+
+.explain-bar-track {
+  height: 8px;
+  background: var(--border);
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+}
+
+.explain-bar-fill { height: 100%; border-radius: 4px; }
+.explain-bar-fill.pos { background: var(--accent); }
+.explain-bar-fill.neg { background: var(--accent-bad); }
+
+.explain-value { text-align: right; font-variant-numeric: tabular-nums; }
 
 .form-grid {
   display: grid;

@@ -11,38 +11,67 @@ or Dembélé→Barça.
 ~50k players, ~175k transfers, ~1.9M appearances, ~656k market valuations.
 
 **Success score (the training label, 0–100).** For each transfer, computed
-from data that only exists *after* the move:
+from data that only exists *after* the move — and measured over the
+player's **entire tenure** at the new club (from the transfer until their
+next departure, or "now" if they're still there), not just year one. A
+fixed first-year window either unfairly penalizes a slow starter who took
+time to adapt, or misses someone who started hot and faded once the
+honeymoon period ended.
 
-- 50% — change in goal contributions per 90 minutes, comparing the player's
-  final year at the old club to their first year at the new club
-- 30% — market value growth from just before the transfer to ~1 year after
-- 20% — appearances made in the first year at the new club (a proxy for
-  becoming an established starter vs. a bench/injury-plagued outcome)
+Five sub-metrics, each converted to a percentile rank across the dataset
+(so no single stat's raw scale dominates), then blended:
 
-Each sub-metric is converted to a percentile rank across the dataset before
-blending, so outliers (own goals in the data, a single crazy season) don't
-dominate.
+- **30% performance level** — goal contributions per 90 minutes at the new
+  club, ranked *within the player's position group* (comparing a striker's
+  output to the whole dataset, mostly defenders and keepers, made every
+  decent attacker look elite and barely separated "good" from "Haaland")
+- **15% performance change** — improved or declined vs. their level before
+  the move, also position-ranked
+- **20% market value growth** — from just before the transfer to near the
+  end of the tenure
+- **10% playing time** — total appearances made (established starter vs.
+  bench/injury-plagued)
+- **25% value for money** — performance level vs. what was paid *relative
+  to the player's market value at the time* (comparing fees to the whole
+  dataset's fee distribution made any nine-figure move look "expensive"
+  even when it was a bargain for that specific player)
 
 **Model.** A gradient-boosted regressor trained on pre-transfer-only
 features (age, position, physical attributes, fee, market value, prior-year
 performance, and origin/destination club & league strength) — nothing about
 what happened after the move. Evaluated on a temporal holdout (trained on
-transfers before mid-2023, tested on transfers since): **MAE ≈ 14 points**
-on the 0–100 scale, vs. ≈17 for always predicting the average. That's a real
-but modest signal — transfer outcomes are inherently noisy (injuries,
-tactics, squad fit), and the app says so.
+transfers before mid-2023, tested on transfers since): **MAE ≈ 16 points**
+on the 0–100 scale, R² ≈ 0.07, vs. ≈17 MAE for always predicting the
+average. That's a modest but real signal, and honestly weaker than scoring
+a fixed first year would give — predicting a player's *entire future stint*
+at a new club from pre-transfer stats alone is genuinely hard, since
+multi-year outcomes depend heavily on injuries, tactics, and squad fit that
+no pre-transfer number can see. The app surfaces this error rate and a
+per-prediction "why this score" breakdown rather than presenting the number
+as gospel.
+
+**Explainability.** For known historical transfers, the app shows the
+actual 5-component breakdown above. For a new hypothetical prediction
+(where there's no real post-transfer data yet), it instead shows each
+feature's contribution by comparing the prediction to what a "typical
+transfer" would score with that one feature swapped to its dataset median —
+a simple, transparent stand-in for a proper SHAP explanation.
 
 ## Known limitations
 
-- The success score only looks at the player's *first year* at the new
-  club — it won't fully capture a story like Dembélé's, whose "bust"
-  reputation was really about recurring injuries across several seasons.
 - Goal contributions per 90 is a weak signal for goalkeepers and
   ball-playing defenders; the score leans more informative for attacking
   players.
-- Only transfers with ≥10 appearances in both the year before and the year
-  after are included (~6,700 of ~148k), which skews the training data
-  toward established first-team players rather than fringe/loan moves.
+- Only transfers with ≥10 appearances in both the year before and the whole
+  tenure after are included (~7,300 of ~159k), which skews the training
+  data toward established first-team players rather than fringe/loan moves.
+- "Playing time" is a raw appearance count, so a longer tenure has more
+  chances to accumulate it than a short, excellent one — a deliberate
+  choice (staying and playing for years is itself part of "success"), but
+  worth knowing.
+- Predicting a *new* hypothetical transfer is meaningfully less reliable
+  than the historical scores shown for known transfers, since the model
+  only sees pre-transfer information by construction.
 
 ## Project layout
 

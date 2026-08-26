@@ -88,6 +88,12 @@ def main():
         "name", "transfer_date", "from_club_name", "to_club_name", "success_score",
     ]].reset_index(drop=True)
 
+    # "Typical transfer" reference values, used at prediction time to explain
+    # a score by comparing each feature's actual value to this baseline (see
+    # app/main.py:explain_prediction).
+    reference_values = {f: float(df[f].median()) for f in NUMERIC_FEATURES}
+    reference_values.update({f: df[f].mode().iloc[0] for f in CATEGORICAL_FEATURES})
+
     os.makedirs(MODEL_DIR, exist_ok=True)
     joblib.dump(pipeline, os.path.join(MODEL_DIR, "model.joblib"))
     joblib.dump(
@@ -104,6 +110,7 @@ def main():
             "baseline_mae": round(baseline_mae, 2),
             "n_train": len(train),
             "n_test": len(test),
+            "reference_values": reference_values,
         }, f, indent=2)
     print(f"Saved model + metadata to {MODEL_DIR}")
 
