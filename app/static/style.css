@@ -76,7 +76,8 @@ h2 {
 .example-card .score { font-size: 1.6rem; font-weight: 700; }
 .example-card .tenure-note { color: var(--muted); font-size: 0.72rem; margin: 0.2rem 0 0.6rem; }
 
-.breakdown { display: flex; flex-direction: column; gap: 0.3rem; }
+.breakdown { display: flex; flex-direction: column; gap: 0.55rem; }
+.breakdown-item { display: flex; flex-direction: column; gap: 0.1rem; }
 
 .breakdown-row {
   display: grid;
@@ -99,13 +100,22 @@ h2 {
 
 .breakdown-value { text-align: right; color: var(--muted); }
 
+.breakdown-desc {
+  font-size: 0.66rem;
+  color: var(--muted);
+  padding-left: 5.6rem;
+  opacity: 0.8;
+}
+
+.explain-item { padding: 0.35rem 0; border-bottom: 1px solid var(--border); }
+.explain-item:last-child { border-bottom: none; }
+
 .explain-row {
   display: grid;
   grid-template-columns: 11rem 1fr 3rem;
   align-items: center;
   gap: 0.6rem;
   font-size: 0.85rem;
-  padding: 0.35rem 0;
 }
 
 .explain-label { color: var(--text); }
@@ -123,6 +133,13 @@ h2 {
 .explain-bar-fill.neg { background: var(--accent-bad); }
 
 .explain-value { text-align: right; font-variant-numeric: tabular-nums; }
+
+.explain-desc {
+  font-size: 0.75rem;
+  color: var(--muted);
+  padding-left: 11.6rem;
+  margin-top: 0.1rem;
+}
 
 .form-grid {
   display: grid;

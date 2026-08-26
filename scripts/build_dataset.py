@@ -16,9 +16,14 @@ For every transfer we compute:
 Only the pre-transfer features are used as model inputs; the success score
 is the training label.
 """
+import json
 import os
 import numpy as np
 import pandas as pd
+
+SCORE_WEIGHTS_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "score_weights.json")
+with open(SCORE_WEIGHTS_PATH) as f:
+    POSITION_WEIGHTS = {k: v for k, v in json.load(f).items() if not k.startswith("_")}
 
 RAW_DIR = os.environ.get(
     "TRANSFERMARKT_RAW_DIR",
@@ -256,12 +261,14 @@ def main():
     fee_to_value_pct = percentile_rank(df["transfer_fee"].fillna(0) / df["value_before"].clip(lower=1))
     df["value_for_money_pct"] = percentile_rank(df["perf_level_pct"] - fee_to_value_pct)
 
+    # Weights vary by position - see data/score_weights.json for why.
+    w = df["position"].map(POSITION_WEIGHTS).apply(pd.Series)
     df["success_score"] = (
-        0.30 * df["perf_level_pct"]
-        + 0.15 * df["perf_delta_pct"]
-        + 0.20 * df["value_growth_pct"]
-        + 0.10 * df["playing_time_pct"]
-        + 0.25 * df["value_for_money_pct"]
+        w["perf_level"] * df["perf_level_pct"]
+        + w["perf_delta"] * df["perf_delta_pct"]
+        + w["value_growth"] * df["value_growth_pct"]
+        + w["playing_time"] * df["playing_time_pct"]
+        + w["value_for_money"] * df["value_for_money_pct"]
     ).round(1)
 
     cols = [

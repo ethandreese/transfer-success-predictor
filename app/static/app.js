@@ -12,12 +12,15 @@ function scoreColor(score) {
 
 function renderBreakdown(breakdown) {
   return breakdown.map(b => `
-    <div class="breakdown-row" title="${b.description}">
-      <span class="breakdown-label">${b.label}</span>
-      <div class="breakdown-bar-track">
-        <div class="breakdown-bar-fill" style="width:${b.value}%; background:${scoreColor(b.value)}"></div>
+    <div class="breakdown-item">
+      <div class="breakdown-row">
+        <span class="breakdown-label">${b.label}</span>
+        <div class="breakdown-bar-track">
+          <div class="breakdown-bar-fill" style="width:${b.value}%; background:${scoreColor(b.value)}"></div>
+        </div>
+        <span class="breakdown-value">${b.value}</span>
       </div>
-      <span class="breakdown-value">${b.value}</span>
+      <div class="breakdown-desc">${b.description}</div>
     </div>
   `).join("");
 }
@@ -174,12 +177,15 @@ document.getElementById("predict-btn").addEventListener("click", async () => {
       const positive = e.contribution >= 0;
       const width = Math.min(Math.abs(e.contribution) * 4, 100);
       return `
-        <div class="explain-row">
-          <span class="explain-label">${e.label}</span>
-          <div class="explain-bar-track">
-            <div class="explain-bar-fill ${positive ? "pos" : "neg"}" style="width:${width}%"></div>
+        <div class="explain-item">
+          <div class="explain-row">
+            <span class="explain-label">${e.label}</span>
+            <div class="explain-bar-track">
+              <div class="explain-bar-fill ${positive ? "pos" : "neg"}" style="width:${width}%"></div>
+            </div>
+            <span class="explain-value">${positive ? "+" : ""}${e.contribution}</span>
           </div>
-          <span class="explain-value">${positive ? "+" : ""}${e.contribution}</span>
+          <div class="explain-desc">${e.detail}</div>
         </div>
       `;
     }).join("");

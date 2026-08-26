@@ -1,0 +1,7 @@
+{
+  "_comment": "Success-score component weights, per position. Goal contributions (perf_level/perf_delta) are a weak-to-meaningless signal for defenders/goalkeepers (most keepers have 0 goals+assists both before and after a move), so their weight is shifted toward value growth, playing time, and value for money instead. Shared by scripts/build_dataset.py (computes the label) and app/main.py (labels the 'why this score' explanation). Each row must sum to 1.0.",
+  "Attack":     {"perf_level": 0.30, "perf_delta": 0.15, "value_growth": 0.20, "playing_time": 0.10, "value_for_money": 0.25},
+  "Midfield":   {"perf_level": 0.25, "perf_delta": 0.12, "value_growth": 0.20, "playing_time": 0.13, "value_for_money": 0.30},
+  "Defender":   {"perf_level": 0.15, "perf_delta": 0.08, "value_growth": 0.25, "playing_time": 0.17, "value_for_money": 0.35},
+  "Goalkeeper": {"perf_level": 0.00, "perf_delta": 0.00, "value_growth": 0.30, "playing_time": 0.30, "value_for_money": 0.40}
+}

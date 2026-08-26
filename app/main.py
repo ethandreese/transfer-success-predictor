@@ -26,6 +26,8 @@ with open(os.path.join(MODEL_DIR, "metadata.json")) as f:
 transfers_df = pd.read_csv(os.path.join(DATA_DIR, "transfers_processed.csv"))
 players_df = pd.read_csv(os.path.join(DATA_DIR, "players_lookup.csv"))
 clubs_df = pd.read_csv(os.path.join(DATA_DIR, "clubs_lookup.csv"))
+competitions_df = pd.read_csv(os.path.join(DATA_DIR, "competitions_lookup.csv"))
+LEAGUE_NAMES = dict(zip(competitions_df["competition_id"], competitions_df["name"]))
 
 NUMERIC_FEATURES = metadata["numeric_features"]
 CATEGORICAL_FEATURES = metadata["categorical_features"]
@@ -37,13 +39,42 @@ EXAMPLE_TRANSFER_KEYS = [
     ("Jadon Sancho", "Man Utd"),
 ]
 
-SCORE_COMPONENTS = [
-    ("perf_level_pct", "Performance level", "Goal contributions per 90 vs. same-position peers"),
-    ("perf_delta_pct", "Performance change", "Improved or declined vs. their level before the move"),
-    ("value_growth_pct", "Market value growth", "How much the player's valuation rose"),
-    ("playing_time_pct", "Playing time", "Appearances made - established starter vs. bench/injured"),
-    ("value_for_money_pct", "Value for money", "Output vs. what was paid, relative to their market value"),
-]
+POSITION_PLURAL = {
+    "Attack": "attackers", "Midfield": "midfielders",
+    "Defender": "defenders", "Goalkeeper": "goalkeepers",
+}
+
+
+def describe_components(r):
+    eur_m = lambda v: "free" if pd.isna(v) or v == 0 else f"€{v / 1_000_000:.0f}m"
+    position_plural = POSITION_PLURAL.get(r["position"], r["position"])
+    return [
+        {
+            "label": "Performance level",
+            "value": round(float(r["perf_level_pct"]), 1),
+            "description": f"{r['post_ga_p90']:.2f} goal contributions/90 at {r['to_club_name']}, ranked vs. other {position_plural}",
+        },
+        {
+            "label": "Performance change",
+            "value": round(float(r["perf_delta_pct"]), 1),
+            "description": f"{r['pre_ga_p90']:.2f} → {r['post_ga_p90']:.2f} goal contributions/90 (before → after)",
+        },
+        {
+            "label": "Market value growth",
+            "value": round(float(r["value_growth_pct"]), 1),
+            "description": f"{eur_m(r['value_before'])} → {eur_m(r['value_after'])} market value",
+        },
+        {
+            "label": "Playing time",
+            "value": round(float(r["playing_time_pct"]), 1),
+            "description": f"{int(r['post_apps'])} appearances over the tenure at {r['to_club_name']}",
+        },
+        {
+            "label": "Value for money",
+            "value": round(float(r["value_for_money_pct"]), 1),
+            "description": f"{eur_m(r['transfer_fee'])} fee vs. {eur_m(r['value_before'])} market value at the time",
+        },
+    ]
 
 FEATURE_LABELS = {
     "age_at_transfer": "Age at transfer",
@@ -64,6 +95,31 @@ FEATURE_LABELS = {
     "from_domestic_competition_id": "Origin league",
     "to_domestic_competition_id": "Destination league",
 }
+
+LOG_FEATURES = {"log_transfer_fee", "log_value_before", "log_from_club_value", "log_to_club_value"}
+
+
+def format_feature_value(feat, value):
+    if feat in LOG_FEATURES:
+        value = np.expm1(value)
+        return f"€{value / 1_000_000:.1f}m"
+    if feat == "age_at_transfer":
+        return f"{value:.1f} yrs"
+    if feat == "height_in_cm":
+        return f"{value:.0f} cm"
+    if feat in ("pre_goals_p90", "pre_ga_p90"):
+        return f"{value:.2f} per 90"
+    if feat == "pre_apps":
+        return f"{value:.0f} apps"
+    if feat == "pre_minutes":
+        return f"{value:.0f} mins"
+    if feat == "pre_mins_per_app":
+        return f"{value:.0f} min/app"
+    if feat in ("fee_to_value_ratio", "club_quality_ratio"):
+        return f"{value:.2f}×"
+    if feat in ("from_domestic_competition_id", "to_domestic_competition_id"):
+        return LEAGUE_NAMES.get(value, value)
+    return str(value)
 
 
 class PredictRequest(BaseModel):
@@ -107,13 +163,24 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, top_k: int 
     reference = metadata["reference_values"]
     contributions = []
     for feat in NUMERIC_FEATURES + CATEGORICAL_FEATURES:
+        actual_value = feature_row[feat].iloc[0]
         modified = feature_row.copy()
         modified[feat] = reference[feat]
         modified_score = float(pipeline.predict(modified)[0])
+        contribution = round(base_score - modified_score, 1)
+        actual_display = format_feature_value(feat, actual_value)
+        typical_display = format_feature_value(feat, reference[feat])
+        direction = "raising" if contribution >= 0 else "lowering"
         contributions.append({
             "feature": feat,
             "label": FEATURE_LABELS.get(feat, feat),
-            "contribution": round(base_score - modified_score, 1),
+            "contribution": contribution,
+            "actual_value": actual_display,
+            "typical_value": typical_display,
+            "detail": (
+                f"{actual_display} vs. a typical transfer's {typical_display}, "
+                f"{direction} the score by {abs(contribution)} pts"
+            ),
         })
     contributions.sort(key=lambda c: abs(c["contribution"]), reverse=True)
     return contributions[:top_k]
@@ -151,10 +218,7 @@ def examples():
         if match.empty:
             continue
         r = match.iloc[-1]
-        breakdown = [
-            {"label": label, "description": desc, "value": round(float(r[key]), 1)}
-            for key, label, desc in SCORE_COMPONENTS
-        ]
+        breakdown = describe_components(r)
         out.append({
             "name": r["name"],
             "transfer_date": str(r["transfer_date"])[:10],
