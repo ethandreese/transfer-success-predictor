@@ -25,6 +25,12 @@ MIN_MARKET_VALUE = 1_000_000
 
 
 def build_clubs_lookup():
+    """
+    Write data/clubs_lookup.csv: every club with a positive squad-value
+    proxy (sum of its current players' market values), used by the app's
+    club search/autocomplete and to derive origin/destination club
+    strength for predictions.
+    """
     clubs = pd.read_csv(
         os.path.join(RAW_DIR, "clubs.csv"),
         usecols=["club_id", "name", "domestic_competition_id"],
@@ -49,6 +55,13 @@ def build_clubs_lookup():
 
 
 def build_players_lookup():
+    """
+    Write data/players_lookup.csv: every player worth >= MIN_MARKET_VALUE,
+    with their appearances/goals/assists from the trailing WINDOW_DAYS (only
+    counting games played for their *current* club) rolled up into
+    recent_* per-90 stats. Used by the app's player search to auto-fill the
+    "pre-transfer performance" fields of a hypothetical prediction.
+    """
     players = pd.read_csv(
         os.path.join(RAW_DIR, "players.csv"),
         usecols=[
@@ -98,6 +111,7 @@ def build_players_lookup():
 
 
 def main():
+    """Build both lookup tables. Run after scripts/build_dataset.py whenever the raw dataset changes."""
     build_clubs_lookup()
     build_players_lookup()
 

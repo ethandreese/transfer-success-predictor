@@ -81,6 +81,7 @@ POSITION_PLURAL = {
 
 
 def resale_outcome_phrase(fee_paid, fee_received):
+    """Plain-English verdict on a resale: profit, loss, or break-even, given what the club paid vs. what it later sold the player for."""
     fee_paid = 0 if pd.isna(fee_paid) else fee_paid
     if fee_received > fee_paid:
         return "a profitable flip for the club, regardless of on-pitch performance"
@@ -90,6 +91,7 @@ def resale_outcome_phrase(fee_paid, fee_received):
 
 
 def describe_resale_profit(r, eur_m):
+    """Build the 'Resale profit' breakdown row's description: the fee paid/received, the outcome (profit/loss), and how much it counts given the tenure-scaled weight (see compute_resale_weight in build_dataset.py)."""
     tenure_years = r["tenure_days"] / 365.25
     weight_pct = r["resale_weight"] * 100
     outcome = resale_outcome_phrase(r["transfer_fee"], r["next_transfer_fee"])
@@ -107,6 +109,7 @@ def describe_resale_profit(r, eur_m):
 
 
 def eur_m(v):
+    """Format a euro amount for display, e.g. 50_000_000 -> "€50m", 300_000 -> "€0.3m", 0/NaN -> "free"."""
     if pd.isna(v) or v == 0:
         return "free"
     millions = v / 1_000_000
@@ -116,6 +119,14 @@ def eur_m(v):
 
 
 def describe_components(r):
+    """
+    Build the full "why this score" breakdown for one row of
+    transfers_processed.csv: a list of {label, value, description} dicts,
+    one per success-score component actually used for this transfer (5
+    always, plus a 6th "Resale profit" row when has_resale_data is true).
+    Used by both /api/examples and /api/transfers/detail via
+    build_transfer_card().
+    """
     position_plural = POSITION_PLURAL.get(r["position"], r["position"])
     to_league = LEAGUE_NAMES.get(r["to_domestic_competition_id"], r["to_domestic_competition_id"])
     return [
@@ -197,6 +208,13 @@ LOG_FEATURES = {"log_transfer_fee", "log_value_before", "log_from_club_value", "
 
 
 def format_feature_value(feat, value, context=None):
+    """
+    Render one model feature's raw value in human-readable form for the
+    prediction explanation (e.g. a log-transformed fee back to "€50.0m", a
+    league code to its display name). `context` (the request's position and
+    origin league) is only used for pre_ga_p90, to append a league-relative
+    "(X.Xx their current league's average)" note - see league_ga_baseline.
+    """
     if feat in LOG_FEATURES:
         value = np.expm1(value)
         return f"€{value / 1_000_000:.1f}m"
@@ -227,6 +245,12 @@ def format_feature_value(feat, value, context=None):
 
 
 class PredictRequest(BaseModel):
+    """
+    A hypothetical transfer to score: a player's pre-transfer profile
+    (age/position/recent performance/market value) plus the destination
+    club and fee. Mirrors NUMERIC_FEATURES/CATEGORICAL_FEATURES in
+    train_model.py after the derived columns are added by build_feature_row.
+    """
     age_at_transfer: float = Field(..., ge=15, le=42)
     height_in_cm: float = Field(..., ge=150, le=210)
     position: str
@@ -245,6 +269,7 @@ class PredictRequest(BaseModel):
 
 
 def build_feature_row(req: PredictRequest) -> pd.DataFrame:
+    """Turn a PredictRequest into the single-row DataFrame the model pipeline expects, computing the log/ratio features it was trained on."""
     row = req.model_dump()
     row["log_transfer_fee"] = np.log1p(row["transfer_fee"])
     row["log_value_before"] = np.log1p(row["value_before"])
@@ -295,6 +320,13 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, top_k: int 
 
 
 def find_comparables(feature_row: pd.DataFrame, k: int = 5):
+    """
+    Look up the k most similar historical transfers to `feature_row` using
+    the nearest-neighbors index built in train_model.py (Euclidean distance
+    over the scaled numeric features). Used both to show "most similar
+    historical transfers" and, via their success_score spread, as the
+    predicted score_range in /api/predict.
+    """
     x = feature_row[comparables["features"]].values
     x_scaled = comparables["scaler"].transform(x)
     dist, idx = comparables["index"].kneighbors(x_scaled, n_neighbors=k)
@@ -312,6 +344,11 @@ def find_comparables(feature_row: pd.DataFrame, k: int = 5):
 
 
 def build_transfer_card(r):
+    """
+    Build the JSON shape shared by /api/examples and /api/transfers/detail
+    for one row of transfers_processed.csv: identity/route, the score, and
+    the full describe_components() breakdown.
+    """
     return {
         "player_id": int(r["player_id"]),
         "name": r["name"],
@@ -329,11 +366,13 @@ def build_transfer_card(r):
 
 @app.get("/api/health")
 def health():
+    """Liveness check plus a dump of the deployed model's training metadata (feature lists, test metrics)."""
     return {"status": "ok", "model_metadata": metadata}
 
 
 @app.get("/api/examples")
 def examples():
+    """Return the curated homepage cards (EXAMPLE_TRANSFER_KEYS) as full transfer cards."""
     out = []
     for name, to_club in EXAMPLE_TRANSFER_KEYS:
         match = transfers_df[
@@ -347,6 +386,7 @@ def examples():
 
 @app.get("/api/transfers/detail")
 def transfer_detail(player_id: int, transfer_date: str):
+    """Look up one specific historical transfer by (player_id, transfer_date) and return its full card - used by the browse page's click-to-view modal."""
     match = transfers_df[
         (transfers_df["player_id"] == player_id) & (transfers_df["transfer_date"] == transfer_date)
     ]
@@ -357,6 +397,7 @@ def transfer_detail(player_id: int, transfer_date: str):
 
 @app.get("/api/players/search")
 def search_players(q: str, limit: int = 10):
+    """Accent-insensitive substring search over players_lookup.csv, for the prediction form's player autocomplete."""
     if len(q) < 2:
         return []
     mask = players_df["_name_fold"].str.contains(fold_accents(q), na=False, regex=False)
@@ -366,6 +407,7 @@ def search_players(q: str, limit: int = 10):
 
 @app.get("/api/clubs/search")
 def search_clubs(q: str, limit: int = 10):
+    """Accent-insensitive substring search over clubs_lookup.csv, for the destination-club autocomplete."""
     if len(q) < 2:
         return []
     mask = clubs_df["_name_fold"].str.contains(fold_accents(q), na=False, regex=False)
@@ -375,6 +417,7 @@ def search_clubs(q: str, limit: int = 10):
 
 @app.get("/api/clubs/{club_id}")
 def get_club(club_id: int):
+    """Look up one club by id - used to fetch a selected player's *current* club details (for the "origin club" side of a prediction)."""
     row = clubs_df[clubs_df["club_id"] == club_id]
     if row.empty:
         raise HTTPException(status_code=404, detail="club not found")
@@ -383,6 +426,13 @@ def get_club(club_id: int):
 
 @app.post("/api/predict")
 def predict(req: PredictRequest):
+    """
+    Score a hypothetical transfer: run the model, clip to [0, 100], and
+    attach a likely score_range (min/max among the nearest comparable
+    historical transfers - a single point estimate would overstate how
+    confident a R^2~0.10 model can be), the top-5 feature explanation, and
+    the comparables themselves.
+    """
     try:
         feature_row = build_feature_row(req)
         raw_score = float(pipeline.predict(feature_row)[0])
@@ -404,6 +454,7 @@ def predict(req: PredictRequest):
 
 
 class CompareRequest(BaseModel):
+    """Two hypothetical transfers to score side by side, with display labels for the compare page."""
     a: PredictRequest
     b: PredictRequest
     label_a: str = "Option A"
@@ -412,6 +463,7 @@ class CompareRequest(BaseModel):
 
 @app.post("/api/compare")
 def compare(req: CompareRequest):
+    """Score both scenarios via predict() and return them together with the point gap between them, for the compare page."""
     result_a = predict(req.a)
     result_b = predict(req.b)
     return {
@@ -428,6 +480,7 @@ TRANSFER_SORT_FIELDS = {
 
 @app.get("/api/filters")
 def get_filters():
+    """List the distinct positions and destination leagues present in transfers_processed.csv, for the browse page's filter dropdowns."""
     positions = sorted(transfers_df["position"].dropna().unique().tolist())
     league_ids = transfers_df["to_domestic_competition_id"].dropna().unique().tolist()
     leagues = sorted(
@@ -447,6 +500,7 @@ def list_transfers(
     limit: int = 25,
     offset: int = 0,
 ):
+    """Paginated, filterable, sortable listing of every scored transfer, for the browse page's table."""
     df = transfers_df
     if position:
         df = df[df["position"] == position]

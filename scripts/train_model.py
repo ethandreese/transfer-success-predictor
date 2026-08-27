@@ -45,6 +45,7 @@ TARGET = "success_score"
 
 
 def add_derived_features(df):
+    """Add the log-transformed and NaN-filled columns NUMERIC_FEATURES/CATEGORICAL_FEATURES expect but transfers_processed.csv doesn't already have."""
     df = df.copy()
     df["log_transfer_fee"] = np.log1p(df["transfer_fee"].fillna(0))
     df["log_value_before"] = np.log1p(df["value_before"])
@@ -57,6 +58,18 @@ def add_derived_features(df):
 
 
 def main():
+    """
+    Load the processed transfers, fit a GradientBoostingRegressor on
+    pre-transfer-only features, evaluate it on a temporal holdout (train on
+    transfers before SPLIT_DATE, test on transfers since - so the reported
+    accuracy reflects predicting *future* transfers, not just interpolating
+    within the training period), then refit on the full dataset and save
+    three artifacts to app/model/: the trained pipeline (model.joblib), a
+    nearest-neighbors index over the same features for finding comparable
+    historical transfers (comparables.joblib), and metadata.json (feature
+    lists, test metrics, and per-feature reference/typical values used to
+    explain predictions).
+    """
     df = pd.read_csv(DATA_PATH, parse_dates=["transfer_date"])
     df = add_derived_features(df)
     df = df.dropna(subset=NUMERIC_FEATURES + CATEGORICAL_FEATURES + [TARGET])

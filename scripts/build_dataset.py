@@ -46,6 +46,19 @@ REFERENCE_NOW = pd.Timestamp.today().normalize()
 
 
 def load_transfers():
+    """
+    Load raw transfers.csv, filter to the date range and drop no-op moves
+    (from_club == to_club), then compute two per-transfer fields that need
+    the player's *next* transfer to work out:
+      - tenure_end: the date the player left the new club (their next
+        transfer's date), or REFERENCE_NOW if they haven't moved since
+      - next_transfer_fee: the fee received for that next transfer (NaN if
+        there isn't one yet), used later for the resale-profit component
+
+    Returns a DataFrame with one row per transfer and a "transfer_idx"
+    column used as the join key by every other compute_* function in this
+    module.
+    """
     df = pd.read_csv(
         os.path.join(RAW_DIR, "transfers.csv"),
         usecols=[
@@ -74,6 +87,7 @@ def load_transfers():
 
 
 def load_players():
+    """Load players.csv: one row per player with position, physical attributes, and current club/value."""
     df = pd.read_csv(
         os.path.join(RAW_DIR, "players.csv"),
         usecols=[
@@ -87,9 +101,12 @@ def load_players():
 
 
 def load_clubs():
-    # total_market_value in clubs.csv is unpopulated in this dataset version, so
-    # club quality is proxied below from the summed current market value of each
-    # club's squad (players.csv), rather than read from clubs.csv directly.
+    """
+    Load clubs.csv: just club_id and domestic_competition_id (the league).
+    total_market_value in clubs.csv is unpopulated in this dataset version,
+    so club quality is proxied instead by compute_club_value_proxy() below,
+    summed from each club's current squad value in players.csv.
+    """
     df = pd.read_csv(
         os.path.join(RAW_DIR, "clubs.csv"),
         usecols=["club_id", "domestic_competition_id"],
@@ -98,6 +115,11 @@ def load_clubs():
 
 
 def compute_club_value_proxy(players):
+    """
+    Approximate each club's overall squad strength as the sum of its
+    current players' market values. Used as a stand-in for "how big/rich is
+    this club" since clubs.csv's own total_market_value column is empty.
+    """
     proxy = (
         players.dropna(subset=["current_club_id"])
         .groupby("current_club_id")["market_value_in_eur"]
@@ -109,6 +131,7 @@ def compute_club_value_proxy(players):
 
 
 def load_appearances():
+    """Load appearances.csv: one row per (player, game) with goals/assists/minutes and the competition it was in."""
     df = pd.read_csv(
         os.path.join(RAW_DIR, "appearances.csv"),
         usecols=[
@@ -184,6 +207,13 @@ def compute_league_position_baselines(appearances, players):
 
 
 def lookup_league_baseline(league_ids, positions, baseline, fallback):
+    """
+    Vectorized lookup of the (league, position) -> ga_p90 baseline for a
+    whole column of transfers at once. Falls back to the position's overall
+    average (from compute_league_position_baselines) for any (league,
+    position) pair with too little data to have its own baseline, and to
+    the average of all positions' fallbacks as a last resort.
+    """
     keys = list(zip(league_ids, positions))
     return pd.Series(
         [baseline.get(k, fallback.get(k[1], fallback.mean())) for k in keys],
@@ -214,6 +244,7 @@ def save_league_baselines(league_position_baseline, position_fallback):
 
 
 def load_valuations():
+    """Load player_valuations.csv: the full market-value history for every player, sorted by date (needed for merge_asof)."""
     df = pd.read_csv(
         os.path.join(RAW_DIR, "player_valuations.csv"),
         usecols=["player_id", "date", "market_value_in_eur"],
@@ -223,6 +254,18 @@ def load_valuations():
 
 
 def compute_windowed_appearance_stats(transfers, appearances):
+    """
+    For every transfer, sum up appearances/minutes/goals/assists in two
+    windows:
+      - "pre": the PRE_WINDOW_DAYS (1 year) before the transfer, at the OLD
+        club - the player's form walking into the move
+      - "post": from the transfer date through tenure_end, at the NEW club
+        - their entire stint there, not just a fixed first year
+
+    Returns (pre, post): two DataFrames indexed by transfer_idx with
+    columns like pre_apps/pre_minutes/pre_goals/pre_assists (and the post_
+    equivalents), ready to .join() onto the main transfers DataFrame.
+    """
     merged = appearances.merge(
         transfers[["transfer_idx", "player_id", "transfer_date", "tenure_end", "from_club_id", "to_club_id"]],
         on="player_id",
@@ -245,6 +288,7 @@ def compute_windowed_appearance_stats(transfers, appearances):
     )
 
     def agg(mask, prefix):
+        """Sum apps/minutes/goals/assists per transfer for the rows selected by `mask`, prefixing column names (e.g. "pre_" or "post_")."""
         sub = merged[mask].groupby("transfer_idx").agg(
             apps=("date", "count"),
             minutes=("minutes_played", "sum"),
@@ -260,6 +304,14 @@ def compute_windowed_appearance_stats(transfers, appearances):
 
 
 def nearest_valuation(transfers, valuations, on_col, direction, tolerance_days, suffix):
+    """
+    Find each player's market value nearest to a given date column
+    (`on_col`, e.g. "transfer_date" or "tenure_end") via a time-based
+    as-of join. `direction` controls whether "nearest" looks backward,
+    forward, or either way; `tolerance_days` caps how far away a match can
+    be before it's treated as missing. Returns a Series named
+    "value_{suffix}", indexed by transfer_idx.
+    """
     left = transfers[["transfer_idx", "player_id", on_col]].sort_values(on_col)
     right = valuations.rename(columns={"market_value_in_eur": f"value_{suffix}"})
     out = pd.merge_asof(
@@ -294,6 +346,7 @@ def compute_peak_valuation(transfers, valuations):
 
 
 def percentile_rank(series):
+    """Rank each value's position in the series as a 0-100 percentile (100 = highest)."""
     return series.rank(pct=True) * 100
 
 
@@ -335,6 +388,16 @@ def compute_expected_post_performance(df):
 
 
 def main():
+    """
+    End-to-end pipeline: load the raw Transfermarkt CSVs, compute every
+    pre-transfer feature and post-transfer outcome described in the module
+    docstring, blend the outcomes into a 0-100 success_score per position
+    (see data/score_weights.json), and write the result to
+    data/transfers_processed.csv - the label + features scripts/train_model.py
+    trains on. Also writes data/league_baselines.csv as a side effect (see
+    save_league_baselines) so app/main.py can share the same league
+    baselines for live-prediction explanations.
+    """
     print("Loading raw CSVs...")
     transfers = load_transfers()
     players = load_players()

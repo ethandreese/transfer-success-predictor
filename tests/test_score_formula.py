@@ -20,10 +20,12 @@ PCT_COLUMNS = [
 
 @pytest.fixture(scope="module")
 def transfers():
+    """The committed processed dataset, loaded once and shared read-only across this module's tests."""
     return pd.read_csv(os.path.join(DATA_DIR, "transfers_processed.csv"))
 
 
 def test_percentile_rank_is_0_to_100():
+    """percentile_rank() should map the lowest value to its rank/count (not 0) and the highest to exactly 100."""
     s = pd.Series([10, 20, 30, 40, 50])
     ranked = percentile_rank(s)
     assert ranked.min() == pytest.approx(20.0)
@@ -31,21 +33,25 @@ def test_percentile_rank_is_0_to_100():
 
 
 def test_position_weights_sum_to_one():
+    """Every position's component weights (including resale_profit's reference weight) must sum to 1.0, or the score computation silently drifts off a 0-100 scale."""
     for position, weights in POSITION_WEIGHTS.items():
         total = sum(weights.values())
         assert total == pytest.approx(1.0, abs=1e-6), f"{position} weights sum to {total}, not 1.0"
 
 
 def test_goalkeepers_have_no_goal_contribution_weight():
-    # The whole point of position-weighting: goal contributions are
-    # meaningless for keepers (see data/score_weights.json), so their
-    # weight must be zero, not just small.
+    """
+    The whole point of position-weighting: goal contributions are
+    meaningless for keepers (see data/score_weights.json), so their
+    weight must be zero, not just small.
+    """
     gk = POSITION_WEIGHTS["Goalkeeper"]
     assert gk["perf_level"] == 0
     assert gk["perf_delta"] == 0
 
 
 def test_attackers_weight_performance_more_than_defenders():
+    """Sanity check on the position-weighting direction: goal contributions should matter more for attackers than defenders."""
     attack = POSITION_WEIGHTS["Attack"]
     defender = POSITION_WEIGHTS["Defender"]
     attack_perf = attack["perf_level"] + attack["perf_delta"]
@@ -54,6 +60,7 @@ def test_attackers_weight_performance_more_than_defenders():
 
 
 def test_success_score_within_bounds(transfers):
+    """success_score is meant to be a 0-100 scale end to end - no row should fall outside it."""
     assert transfers["success_score"].between(0, 100).all()
 
 
@@ -76,6 +83,7 @@ def test_league_baselines_reflect_real_scoring_difficulty(transfers):
 
 
 def test_league_adjusted_ratio_matches_raw_over_baseline(transfers):
+    """post_ga_p90_vs_league should always equal post_ga_p90 divided by the stored to_league_ga_baseline (within the clip floor) - catches the formula and the stored column drifting apart."""
     sample = transfers.sample(n=min(200, len(transfers)), random_state=7)
     expected = sample["post_ga_p90"] / sample["to_league_ga_baseline"].clip(lower=0.05)
     assert (sample["post_ga_p90_vs_league"] - expected).abs().max() < 1e-6
@@ -100,6 +108,7 @@ def test_performance_change_measures_vs_expectation_not_raw_delta():
 
 
 def test_genuine_collapse_still_scores_badly_on_performance_change():
+    """The regression-to-expectation fix shouldn't rescue a real bust: Sancho's Man Utd collapse must still fall well short of even the regressed expectation, and score low."""
     df = pd.read_csv(os.path.join(DATA_DIR, "transfers_processed.csv"))
     sancho = df[(df["name"] == "Jadon Sancho") & (df["to_club_name"] == "Man Utd")].iloc[0]
     assert sancho["post_ga_p90_vs_league"] < sancho["expected_post_ga_p90_vs_league"]  # fell short too
@@ -107,11 +116,13 @@ def test_genuine_collapse_still_scores_badly_on_performance_change():
 
 
 def test_percentile_components_within_bounds(transfers):
+    """Every sub-score percentile that feeds into success_score should itself be a valid 0-100 percentile."""
     for col in PCT_COLUMNS:
         assert transfers[col].between(0, 100).all(), f"{col} has values outside [0, 100]"
 
 
 def test_no_nulls_in_key_columns(transfers):
+    """These identity/label columns should never be null in the shipped dataset - a null here would break the UI or a downstream join."""
     key_columns = [
         "name", "position", "transfer_date", "from_club_name", "to_club_name",
         "success_score", "tenure_days",
@@ -121,6 +132,7 @@ def test_no_nulls_in_key_columns(transfers):
 
 
 def test_tenure_days_non_negative(transfers):
+    """tenure_end is always >= transfer_date by construction; this would only fail if that invariant broke upstream."""
     assert (transfers["tenure_days"] >= 0).all()
 
 
@@ -181,11 +193,13 @@ def test_resale_profit_rewards_a_profitable_flip():
 
 
 def test_pct_team_games_played_is_bounded(transfers):
+    """A player can't appear in more games than the team played, so pct_team_games_played must be a clean fraction in [0, 1]."""
     assert transfers["pct_team_games_played"].between(0, 1).all()
     assert transfers["team_games_in_tenure"].ge(1).all()
 
 
 def test_pct_team_games_played_matches_apps_over_team_games(transfers):
+    """pct_team_games_played should always equal post_apps / team_games_in_tenure (clipped) - catches drift between the formula and the stored column."""
     sample = transfers.sample(n=min(200, len(transfers)), random_state=11)
     expected = (sample["post_apps"] / sample["team_games_in_tenure"].clip(lower=1)).clip(upper=1.0)
     assert (sample["pct_team_games_played"] - expected).abs().max() < 1e-9
@@ -222,12 +236,17 @@ def test_value_growth_credits_peak_not_just_end_of_tenure_value():
 
 
 def test_value_peak_never_below_value_after(transfers):
-    # value_peak is a max over the tenure window, so by construction it
-    # can never be lower than the (also-in-window) end-of-tenure value.
+    """
+    value_peak is a max over the tenure window, so by construction it
+    can never be lower than the (also-in-window) end-of-tenure value -
+    guards against the window-mismatch bug this was built to fix (see
+    build_dataset.py's value_peak computation).
+    """
     assert (transfers["value_peak"] >= transfers["value_after"]).all()
 
 
 def test_resale_weight_decays_with_tenure_length():
+    """compute_resale_weight should decrease monotonically with tenure, bounded by the curve's configured min/max."""
     short = compute_resale_weight(0.25)   # ~3 months
     medium = compute_resale_weight(2.0)   # ~2 years
     long = compute_resale_weight(10.0)    # ~a decade
@@ -237,6 +256,7 @@ def test_resale_weight_decays_with_tenure_length():
 
 
 def test_resale_weight_column_matches_curve(transfers):
+    """The stored resale_weight column should exactly match compute_resale_weight() applied to each row's own tenure_days."""
     resale = transfers[transfers["has_resale_data"]]
     expected = compute_resale_weight(resale["tenure_days"] / 365.25)
     assert (resale["resale_weight"] - expected).abs().max() < 1e-9

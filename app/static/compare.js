@@ -1,11 +1,20 @@
+/** Green/amber/red for a 0-100 score, shared by every score display on the page. */
 function scoreColor(score) {
   if (score >= 66) return "var(--accent)";
   if (score >= 40) return "var(--accent-mid)";
   return "var(--accent-bad)";
 }
 
+// Per-scenario ("a"/"b") selection state: the chosen player, that player's
+// *current* club (fetched separately, for origin-league/value context),
+// and the chosen destination club.
 const scenarios = {};
 
+/**
+ * Wire up one compare-column's player/club autocompletes and keep
+ * `scenarios[key]` in sync with the selections, enabling the Compare
+ * button once both columns have a player and a club chosen.
+ */
 function setupScenario(key) {
   const col = document.querySelector(`.compare-col[data-scenario="${key}"]`);
   const state = { player: null, playerClub: null, club: null };
@@ -16,11 +25,13 @@ function setupScenario(key) {
   const clubInput = col.querySelector(".club-search");
   const clubList = col.querySelector(".club-list");
 
+  /** Enable the Compare button once every scenario has both a player and a club selected. */
   function updateCompareButton() {
     const ready = Object.values(scenarios).every(s => s.player && s.club);
     document.getElementById("compare-btn").disabled = !ready;
   }
 
+  /** Debounced search-as-you-type dropdown for one input, scoped to this scenario's column (same pattern as app.js's setupAutocomplete, duplicated here since each compare column needs its own independent instance). */
   function wireAutocomplete(input, list, endpoint, renderLabel, onSelect) {
     let debounceTimer = null;
     input.addEventListener("input", () => {
@@ -80,6 +91,7 @@ function setupScenario(key) {
   );
 }
 
+/** Assemble a PredictRequest body for one scenario from its selected player/club and the fee/age fields in that column. */
 function buildPayload(key) {
   const col = document.querySelector(`.compare-col[data-scenario="${key}"]`);
   const state = scenarios[key];
@@ -106,6 +118,7 @@ function buildPayload(key) {
   };
 }
 
+/** Render one scenario's predict() result (score, range, top-3 explanation) into the "a" or "b" result column, per `suffix`. */
 function renderResult(suffix, result) {
   const scoreEl = document.getElementById(`score-value-${suffix}`);
   scoreEl.textContent = result.success_score;
@@ -130,6 +143,8 @@ function renderResult(suffix, result) {
   }).join("");
 }
 
+// Build both scenarios' payloads, POST them together to /api/compare, and
+// render both results plus a plain-English delta summary.
 document.getElementById("compare-btn").addEventListener("click", async () => {
   const errorBox = document.getElementById("error-box");
   errorBox.textContent = "";

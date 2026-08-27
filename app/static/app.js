@@ -4,12 +4,14 @@ const state = {
   club: null,
 };
 
+/** Green/amber/red for a 0-100 score, shared by every score display on the page. */
 function scoreColor(score) {
   if (score >= 66) return "var(--accent)";
   if (score >= 40) return "var(--accent-mid)";
   return "var(--accent-bad)";
 }
 
+/** Render one transfer's score-component breakdown (label + bar + hover tooltip) as HTML, from the `breakdown` array the API returns. */
 function renderBreakdown(breakdown) {
   return breakdown.map(b => `
     <div class="breakdown-row">
@@ -25,6 +27,7 @@ function renderBreakdown(breakdown) {
   `).join("");
 }
 
+/** Fetch the curated homepage cards from /api/examples and render them into #examples. */
 async function loadExamples() {
   const el = document.getElementById("examples");
   try {
@@ -51,6 +54,12 @@ async function loadExamples() {
   }
 }
 
+/**
+ * Wire a text input to a debounced search-as-you-type dropdown: on input,
+ * queries `endpoint?q=...`, renders each result via `renderLabel`, and
+ * calls `onSelect(item)` when the user picks one. Closes the dropdown on
+ * an empty/short query or a click outside the input.
+ */
 function setupAutocomplete({ inputId, listId, endpoint, onSelect, renderLabel }) {
   const input = document.getElementById(inputId);
   const list = document.getElementById(listId);
@@ -87,10 +96,14 @@ function setupAutocomplete({ inputId, listId, endpoint, onSelect, renderLabel })
   });
 }
 
+/** Enable the "Predict success" button only once both a player and a destination club have been selected. */
 function updatePredictButton() {
   document.getElementById("predict-btn").disabled = !(state.player && state.club);
 }
 
+// Player autocomplete: selecting a player fills in their current age/club
+// and fetches their current club's details (for the "origin" side of the
+// prediction payload).
 setupAutocomplete({
   inputId: "player-search",
   listId: "player-list",
@@ -109,6 +122,8 @@ setupAutocomplete({
   },
 });
 
+// Destination-club autocomplete: just records the selection, since the
+// club's value proxy/league already come back in the search result.
 setupAutocomplete({
   inputId: "club-search",
   listId: "club-list",
@@ -122,6 +137,9 @@ setupAutocomplete({
   },
 });
 
+// Assemble a PredictRequest from the selected player/club plus the fee and
+// (editable) age fields, POST it to /api/predict, and render the score,
+// range, comparables, and explanation into the #result panel.
 document.getElementById("predict-btn").addEventListener("click", async () => {
   const errorBox = document.getElementById("error-box");
   errorBox.textContent = "";

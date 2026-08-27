@@ -1,12 +1,14 @@
 const PAGE_SIZE = 25;
 const state = { offset: 0, total: 0 };
 
+/** Green/amber/red for a 0-100 score, shared by every score display on the page. */
 function scoreColor(score) {
   if (score >= 66) return "var(--accent)";
   if (score >= 40) return "var(--accent-mid)";
   return "var(--accent-bad)";
 }
 
+/** Build the /api/transfers query string from the current search box, filter dropdowns, sort selection, and pagination offset. */
 function currentParams() {
   const [sort, order] = document.getElementById("sort-select").value.split(":");
   const params = new URLSearchParams({
@@ -23,6 +25,7 @@ function currentParams() {
   return params;
 }
 
+/** Fetch the distinct positions/leagues from /api/filters and populate the two filter <select> dropdowns. */
 async function loadFilters() {
   const res = await fetch("/api/filters");
   const data = await res.json();
@@ -40,16 +43,19 @@ async function loadFilters() {
   });
 }
 
+/** Format a transfer fee for the table, e.g. 50_000_000 -> "€50.0m", 0/null -> "free". */
 function feeDisplay(fee) {
   if (fee === null || fee === undefined || fee === 0) return "free";
   return `€${(fee / 1_000_000).toFixed(1)}m`;
 }
 
+/** Format a tenure in days as "X.Yy", flagging it "(current)" if the player is still at the club. */
 function tenureDisplay(days, stillAtClub) {
   const years = (days / 365.25).toFixed(1);
   return `${years}y${stillAtClub ? " (current)" : ""}`;
 }
 
+/** Fetch the current page of transfers (per currentParams()) and render the table body, pagination controls, and per-row click handlers. */
 async function loadTable() {
   const tbody = document.getElementById("table-body");
   tbody.innerHTML = `<tr><td colspan="9">Loading...</td></tr>`;
@@ -87,11 +93,13 @@ async function loadTable() {
   document.getElementById("next-page").disabled = state.offset + PAGE_SIZE >= state.total;
 }
 
+/** Jump back to page 1 and reload - called whenever a filter/search/sort control changes, so a new query starts from the top. */
 function resetAndLoad() {
   state.offset = 0;
   loadTable();
 }
 
+/** Render one transfer's score-component breakdown (label + bar + hover tooltip) as HTML, from the `breakdown` array the API returns. */
 function renderBreakdown(breakdown) {
   return breakdown.map(b => `
     <div class="breakdown-row">
@@ -107,6 +115,7 @@ function renderBreakdown(breakdown) {
   `).join("");
 }
 
+/** Open the modal and fetch+render the full transfer card for one clicked table row, via /api/transfers/detail. */
 async function showCard(playerId, transferDate) {
   const backdrop = document.getElementById("card-modal-backdrop");
   const content = document.getElementById("card-modal-content");
@@ -133,10 +142,13 @@ async function showCard(playerId, transferDate) {
   }
 }
 
+/** Close the transfer-card modal. */
 function closeCard() {
   document.getElementById("card-modal-backdrop").classList.remove("open");
 }
 
+// Close the modal via the X button, a click on the dimmed backdrop (but not
+// the card itself), or the Escape key.
 document.getElementById("card-modal-close").addEventListener("click", closeCard);
 document.getElementById("card-modal-backdrop").addEventListener("click", (e) => {
   if (e.target.id === "card-modal-backdrop") closeCard();

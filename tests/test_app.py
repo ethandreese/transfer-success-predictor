@@ -13,6 +13,7 @@ client = TestClient(app)
 
 @pytest.fixture
 def sample_predict_payload():
+    """A valid, realistic PredictRequest body (a Bundesliga attacker to a Premier League club) reused across the predict/compare tests."""
     return {
         "age_at_transfer": 24.0,
         "height_in_cm": 182.0,
@@ -33,12 +34,14 @@ def sample_predict_payload():
 
 
 def test_health():
+    """/api/health should respond 200 with status "ok" - basic liveness check."""
     res = client.get("/api/health")
     assert res.status_code == 200
     assert res.json()["status"] == "ok"
 
 
 def test_examples_returns_known_transfers_with_breakdown():
+    """Every curated homepage card should have a valid score and a fully-described breakdown."""
     res = client.get("/api/examples")
     assert res.status_code == 200
     data = res.json()
@@ -97,6 +100,7 @@ def test_sub_million_fee_does_not_round_to_free():
 
 
 def test_predict_returns_score_range_and_explanation(sample_predict_payload):
+    """A valid predict request should return a 0-100 score, a sane [lo, hi] range, and a fully-detailed top-5 explanation."""
     res = client.post("/api/predict", json=sample_predict_payload)
     assert res.status_code == 200
     data = res.json()
@@ -122,11 +126,13 @@ def test_predict_explanation_shows_league_relative_context(sample_predict_payloa
 
 
 def test_predict_rejects_invalid_payload():
+    """Pydantic validation should reject an out-of-range/incomplete request (age=5 violates the ge=15 constraint) with a 422, not a 500."""
     res = client.post("/api/predict", json={"age_at_transfer": 5})
     assert res.status_code == 422
 
 
 def test_compare_returns_both_results_and_delta(sample_predict_payload):
+    """/api/compare should score both scenarios and report a delta consistent with their individual scores."""
     other = dict(sample_predict_payload, transfer_fee=10_000_000.0)
     res = client.post("/api/compare", json={
         "a": sample_predict_payload, "b": other,
@@ -140,6 +146,7 @@ def test_compare_returns_both_results_and_delta(sample_predict_payload):
 
 
 def test_players_search_is_accent_insensitive():
+    """Searching the plain-ASCII 'Dembele' should still find the accented 'Dembélé'."""
     res = client.get("/api/players/search", params={"q": "Dembele"})
     assert res.status_code == 200
     names = [p["name"] for p in res.json()]
@@ -147,12 +154,14 @@ def test_players_search_is_accent_insensitive():
 
 
 def test_players_search_response_has_no_internal_fields():
+    """The internal _name_fold helper column must never leak into the API response."""
     res = client.get("/api/players/search", params={"q": "Haaland"})
     for p in res.json():
         assert "_name_fold" not in p
 
 
 def test_clubs_search_is_accent_insensitive():
+    """Searching 'atletico' should still find the accented 'Atlético'."""
     res = client.get("/api/clubs/search", params={"q": "atletico"})
     assert res.status_code == 200
     names = [c["name"] for c in res.json()]
@@ -160,12 +169,14 @@ def test_clubs_search_is_accent_insensitive():
 
 
 def test_clubs_search_response_has_no_internal_fields():
+    """The internal _name_fold helper column must never leak into the API response."""
     res = client.get("/api/clubs/search", params={"q": "Real"})
     for c in res.json():
         assert "_name_fold" not in c
 
 
 def test_filters_endpoint():
+    """/api/filters should list at least one position and one league, each with an id and a display name."""
     res = client.get("/api/filters")
     assert res.status_code == 200
     data = res.json()
@@ -175,6 +186,7 @@ def test_filters_endpoint():
 
 
 def test_league_names_disambiguate_duplicates():
+    """Austria's and Germany's Bundesliga must not display identically (see competitions_df's display_name logic)."""
     res = client.get("/api/filters")
     leagues = {l["id"]: l["name"] for l in res.json()["leagues"]}
     assert leagues["A1"] != leagues["L1"]
@@ -182,6 +194,7 @@ def test_league_names_disambiguate_duplicates():
 
 
 def test_transfers_list_pagination():
+    """A limit=10 request should return exactly 10 results, with the true total count reported separately."""
     res = client.get("/api/transfers", params={"limit": 10, "offset": 0})
     assert res.status_code == 200
     data = res.json()
@@ -190,6 +203,7 @@ def test_transfers_list_pagination():
 
 
 def test_transfers_list_position_filter():
+    """Filtering by position=Goalkeeper should return only goalkeepers."""
     res = client.get("/api/transfers", params={"position": "Goalkeeper", "limit": 50})
     data = res.json()
     assert data["total"] > 0
@@ -197,6 +211,7 @@ def test_transfers_list_position_filter():
 
 
 def test_transfers_list_search_is_accent_insensitive():
+    """The browse page's search box should match accented names via the plain-ASCII query too."""
     res = client.get("/api/transfers", params={"q": "Dembele"})
     data = res.json()
     assert data["total"] > 0
@@ -204,12 +219,14 @@ def test_transfers_list_search_is_accent_insensitive():
 
 
 def test_transfers_list_sorted_descending_by_default():
+    """With no explicit sort params, results should default to success_score descending."""
     res = client.get("/api/transfers", params={"limit": 20})
     scores = [r["success_score"] for r in res.json()["results"]]
     assert scores == sorted(scores, reverse=True)
 
 
 def test_transfers_list_includes_player_id_for_detail_lookup():
+    """Each row needs player_id so the browse page's click-to-view-card feature can call /api/transfers/detail."""
     res = client.get("/api/transfers", params={"q": "Haaland"})
     row = res.json()["results"][0]
     assert "player_id" in row
@@ -221,6 +238,7 @@ def test_transfers_list_includes_player_id_for_detail_lookup():
 
 
 def test_transfer_detail_matches_examples_card_shape():
+    """The detail endpoint and /api/examples share build_transfer_card(), so the same transfer must produce byte-identical cards from either route."""
     examples_res = client.get("/api/examples")
     haaland = next(e for e in examples_res.json() if e["name"] == "Erling Haaland")
     detail_res = client.get("/api/transfers/detail", params={
@@ -233,5 +251,6 @@ def test_transfer_detail_matches_examples_card_shape():
 
 
 def test_transfer_detail_404_for_unknown_transfer():
+    """A (player_id, transfer_date) pair that doesn't exist should 404, not 500 or return an empty/malformed card."""
     res = client.get("/api/transfers/detail", params={"player_id": 999999999, "transfer_date": "2020-01-01"})
     assert res.status_code == 404
