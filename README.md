@@ -66,12 +66,31 @@ low: his raw output dipped slightly (1.39→1.07 per 90), but relative to
 each league's baseline he stayed just as dominant (2.6x→2.2x), which the
 formula now credits instead of penalizing.
 
+**Performance change vs. expectation, not raw delta.** Even with league
+adjustment, comparing a player's league-relative level *before* the move to
+*after* the move (a raw difference) still unfairly penalizes players who
+were already near the top: someone at 2.6x their league's average has far
+more room to fall than to rise, so almost any real outcome short of getting
+*even better* reads as "decline" — even though everyone that dominant tends
+to pull back toward the pack somewhat (regression to the mean), and that
+pullback isn't really a sign the move went badly. So instead of a raw
+difference, "performance change" fits a simple regression of post-transfer
+level on pre-transfer level (per position, across the dataset) and measures
+the *residual* — did the player end up better or worse than what's
+statistically typical for someone who started at their level? A player who
+pulls back by exactly the expected amount scores neutrally; someone who
+beats that expectation (Haaland: expected ~1.3x, actually stayed at 2.2x)
+scores well; someone who falls far short of even the regressed expectation
+(Sancho at Man Utd: expected ~1.2x, actually fell to 0.7x) still scores
+badly. This is what pushed Haaland's "performance change" from the 30th
+percentile to the 96th without touching genuine busts like Sancho.
+
 **Model.** A gradient-boosted regressor trained on pre-transfer-only
 features (age, position, physical attributes, fee, market value, prior-year
 performance, and origin/destination club & league strength) — nothing about
 what happened after the move. Evaluated on a temporal holdout (trained on
 transfers before mid-2023, tested on transfers since): **MAE ≈ 16 points**
-on the 0–100 scale, R² ≈ 0.07, vs. ≈17 MAE for always predicting the
+on the 0–100 scale, R² ≈ 0.10, vs. ≈17 MAE for always predicting the
 average. That's a modest but real signal, and honestly weaker than scoring
 a fixed first year would give — predicting a player's *entire future stint*
 at a new club from pre-transfer stats alone is genuinely hard, since

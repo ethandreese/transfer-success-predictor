@@ -218,6 +218,31 @@ def percentile_rank(series):
     return series.rank(pct=True) * 100
 
 
+def compute_expected_post_performance(df):
+    """
+    Fit post_ga_p90_vs_league ~ pre_ga_p90_vs_league per position (simple
+    linear regression) and return the model's expected post-transfer level
+    for each row. Used so "performance change" measures over/underperforming
+    *what's statistically typical given how strong they already were*,
+    rather than the raw before-after difference.
+
+    A raw difference unfairly penalizes players who were already near the
+    top: someone who was 2.6x their league's average has much more room to
+    fall than to rise, so almost any real-world outcome short of getting
+    even better reads as "decline" even when they're still elite. Everyone
+    else in the dataset who started that high shows a similar pullback too
+    (regression to the mean) - the fit line captures that normal pullback,
+    so a player who pulls back by exactly the expected amount now scores
+    neutrally instead of being marked down, and one who falls much further
+    than that (a real bust, not just ceiling effects) still scores badly.
+    """
+    expected = pd.Series(index=df.index, dtype=float)
+    for position, sub in df.groupby("position"):
+        slope, intercept = np.polyfit(sub["pre_ga_p90_vs_league"], sub["post_ga_p90_vs_league"], 1)
+        expected.loc[sub.index] = intercept + slope * sub["pre_ga_p90_vs_league"]
+    return expected
+
+
 def main():
     print("Loading raw CSVs...")
     transfers = load_transfers()
@@ -308,8 +333,10 @@ def main():
     # differences among attackers (everyone not a defender/keeper clusters
     # near the top).
     df["perf_level_pct"] = df.groupby("position")["post_ga_p90_vs_league"].rank(pct=True) * 100
-    perf_delta = df["post_ga_p90_vs_league"] - df["pre_ga_p90_vs_league"]
-    df["perf_delta_pct"] = perf_delta.groupby(df["position"]).rank(pct=True) * 100
+
+    df["expected_post_ga_p90_vs_league"] = compute_expected_post_performance(df)
+    perf_delta_residual = df["post_ga_p90_vs_league"] - df["expected_post_ga_p90_vs_league"]
+    df["perf_delta_pct"] = perf_delta_residual.groupby(df["position"]).rank(pct=True) * 100
 
     value_growth = df["value_after"] / df["value_before"].clip(lower=1)
     df["value_growth_pct"] = percentile_rank(value_growth)
@@ -344,7 +371,7 @@ def main():
         "pre_ga_p90", "pre_goals_p90", "pre_mins_per_app",
         "post_apps", "post_minutes", "post_goals", "post_assists", "post_ga_p90",
         "from_league_ga_baseline", "to_league_ga_baseline",
-        "pre_ga_p90_vs_league", "post_ga_p90_vs_league",
+        "pre_ga_p90_vs_league", "post_ga_p90_vs_league", "expected_post_ga_p90_vs_league",
         "tenure_days", "still_at_club",
         "perf_level_pct", "perf_delta_pct", "value_growth_pct",
         "playing_time_pct", "value_for_money_pct",

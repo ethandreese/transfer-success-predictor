@@ -81,6 +81,31 @@ def test_league_adjusted_ratio_matches_raw_over_baseline(transfers):
     assert (sample["post_ga_p90_vs_league"] - expected).abs().max() < 1e-6
 
 
+def test_performance_change_measures_vs_expectation_not_raw_delta():
+    """
+    A player who was extremely far above their league's average before the
+    move (e.g. 2.6x) has more statistical room to regress toward the mean
+    than someone who started closer to average - "performance change"
+    should credit them for beating that regressed expectation, not punish
+    them for a raw decline that's largely just regression to the mean.
+    Concretely: Haaland's Dortmund -> Man City move (raw G+A/90 fell from
+    1.39 to 1.07) should score well above the middle of the pack on
+    "performance change", not below it.
+    """
+    df = pd.read_csv(os.path.join(DATA_DIR, "transfers_processed.csv"))
+    haaland = df[(df["name"] == "Erling Haaland") & (df["to_club_name"] == "Man City")].iloc[0]
+    assert haaland["post_ga_p90_vs_league"] > haaland["pre_ga_p90_vs_league"] - 0.5  # real decline, but modest
+    assert haaland["post_ga_p90_vs_league"] > haaland["expected_post_ga_p90_vs_league"]  # beat expectation
+    assert haaland["perf_delta_pct"] > 75  # scores well, not punished for a raw decline
+
+
+def test_genuine_collapse_still_scores_badly_on_performance_change():
+    df = pd.read_csv(os.path.join(DATA_DIR, "transfers_processed.csv"))
+    sancho = df[(df["name"] == "Jadon Sancho") & (df["to_club_name"] == "Man Utd")].iloc[0]
+    assert sancho["post_ga_p90_vs_league"] < sancho["expected_post_ga_p90_vs_league"]  # fell short too
+    assert sancho["perf_delta_pct"] < 25
+
+
 def test_percentile_components_within_bounds(transfers):
     for col in PCT_COLUMNS:
         assert transfers[col].between(0, 100).all(), f"{col} has values outside [0, 100]"
