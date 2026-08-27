@@ -247,6 +247,25 @@ def nearest_valuation(transfers, valuations, on_col, direction, tolerance_days, 
     return out.set_index("transfer_idx")[f"value_{suffix}"]
 
 
+def compute_peak_valuation(transfers, valuations):
+    """
+    Highest market value reached at any point during the tenure, not just
+    the value near the end of it. A long, valuable career naturally ends
+    with a lower market value than its peak simply because of age - the
+    end-of-tenure snapshot alone would read a hugely successful long
+    tenure as a decline. (E.g. Heung-min Son joined Tottenham valued at
+    ~25m, peaked at 90m mid-tenure, and was worth ~20m when he eventually
+    left a decade later - the peak, not the exit value, is what actually
+    reflects the value he added.)
+    """
+    merged = valuations.merge(
+        transfers[["transfer_idx", "player_id", "transfer_date", "tenure_end"]],
+        on="player_id", how="inner",
+    )
+    in_window = (merged["date"] > merged["transfer_date"]) & (merged["date"] <= merged["tenure_end"])
+    return merged[in_window].groupby("transfer_idx")["market_value_in_eur"].max().rename("value_peak")
+
+
 def percentile_rank(series):
     return series.rank(pct=True) * 100
 
@@ -320,6 +339,15 @@ def main():
     df["value_before"] = df["transfer_idx"].map(pre_val)
     df["value_after"] = df["transfer_idx"].map(post_val)
     df["value_before"] = df["value_before"].fillna(df["market_value_in_eur"])
+    peak_val = compute_peak_valuation(df, valuations)
+    df["value_peak"] = df["transfer_idx"].map(peak_val)
+    # value_after's "nearest to tenure_end" lookup (with a 400-day
+    # tolerance) can occasionally land just outside the exact tenure
+    # window compute_peak_valuation searches, so take the max of the two
+    # rather than let value_peak be lower than value_after - value_after
+    # is itself a real valuation point that should count.
+    df["value_peak"] = df["value_peak"].fillna(df["value_after"])
+    df["value_peak"] = df[["value_peak", "value_after"]].max(axis=1)
     df["tenure_days"] = (df["tenure_end"] - df["transfer_date"]).dt.days
     df["still_at_club"] = df["tenure_end"] >= REFERENCE_NOW
 
@@ -375,8 +403,22 @@ def main():
     perf_delta_residual = df["post_ga_p90_vs_league"] - df["expected_post_ga_p90_vs_league"]
     df["perf_delta_pct"] = perf_delta_residual.groupby(df["position"]).rank(pct=True) * 100
 
-    value_growth = df["value_after"] / df["value_before"].clip(lower=1)
-    df["value_growth_pct"] = percentile_rank(value_growth)
+    # Market value growth blends two signals: growth to the *peak* value
+    # reached during the tenure (60%) and growth to the value near the end
+    # of it (40%). Peak alone would ignore a real late-tenure collapse
+    # (injury, loss of form); end-value alone unfairly reads a long,
+    # valuable career as a decline, since even the best players' market
+    # value falls with age by the time they eventually leave - Heung-min
+    # Son joined Tottenham valued at ~25m, peaked at 90m mid-tenure, and
+    # was worth ~20m a decade later when he left. The peak is what
+    # actually reflects the asset the club held, even though the end
+    # value is what they'd have realized in a sale at that moment.
+    growth_to_peak = df["value_peak"] / df["value_before"].clip(lower=1)
+    growth_to_end = df["value_after"] / df["value_before"].clip(lower=1)
+    df["value_growth_pct"] = (
+        0.6 * percentile_rank(growth_to_peak)
+        + 0.4 * percentile_rank(growth_to_end)
+    )
 
     # Playing time blends two different signals: raw appearance count
     # rewards a long, sustained presence at the club, but says nothing
@@ -436,7 +478,7 @@ def main():
     cols = [
         "player_id", "name", "transfer_date", "from_club_name", "to_club_name",
         "position", "sub_position", "foot", "height_in_cm", "age_at_transfer",
-        "transfer_fee", "market_value_in_eur", "value_before", "value_after",
+        "transfer_fee", "market_value_in_eur", "value_before", "value_after", "value_peak",
         "fee_to_value_ratio", "club_quality_ratio",
         "from_total_market_value", "to_total_market_value",
         "from_domestic_competition_id", "to_domestic_competition_id",

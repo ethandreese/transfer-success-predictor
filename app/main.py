@@ -105,7 +105,11 @@ def describe_components(r):
         {
             "label": "Market value growth",
             "value": round(float(r["value_growth_pct"]), 1),
-            "description": f"{eur_m(r['value_before'])} → {eur_m(r['value_after'])} market value",
+            "description": (
+                f"{eur_m(r['value_before'])} → peaked at {eur_m(r['value_peak'])} (now {eur_m(r['value_after'])})"
+                if r["value_peak"] > r["value_after"] * 1.05
+                else f"{eur_m(r['value_before'])} → {eur_m(r['value_after'])} market value"
+            ),
         },
         {
             "label": "Playing time",

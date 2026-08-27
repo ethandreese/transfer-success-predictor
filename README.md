@@ -30,8 +30,15 @@ vary by position** (see `data/score_weights.json`):
   "Haaland")
 - **performance change** — improved or declined vs. their league-relative
   level before the move, also position-ranked
-- **market value growth** — from just before the transfer to near the
-  end of the tenure
+- **market value growth** — blends two signals: 60% growth to the
+  *peak* value reached at any point during the tenure, 40% growth to the
+  value near the end of it. End-value alone unfairly reads a long,
+  valuable career as a decline, since even the best players' market value
+  falls with age by the time they eventually leave — Heung-min Son joined
+  Tottenham valued at ~€16m, peaked at €90m mid-tenure, and was worth only
+  ~€20m a decade later when he left. Peak alone would ignore a real
+  late-tenure collapse (injury, loss of form), so end-value is still kept
+  as a smaller factor.
 - **playing time** — blends two signals: 60% percent of the *team's actual
   games* played during the tenure (from `games.csv`/`club_games.csv` — the
   club's full match schedule across all competitions, not just games the

@@ -201,3 +201,25 @@ def test_playing_time_surfaces_injury_hit_tenures_raw_count_hides():
     assert r["post_apps"] > 150  # a large raw number on its own
     assert r["pct_team_games_played"] < 0.65  # but well under two-thirds of games available
     assert r["playing_time_pct"] < 60  # so playing_time should NOT read as elite
+
+
+def test_value_growth_credits_peak_not_just_end_of_tenure_value():
+    """
+    Heung-min Son joined Tottenham valued at ~16-25m, peaked at ~90m
+    mid-tenure, and was worth only ~20m a decade later when he finally
+    left (natural age-related decline after a long, valuable career).
+    Measuring value growth by the end-of-tenure snapshot alone would read
+    this as a flat/unremarkable outcome; the peak value he reached is what
+    actually reflects the asset the club held.
+    """
+    df = pd.read_csv(os.path.join(DATA_DIR, "transfers_processed.csv"))
+    son = df[(df["name"] == "Heung-min Son") & (df["to_club_name"] == "Tottenham")].iloc[0]
+    assert son["value_peak"] >= son["value_before"] * 3  # a real, large peak appreciation
+    assert son["value_after"] < son["value_before"] * 1.5  # end-of-tenure snapshot alone looks unremarkable
+    assert son["value_growth_pct"] > 75  # but the score should credit the peak he reached
+
+
+def test_value_peak_never_below_value_after(transfers):
+    # value_peak is a max over the tenure window, so by construction it
+    # can never be lower than the (also-in-window) end-of-tenure value.
+    assert (transfers["value_peak"] >= transfers["value_after"]).all()
