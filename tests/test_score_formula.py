@@ -176,3 +176,28 @@ def test_resale_profit_rewards_a_profitable_flip():
     assert r["has_resale_data"]
     assert r["next_transfer_fee"] > 100_000_000
     assert r["resale_profit_pct"] > 95
+
+
+def test_pct_team_games_played_is_bounded(transfers):
+    assert transfers["pct_team_games_played"].between(0, 1).all()
+    assert transfers["team_games_in_tenure"].ge(1).all()
+
+
+def test_pct_team_games_played_matches_apps_over_team_games(transfers):
+    sample = transfers.sample(n=min(200, len(transfers)), random_state=11)
+    expected = (sample["post_apps"] / sample["team_games_in_tenure"].clip(lower=1)).clip(upper=1.0)
+    assert (sample["pct_team_games_played"] - expected).abs().max() < 1e-9
+
+
+def test_playing_time_surfaces_injury_hit_tenures_raw_count_hides():
+    """
+    Dembélé made 185 appearances for Barcelona over 6 years - a big raw
+    number - but that's only 57% of the games Barcelona actually played in
+    that span (long-term injury problems). Playing time should reflect
+    that poor availability, not just the large raw count.
+    """
+    df = pd.read_csv(os.path.join(DATA_DIR, "transfers_processed.csv"))
+    r = df[(df["name"] == "Ousmane Dembélé") & (df["to_club_name"] == "Barcelona")].iloc[0]
+    assert r["post_apps"] > 150  # a large raw number on its own
+    assert r["pct_team_games_played"] < 0.65  # but well under two-thirds of games available
+    assert r["playing_time_pct"] < 60  # so playing_time should NOT read as elite

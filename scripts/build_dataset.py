@@ -115,6 +115,38 @@ def load_appearances():
     return df
 
 
+def load_team_games():
+    """
+    One row per (club, game) across all competitions the club played in,
+    used to work out what share of the team's actual games a player
+    appeared in during their tenure - not just a raw appearance count.
+    """
+    games = pd.read_csv(
+        os.path.join(RAW_DIR, "games.csv"), usecols=["game_id", "date"], parse_dates=["date"],
+    )
+    club_games = pd.read_csv(os.path.join(RAW_DIR, "club_games.csv"), usecols=["game_id", "club_id"])
+    return club_games.merge(games, on="game_id", how="left")
+
+
+def compute_team_games_in_window(transfers, team_games):
+    """
+    For each transfer, how many games the *new club* played from the
+    transfer date through the end of the player's tenure there (all
+    competitions - league, domestic cup, continental). This is the
+    denominator for "percent of available games played" - see
+    compute_windowed_appearance_stats for the matching numerator.
+    """
+    merged = team_games.merge(
+        transfers[["transfer_idx", "to_club_id", "transfer_date", "tenure_end"]],
+        left_on="club_id", right_on="to_club_id", how="inner",
+    )
+    in_window = (
+        (merged["date"] > merged["transfer_date"]) & (merged["date"] <= merged["tenure_end"])
+    )
+    counts = merged[in_window].groupby("transfer_idx").size().rename("team_games_in_tenure")
+    return counts
+
+
 MIN_LEAGUE_BASELINE_MINUTES = 5000
 
 
@@ -251,19 +283,23 @@ def main():
     clubs = load_clubs()
     appearances = load_appearances()
     valuations = load_valuations()
+    team_games = load_team_games()
     print(f"{len(transfers):,} candidate transfers in {MIN_DATE.date()}..{MAX_DATE.date()}")
 
     print("Computing league/position goal-contribution baselines...")
     league_position_baseline, position_fallback = compute_league_position_baselines(appearances, players)
 
+    print("Computing team games played during each tenure...")
+    team_games_in_tenure = compute_team_games_in_window(transfers, team_games)
+
     print("Computing pre/post appearance windows...")
     pre, post = compute_windowed_appearance_stats(transfers, appearances)
 
-    df = transfers.set_index("transfer_idx").join(pre).join(post)
+    df = transfers.set_index("transfer_idx").join(pre).join(post).join(team_games_in_tenure)
     df[["pre_apps", "post_apps", "pre_minutes", "post_minutes", "pre_goals", "post_goals",
-        "pre_assists", "post_assists"]] = df[[
+        "pre_assists", "post_assists", "team_games_in_tenure"]] = df[[
         "pre_apps", "post_apps", "pre_minutes", "post_minutes", "pre_goals", "post_goals",
-        "pre_assists", "post_assists",
+        "pre_assists", "post_assists", "team_games_in_tenure",
     ]].fillna(0)
 
     before = len(df)
@@ -342,7 +378,19 @@ def main():
     value_growth = df["value_after"] / df["value_before"].clip(lower=1)
     df["value_growth_pct"] = percentile_rank(value_growth)
 
-    df["playing_time_pct"] = percentile_rank(df["post_apps"])
+    # Playing time blends two different signals: raw appearance count
+    # rewards a long, sustained presence at the club, but says nothing
+    # about *availability* - a player who stayed 4 years and made 120
+    # appearances out of 500 team games (heavily injury-hit) looks similar
+    # to one who made 120 out of 140 (a nailed-on starter for a shorter
+    # spell) on raw count alone. Percent of the team's actual games played
+    # surfaces that difference (injuries, rotation, loss of form) directly,
+    # so the two are blended rather than using either alone.
+    df["pct_team_games_played"] = (df["post_apps"] / df["team_games_in_tenure"].clip(lower=1)).clip(upper=1.0)
+    df["playing_time_pct"] = (
+        0.6 * percentile_rank(df["pct_team_games_played"])
+        + 0.4 * percentile_rank(df["post_apps"])
+    )
 
     # Value-for-money: did performance level justify what was paid relative
     # to the player's own market value at the time, rather than relative to
@@ -395,6 +443,7 @@ def main():
         "pre_apps", "pre_minutes", "pre_goals", "pre_assists",
         "pre_ga_p90", "pre_goals_p90", "pre_mins_per_app",
         "post_apps", "post_minutes", "post_goals", "post_assists", "post_ga_p90",
+        "team_games_in_tenure", "pct_team_games_played",
         "from_league_ga_baseline", "to_league_ga_baseline",
         "pre_ga_p90_vs_league", "post_ga_p90_vs_league", "expected_post_ga_p90_vs_league",
         "tenure_days", "still_at_club",

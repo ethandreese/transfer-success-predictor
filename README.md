@@ -32,8 +32,16 @@ vary by position** (see `data/score_weights.json`):
   level before the move, also position-ranked
 - **market value growth** — from just before the transfer to near the
   end of the tenure
-- **playing time** — total appearances made (established starter vs.
-  bench/injury-plagued)
+- **playing time** — blends two signals: 60% percent of the *team's actual
+  games* played during the tenure (from `games.csv`/`club_games.csv` — the
+  club's full match schedule across all competitions, not just games the
+  player featured in), 40% raw appearance count. The percentage catches
+  injuries/rotation that a raw count hides — Dembélé made 185 appearances
+  for Barcelona over 6 years (a big number on its own), but that's only
+  57% of the 327 games Barcelona actually played in that span, versus
+  Haaland at 83% for Man City. Raw count is kept alongside it so a long,
+  genuinely sustained career at the club still counts for something beyond
+  the percentage alone.
 - **value for money** — performance level vs. what was paid *relative
   to the player's market value at the time* (comparing fees to the whole
   dataset's fee distribution made any nine-figure move look "expensive"
@@ -156,10 +164,16 @@ names/€m rather than raw feature values.
 - Only transfers with ≥10 appearances in both the year before and the whole
   tenure after are included (~7,300 of ~159k), which skews the training
   data toward established first-team players rather than fringe/loan moves.
-- "Playing time" is a raw appearance count, so a longer tenure has more
-  chances to accumulate it than a short, excellent one — a deliberate
-  choice (staying and playing for years is itself part of "success"), but
-  worth knowing.
+- "Playing time" still keeps a 40% raw-count component alongside the
+  percent-of-games-played signal, so a longer tenure still has somewhat
+  more room to accumulate a high score than a short, excellent one — a
+  deliberate choice (sustained presence is itself part of "success"), but
+  worth knowing. The "games the team played" denominator counts all
+  competitions combined (league, domestic cup, continental) rather than
+  just league games, on the view that squad rotation happens across all of
+  them - but that also means a player who's rested for cup games (not
+  unavailable, just rotated) looks identical to one who's actually
+  injured; the data doesn't distinguish the two.
 - Predicting a *new* hypothetical transfer is meaningfully less reliable
   than the historical scores shown for known transfers, since the model
   only sees pre-transfer information by construction.

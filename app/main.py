@@ -108,7 +108,12 @@ def describe_components(r):
         {
             "label": "Playing time",
             "value": round(float(r["playing_time_pct"]), 1),
-            "description": f"{int(r['post_apps'])} appearances over the tenure at {r['to_club_name']}",
+            "description": (
+                f"{int(r['post_apps'])} of {int(r['team_games_in_tenure'])} games "
+                f"{r['to_club_name']} played during the tenure "
+                f"({r['pct_team_games_played'] * 100:.0f}% - captures injuries/rotation, "
+                f"blended with raw appearance count for sustained presence)"
+            ),
         },
         {
             "label": "Value for money",
