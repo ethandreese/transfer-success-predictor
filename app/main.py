@@ -93,8 +93,13 @@ def describe_components(r):
             "label": "Performance change",
             "value": round(float(r["perf_delta_pct"]), 1),
             "description": (
-                f"{r['post_ga_p90_vs_league']:.1f}x league average now, vs. ~{r['expected_post_ga_p90_vs_league']:.1f}x "
-                f"expected (started at {r['pre_ga_p90_vs_league']:.1f}x)"
+                f"Started at {r['pre_ga_p90_vs_league']:.1f}x league average, now at "
+                f"{r['post_ga_p90_vs_league']:.1f}x — beat the ~{r['expected_post_ga_p90_vs_league']:.1f}x "
+                f"expected for a player starting that high (some pullback from a peak is normal)"
+                if r["post_ga_p90_vs_league"] >= r["expected_post_ga_p90_vs_league"] else
+                f"Started at {r['pre_ga_p90_vs_league']:.1f}x league average, now at "
+                f"{r['post_ga_p90_vs_league']:.1f}x — below the ~{r['expected_post_ga_p90_vs_league']:.1f}x "
+                f"expected for a player starting that high"
             ),
         },
         {
