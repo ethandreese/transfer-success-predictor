@@ -292,26 +292,55 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, top_k: int 
     transparent stand-in for a proper SHAP explanation.
     """
     reference = metadata["reference_values"]
+    position = feature_row["position"].iloc[0]
     context = {
-        "position": feature_row["position"].iloc[0],
+        "position": position,
         "from_domestic_competition_id": feature_row["from_domestic_competition_id"].iloc[0],
     }
+
     # log_transfer_fee and fee_to_value_ratio are both 0 for free transfers
     # (out-of-contract moves, academy graduates), which are >50% of the
     # dataset - so their overall "typical" reference is 0, and comparing an
     # actual fee against "a typical €0m" is misleading. When the transfer
     # being explained itself has a real fee, compare it against the
-    # typical *paid* transfer instead (see reference_values_paid in
-    # train_model.py); a free transfer still compares against the overall
-    # reference, which correctly reflects that being free is itself common.
+    # typical *paid* transfer instead; a free transfer still compares
+    # against the overall reference, which correctly reflects that being
+    # free is itself common.
     is_paid_transfer = feature_row["log_transfer_fee"].iloc[0] > 0
     paid_reference = metadata["reference_values_paid"]
-    paid_fee_features = set(paid_reference)
+
+    # A striker's typical goal contributions, or a goalkeeper's typical
+    # height, look nothing like the whole population's - compare these
+    # against the same-position median instead of a flat one (see
+    # reference_values_by_position in train_model.py).
+    position_conditional = set(metadata["position_conditional_features"])
+    position_reference = metadata["reference_values_by_position"].get(position, {})
+
+    # A €100m fee for a player already valued at €70m isn't remarkable -
+    # a flat "typical paid fee" (~€6m) makes any big-money move for an
+    # already-valuable player look like a wild outlier. Compare the actual
+    # fee against what's typically paid for a player valued this highly
+    # instead (fee_regression: log(fee) ~ log(value), fit on paid
+    # transfers - see train_model.py), using *this* transfer's own
+    # value_before.
+    fee_reg = metadata["fee_regression"]
+    log_value_before = feature_row["log_value_before"].iloc[0]
+    expected_log_fee = fee_reg["intercept"] + fee_reg["slope"] * log_value_before
 
     contributions = []
     for feat in NUMERIC_FEATURES + CATEGORICAL_FEATURES:
-        use_paid_reference = is_paid_transfer and feat in paid_fee_features
-        reference_value = paid_reference[feat] if use_paid_reference else reference[feat]
+        typical_label = "a typical transfer's"
+        if feat == "log_transfer_fee" and is_paid_transfer:
+            reference_value = expected_log_fee
+            typical_label = "what's typically paid for a similarly-valued player:"
+        elif feat in position_conditional and feat in position_reference:
+            reference_value = position_reference[feat]
+            typical_label = f"a typical {POSITION_PLURAL.get(position, position).rstrip('s')}'s"
+        elif is_paid_transfer and feat in paid_reference:
+            reference_value = paid_reference[feat]
+            typical_label = "a typical paid transfer's"
+        else:
+            reference_value = reference[feat]
 
         actual_value = feature_row[feat].iloc[0]
         modified = feature_row.copy()
@@ -321,7 +350,6 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, top_k: int 
         actual_display = format_feature_value(feat, actual_value, context)
         typical_display = format_feature_value(feat, reference_value, context)
         direction = "raising" if contribution >= 0 else "lowering"
-        typical_label = "a typical paid transfer's" if use_paid_reference else "a typical transfer's"
         contributions.append({
             "feature": feat,
             "label": FEATURE_LABELS.get(feat, feat),

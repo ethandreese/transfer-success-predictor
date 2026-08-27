@@ -131,25 +131,40 @@ def test_predict_explanation_shows_league_relative_context(sample_predict_payloa
     """
     'Recent goal contributions per 90' should show the player's output as a
     multiple of their current league's average, not just the raw number -
-    consistent with how historical cards explain performance.
+    consistent with how historical cards explain performance. Checked via
+    explain_all() since this feature's contribution shrank (correctly, see
+    test_predict_performance_explanation_is_position_conditional) and may
+    no longer be in the default top-5 shown by the API.
     """
-    res = client.post("/api/predict", json=sample_predict_payload)
-    ga_row = next(e for e in res.json()["explanation"] if e["feature"] == "pre_ga_p90")
+    all_features = {e["feature"]: e for e in explain_all(sample_predict_payload)}
+    ga_row = all_features["pre_ga_p90"]
     assert "league's average" in ga_row["actual_value"]
     assert "x" in ga_row["actual_value"]
 
 
-def test_predict_fee_explanation_compares_against_paid_transfers_not_frees(sample_predict_payload):
+def test_predict_performance_explanation_is_position_conditional(sample_predict_payload):
     """
-    >50% of transfers in the dataset are free (out-of-contract moves,
-    academy graduates), which drags the overall median fee to €0 - so a
-    real paid fee must be compared against the *typical paid* transfer
-    (~€6m), not "a typical transfer's €0m", which would misleadingly imply
-    paying anything at all is unusual.
+    An attacker's typical goal contributions (~0.47/90) look nothing like
+    the whole population's (~0.20/90, dragged down by defenders and
+    goalkeepers) - the "typical" comparison should reflect that, not a
+    flat cross-position number.
+    """
+    all_features = {e["feature"]: e for e in explain_all(sample_predict_payload)}
+    ga_row = all_features["pre_ga_p90"]
+    assert "attacker" in ga_row["detail"]
+    assert "0.2" not in ga_row["typical_value"]  # the misleading flat cross-position median
+
+
+def test_predict_fee_explanation_compares_against_value_expectation_not_flat_average(sample_predict_payload):
+    """
+    A €50m fee for a player worth €60m isn't remarkable - it should be
+    compared against what's typically paid for a similarly-valued player
+    (fee_regression, fit on paid transfers), not a single flat "typical
+    paid fee" that ignores the player's own value entirely.
     """
     all_features = {e["feature"]: e for e in explain_all(sample_predict_payload)}
     fee_row = all_features["log_transfer_fee"]
-    assert "paid transfer" in fee_row["detail"]
+    assert "similarly-valued player" in fee_row["detail"]
     assert "€0.0m" not in fee_row["detail"]
     ratio_row = all_features["fee_to_value_ratio"]
     assert "paid transfer" in ratio_row["detail"]
@@ -167,7 +182,27 @@ def test_predict_fee_explanation_for_a_free_transfer_uses_overall_reference():
     all_features = {e["feature"]: e for e in explain_all(payload)}
     fee_row = all_features["log_transfer_fee"]
     assert fee_row["actual_value"] == "free"
-    assert "paid transfer" not in fee_row["detail"]
+    assert "similarly-valued player" not in fee_row["detail"]
+
+
+def test_predict_fee_explanation_reflects_players_own_value():
+    """
+    The exact scenario that motivated this fix: a €100m fee for a player
+    already worth €70m is a modest premium (~1.4x), not a wild outlier -
+    the regression-based reference should land close to the actual value
+    (~€73m expected), not a flat low number.
+    """
+    payload = {
+        "age_at_transfer": 25.0, "height_in_cm": 182.0, "position": "Attack", "foot": "right",
+        "pre_apps": 30.0, "pre_minutes": 2500.0, "pre_goals_p90": 0.5, "pre_ga_p90": 0.7, "pre_mins_per_app": 83.0,
+        "transfer_fee": 100_000_000.0, "value_before": 70_000_000.0,
+        "from_domestic_competition_id": "ES1", "to_domestic_competition_id": "GB1",
+        "from_total_market_value": 400_000_000.0, "to_total_market_value": 900_000_000.0,
+    }
+    all_features = {e["feature"]: e for e in explain_all(payload)}
+    fee_row = all_features["log_transfer_fee"]
+    typical_fee_m = float(fee_row["typical_value"].strip("€m"))
+    assert 50 < typical_fee_m < 100  # in the same ballpark as the player's own €70m value
 
 
 def test_predict_rejects_invalid_payload():

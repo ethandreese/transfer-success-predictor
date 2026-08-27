@@ -43,6 +43,16 @@ CATEGORICAL_FEATURES = [
 ]
 TARGET = "success_score"
 
+# Features whose "typical" value varies a lot by position (a striker's
+# goal contributions, a goalkeeper's height) - comparing them against the
+# whole population regardless of position produces misleading prediction
+# explanations (see reference_values_by_position below).
+POSITION_CONDITIONAL_FEATURES = [
+    "age_at_transfer", "height_in_cm", "pre_apps", "pre_minutes",
+    "pre_goals_p90", "pre_ga_p90", "pre_mins_per_app",
+    "log_value_before", "log_from_club_value", "log_to_club_value", "club_quality_ratio",
+]
+
 
 def add_derived_features(df):
     """Add the log-transformed and NaN-filled columns NUMERIC_FEATURES/CATEGORICAL_FEATURES expect but transfers_processed.csv doesn't already have."""
@@ -134,6 +144,28 @@ def main():
     }
     pct_free_transfers = float((df["transfer_fee"].fillna(0) == 0).mean())
 
+    # Same idea, more general: a striker's typical goal contributions, or a
+    # goalkeeper's typical height, are nothing like the whole population's -
+    # e.g. attackers average 0.46 goal contributions/90 pre-transfer,
+    # defenders 0.09, so comparing either against an overall median of 0.20
+    # is misleading in both directions. Median per position, used instead
+    # of the flat reference for POSITION_CONDITIONAL_FEATURES.
+    reference_values_by_position = {
+        position: {f: float(sub[f].median()) for f in POSITION_CONDITIONAL_FEATURES}
+        for position, sub in df.groupby("position")
+    }
+
+    # A €100m fee for a player already valued at €70m isn't remarkable -
+    # it's a ~1.4x premium, in line with what similarly-valued players go
+    # for. But comparing the raw €100m against a flat "typical paid fee"
+    # (~€6m, dragged down by many cheaper deals) makes it look like a huge
+    # outlier regardless of the player's own value. Fit fee ~ value (in log
+    # space, paid transfers only) so the reference for a given prediction
+    # is "what's typically paid for a player valued this highly", not a
+    # single number for everyone (see app/main.py:explain_prediction).
+    fee_slope, fee_intercept = np.polyfit(paid["log_value_before"], paid["log_transfer_fee"], 1)
+    fee_regression = {"slope": float(fee_slope), "intercept": float(fee_intercept)}
+
     os.makedirs(MODEL_DIR, exist_ok=True)
     joblib.dump(pipeline, os.path.join(MODEL_DIR, "model.joblib"))
     joblib.dump(
@@ -152,6 +184,9 @@ def main():
             "n_test": len(test),
             "reference_values": reference_values,
             "reference_values_paid": reference_values_paid,
+            "reference_values_by_position": reference_values_by_position,
+            "position_conditional_features": POSITION_CONDITIONAL_FEATURES,
+            "fee_regression": fee_regression,
             "pct_free_transfers": round(pct_free_transfers, 3),
         }, f, indent=2)
     print(f"Saved model + metadata to {MODEL_DIR}")

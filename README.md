@@ -179,6 +179,56 @@ smaller than paid-vs-free variation, transfer fee's contribution shrank
 and often no longer makes the top-5 explanation — that's the fix working
 as intended, not a regression.
 
+**Every "typical" reference is now contextual, not a single flat number
+for the whole dataset.** A flat average is a weak baseline for two
+reasons, both reported by hands-on use of the app: (1) it ignores
+position — an attacker's typical goal contributions (~0.47/90) look
+nothing like the whole population's (~0.20/90, dragged down by defenders
+and goalkeepers averaging near 0), so *every* attacker's performance
+looked artificially inflated against it, and vice versa for defenders; (2)
+for fee specifically, it ignores the player's own market value — a €100m
+fee for a player already valued at €70m is a modest ~1.4x premium, in
+line with what similarly-valued players go for, but comparing the raw
+€100m against a flat "typical paid fee" (~€6m, dragged down by many
+cheaper deals) made it look like a wild outlier regardless of context.
+Two fixes, both in `scripts/train_model.py`:
+
+- `reference_values_by_position` — the median of each position-sensitive
+  feature (age, height, appearances, minutes, goal rates, market values)
+  computed *within that position*, used instead of the flat median for
+  `position_conditional_features`. The explanation now says "vs. a typical
+  attacker's 0.47 per 90" instead of "vs. a typical transfer's 0.20 per
+  90".
+- `fee_regression` — a simple fit of `log(fee) ~ log(market value)` on
+  paid transfers, so the fee reference for any given prediction is "what's
+  typically paid for a player valued this highly" (e.g. ~€73m for a €70m
+  valuation) rather than one number for everyone. This is the same
+  regression-to-expectation pattern already used for the historical
+  "performance change" component (`compute_expected_post_performance`),
+  applied here to fee instead of performance.
+
+Concretely, for a €100m fee on a €70m-valued player, "Transfer fee" used
+to read "*vs. a typical transfer's €0m, raising the score by 7.5 pts*"
+(comparing against mostly-free transfers) and then, after the first fee
+fix, "*vs. a typical paid transfer's €6m, raising the score by 1.2 pts*"
+(comparing against a flat paid average) — both frame paying anything
+substantial as unusually large. It now reads "*vs. what's typically paid
+for a similarly-valued player: €72.7m, **lowering** the score by 1.2
+pts*" — correctly recognizing that €100m is a modest premium over a
+€70m valuation, not an outlier, and that paying somewhat above market
+rate for a player is if anything a mild risk factor rather than
+inherently a sign of a big, ambitious move.
+
+**"Compare to similar transfers" already exists as a separate mechanism**
+(`find_comparables`, a nearest-neighbor lookup over the full feature
+space) and powers both the "most similar historical transfers" list and
+the predicted score's likely range — that part was already contextual by
+design. The reference-value work above fixes the *per-feature* SHAP-style
+breakdown specifically, which used flat dataset-wide statistics rather
+than the nearest-neighbor mechanism (using neighbors chosen by a feature
+to explain that same feature would be circular — the neighbors would
+already be similar on it by construction, trivializing the comparison).
+
 ## Pages
 
 - **`/`** — predict a hypothetical transfer: search a real player, pick a
@@ -260,20 +310,35 @@ only used to regenerate `data/*.csv`.
 
 ## Running it
 
+The trained model and processed data are already committed to the repo,
+so if `.venv/` already exists (it's gitignored, but you may have set it
+up already), just start the server:
+
 ```bash
-python3 -m venv .venv
-./.venv/bin/pip install -r requirements.txt
-
-# only needed if you want to regenerate data/*.csv from scratch:
-./.venv/bin/python -c "import kagglehub; kagglehub.dataset_download('davidcariboo/player-scores')"
-./.venv/bin/python scripts/build_dataset.py
-./.venv/bin/python scripts/build_lookups.py
-./.venv/bin/python scripts/train_model.py
-
 ./.venv/bin/uvicorn app.main:app --reload
 ```
 
 Then open http://localhost:8000.
+
+**First-time setup** (no `.venv/` yet):
+
+```bash
+python3 -m venv .venv
+./.venv/bin/pip install -r requirements.txt
+./.venv/bin/uvicorn app.main:app --reload
+```
+
+**Regenerating `data/*.csv` and the model from scratch** is only needed if
+you want to rebuild from the raw Transfermarkt dataset (e.g. after it's
+updated, or after changing the scoring formula) — not needed to just run
+the app:
+
+```bash
+./.venv/bin/python -c "import kagglehub; kagglehub.dataset_download('davidcariboo/player-scores')"
+./.venv/bin/python scripts/build_dataset.py
+./.venv/bin/python scripts/build_lookups.py
+./.venv/bin/python scripts/train_model.py
+```
 
 ## Testing
 
