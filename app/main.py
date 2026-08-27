@@ -69,14 +69,39 @@ POSITION_PLURAL = {
 def resale_outcome_phrase(fee_paid, fee_received):
     fee_paid = 0 if pd.isna(fee_paid) else fee_paid
     if fee_received > fee_paid:
-        return "— a profitable flip for the club, regardless of on-pitch performance"
+        return "a profitable flip for the club, regardless of on-pitch performance"
     if fee_received < fee_paid:
-        return "— sold for less than the club paid, a loss independent of on-pitch performance"
-    return "— resold for the same fee paid, breaking even"
+        return "sold for less than the club paid, a loss independent of on-pitch performance"
+    return "resold for the same fee paid, breaking even"
+
+
+def describe_resale_profit(r, eur_m):
+    tenure_years = r["tenure_days"] / 365.25
+    weight_pct = r["resale_weight"] * 100
+    outcome = resale_outcome_phrase(r["transfer_fee"], r["next_transfer_fee"])
+    weight_note = (
+        f"counts for only {weight_pct:.0f}% of the score here — after a {tenure_years:.1f}-year tenure "
+        f"the club already got most of its value from having them play, regardless of the sale price"
+        if tenure_years > 3
+        else f"counts for {weight_pct:.0f}% of the score here, weighted higher since it was a short "
+        f"({tenure_years:.1f}-year) tenure"
+    )
+    return (
+        f"Bought for {eur_m(r['transfer_fee'])}, later resold for {eur_m(r['next_transfer_fee'])} "
+        f"— {outcome}. This {weight_note}."
+    )
+
+
+def eur_m(v):
+    if pd.isna(v) or v == 0:
+        return "free"
+    millions = v / 1_000_000
+    # Sub-million fees are common (e.g. a €300k sale) - one decimal place
+    # keeps them from rounding down to a misleading "€0m".
+    return f"€{millions:.1f}m" if millions < 1 else f"€{millions:.0f}m"
 
 
 def describe_components(r):
-    eur_m = lambda v: "free" if pd.isna(v) or v == 0 else f"€{v / 1_000_000:.0f}m"
     position_plural = POSITION_PLURAL.get(r["position"], r["position"])
     to_league = LEAGUE_NAMES.get(r["to_domestic_competition_id"], r["to_domestic_competition_id"])
     return [
@@ -130,10 +155,7 @@ def describe_components(r):
         {
             "label": "Resale profit",
             "value": round(float(r["resale_profit_pct"]), 1),
-            "description": (
-                f"Bought for {eur_m(r['transfer_fee'])}, later resold for {eur_m(r['next_transfer_fee'])} "
-                + resale_outcome_phrase(r["transfer_fee"], r["next_transfer_fee"])
-            ),
+            "description": describe_resale_profit(r, eur_m),
         },
     ] if bool(r["has_resale_data"]) else [])
 

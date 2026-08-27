@@ -8,7 +8,7 @@ import os
 import pandas as pd
 import pytest
 
-from scripts.build_dataset import POSITION_WEIGHTS, percentile_rank
+from scripts.build_dataset import POSITION_WEIGHTS, RESALE_WEIGHT_CURVE, compute_resale_weight, percentile_rank
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 
@@ -130,8 +130,8 @@ def test_success_score_matches_weighted_components(transfers):
     each row's position weights, and check it matches the stored score.
     Catches a formula/weights drift (e.g. someone edits score_weights.json
     without rerunning build_dataset.py) before it ships. Handles both cases:
-    resale_profit included (when has_resale_data) or its weight dropped and
-    the rest renormalized (when it's unknown).
+    resale_profit included at its tenure-scaled weight (when has_resale_data)
+    or dropped entirely and the rest renormalized (when it's unknown).
     """
     sample = transfers.sample(n=min(300, len(transfers)), random_state=42)
     for _, row in sample.iterrows():
@@ -143,10 +143,12 @@ def test_success_score_matches_weighted_components(transfers):
             + w["playing_time"] * row["playing_time_pct"]
             + w["value_for_money"] * row["value_for_money_pct"]
         )
+        other_weight_sum = 1 - w["resale_profit"]
         if row["has_resale_data"]:
-            recomputed = base + w["resale_profit"] * row["resale_profit_pct"]
+            rescale = (1 - row["resale_weight"]) / other_weight_sum
+            recomputed = base * rescale + row["resale_weight"] * row["resale_profit_pct"]
         else:
-            recomputed = base / (1 - w["resale_profit"])
+            recomputed = base / other_weight_sum
         assert recomputed == pytest.approx(row["success_score"], abs=0.15), (
             f"{row['name']} ({row['position']}): recomputed {recomputed:.2f} "
             f"!= stored {row['success_score']}"
@@ -223,3 +225,32 @@ def test_value_peak_never_below_value_after(transfers):
     # value_peak is a max over the tenure window, so by construction it
     # can never be lower than the (also-in-window) end-of-tenure value.
     assert (transfers["value_peak"] >= transfers["value_after"]).all()
+
+
+def test_resale_weight_decays_with_tenure_length():
+    short = compute_resale_weight(0.25)   # ~3 months
+    medium = compute_resale_weight(2.0)   # ~2 years
+    long = compute_resale_weight(10.0)    # ~a decade
+    assert short > medium > long
+    assert short == pytest.approx(RESALE_WEIGHT_CURVE["max"], abs=0.03)
+    assert long == pytest.approx(RESALE_WEIGHT_CURVE["min"], abs=0.01)
+
+
+def test_resale_weight_column_matches_curve(transfers):
+    resale = transfers[transfers["has_resale_data"]]
+    expected = compute_resale_weight(resale["tenure_days"] / 365.25)
+    assert (resale["resale_weight"] - expected).abs().max() < 1e-9
+
+
+def test_long_tenure_resale_loss_barely_dents_the_score():
+    """
+    Heung-min Son: bought for ~30m, sold ~a decade later for ~22m (a loss
+    on paper), but after a hugely valuable long career the resale outcome
+    should barely move the needle - a low resale_weight, and a score that
+    stays high despite the loss.
+    """
+    df = pd.read_csv(os.path.join(DATA_DIR, "transfers_processed.csv"))
+    son = df[(df["name"] == "Heung-min Son") & (df["to_club_name"] == "Tottenham")].iloc[0]
+    assert son["next_transfer_fee"] < son["transfer_fee"]  # a genuine resale loss
+    assert son["resale_weight"] < 0.03  # counts for almost nothing given the tenure length
+    assert son["success_score"] > 70  # so the score stays high regardless

@@ -53,11 +53,11 @@ vary by position** (see `data/score_weights.json`):
   to the player's market value at the time* (comparing fees to the whole
   dataset's fee distribution made any nine-figure move look "expensive"
   even when it was a bargain for that specific player)
-- **resale profit** (8% weight, only when known — see below) — did the
-  buying club later resell the player for more than they paid? A real,
-  distinct signal from sporting performance: a decent-but-unspectacular
-  player who's later flipped for a profit is a good outcome for the club
-  even if he was never a star there.
+- **resale profit** (weight varies by tenure length, only when known —
+  see below) — did the buying club later resell the player for more than
+  they paid? A real, distinct signal from sporting performance: a
+  decent-but-unspectacular player who's later flipped for a profit is a
+  good outcome for the club even if he was never a star there.
 
 Weights: attackers lean heavily on performance (28%/14%) since goal
 contributions are a real, differentiating signal for them (only 5% have
@@ -76,13 +76,28 @@ The raw data doesn't distinguish loans from permanent transfers, and most
 "next transfer, fee €0" cases are loans rather than real free exits, so
 those are treated as *unknown* rather than guessed at as a loss either way
 — a still-at-the-club or loaned-out player isn't penalized for something
-that hasn't happened yet. When it's unknown, resale profit's 8% weight is
+that hasn't happened yet. When it's unknown, resale profit's weight is
 dropped and the other five weights are renormalized to still sum to 1,
 rather than filling in a fabricated "neutral" score for data that doesn't
 exist. When it *is* known, it's a real signal: Moisés Caicedo joined
 Brighton for free and was later sold to Chelsea for €116m — a textbook
 example of a transfer that looks fine on the pitch but was primarily a
 business win.
+
+**Resale profit's weight scales with tenure length**, from ~20% for a
+transfer of a few months down to ~2% for a decade-long career (see
+`resale_weight_curve` in `data/score_weights.json`: `min + (max - min) *
+exp(-tenure_years / decay_years)`, landing around the old flat 8% at the
+curve's ~2-year reference point). A quick flip weights the eventual sale
+price heavily, since making money on the resale is often close to the
+point of a short-term deal. A long career barely moves regardless of how
+the sale eventually went, because the club already extracted years of
+on-pitch value from the player having played there — Heung-min Son was
+bought for ~€30m and eventually sold for less, a resale loss on paper,
+but after a decade of service that loss counts for only ~2% of his score
+(75.6 overall). The "why this score" breakdown states this explicitly whenever
+it applies, e.g. *"counts for only 3% of the score here — after a
+6.0-year tenure the club already got most of its value..."*
 
 **League-adjusted performance.** Goal contributions are judged against how
 hard it actually is to score in that specific league, not the whole

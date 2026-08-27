@@ -1,5 +1,11 @@
 {
-  "_comment": "Success-score component weights, per position. Goal contributions (perf_level/perf_delta) are a weak-to-meaningless signal for defenders/goalkeepers (most keepers have 0 goals+assists both before and after a move), so their weight is shifted toward value growth, playing time, and value for money instead. resale_profit is weighted low (8%) since it's only known for the ~17% of transfers where the club actually resold the player for a recorded fee - for the rest it's excluded and the other weights are renormalized to sum to 1 (see build_dataset.py). Shared by scripts/build_dataset.py (computes the label) and app/main.py (labels the 'why this score' explanation). Each row must sum to 1.0.",
+  "_comment": "Success-score component weights, per position. Goal contributions (perf_level/perf_delta) are a weak-to-meaningless signal for defenders/goalkeepers (most keepers have 0 goals+assists both before and after a move), so their weight is shifted toward value growth, playing time, and value for money instead. resale_profit's weight is NOT the flat number below - it varies by tenure length per resale_weight_curve (a quick flip weights resale heavily since that's often the point of the deal; a long career barely moves regardless of the eventual sale price, since the club already extracted years of value). The number here is just the weight at the curve's ~2-year reference point, kept for documentation. Only known for the ~17% of transfers where the club actually resold the player for a recorded fee - for the rest it's excluded and the other weights are renormalized to sum to 1 (see build_dataset.py). Shared by scripts/build_dataset.py (computes the label) and app/main.py (labels the 'why this score' explanation). Each position row (including resale_profit) must sum to 1.0.",
+  "resale_weight_curve": {
+    "_comment": "resale_weight(tenure_years) = min + (max - min) * exp(-tenure_years / decay_years). A few months' tenure -> ~18-20% weight; ~2 years -> ~8.6% (close to the old flat 8%); 6+ years -> under 3%.",
+    "max": 0.20,
+    "min": 0.02,
+    "decay_years": 2.0
+  },
   "Attack":     {"perf_level": 0.28, "perf_delta": 0.14, "value_growth": 0.18, "playing_time": 0.09, "value_for_money": 0.23, "resale_profit": 0.08},
   "Midfield":   {"perf_level": 0.23, "perf_delta": 0.11, "value_growth": 0.18, "playing_time": 0.12, "value_for_money": 0.28, "resale_profit": 0.08},
   "Defender":   {"perf_level": 0.14, "perf_delta": 0.07, "value_growth": 0.23, "playing_time": 0.15, "value_for_money": 0.33, "resale_profit": 0.08},

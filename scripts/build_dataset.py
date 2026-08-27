@@ -23,7 +23,12 @@ import pandas as pd
 
 SCORE_WEIGHTS_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "score_weights.json")
 with open(SCORE_WEIGHTS_PATH) as f:
-    POSITION_WEIGHTS = {k: v for k, v in json.load(f).items() if not k.startswith("_")}
+    _score_weights_raw = json.load(f)
+RESALE_WEIGHT_CURVE = _score_weights_raw["resale_weight_curve"]
+POSITION_WEIGHTS = {
+    k: v for k, v in _score_weights_raw.items()
+    if not k.startswith("_") and k != "resale_weight_curve"
+}
 
 RAW_DIR = os.environ.get(
     "TRANSFERMARKT_RAW_DIR",
@@ -270,6 +275,18 @@ def percentile_rank(series):
     return series.rank(pct=True) * 100
 
 
+def compute_resale_weight(tenure_years):
+    """
+    How much resale profit should count, as a function of tenure length -
+    see data/score_weights.json's resale_weight_curve. A quick flip weights
+    the resale outcome heavily (that's often the point of the deal); a long
+    career barely moves regardless of the eventual sale price, since the
+    club already extracted years of on-pitch value from the player.
+    """
+    c = RESALE_WEIGHT_CURVE
+    return c["min"] + (c["max"] - c["min"]) * np.exp(-tenure_years / c["decay_years"])
+
+
 def compute_expected_post_performance(df):
     """
     Fit post_ga_p90_vs_league ~ pre_ga_p90_vs_league per position (simple
@@ -471,8 +488,17 @@ def main():
         + w["playing_time"] * df["playing_time_pct"]
         + w["value_for_money"] * df["value_for_money_pct"]
     )
-    with_resale = base_score + w["resale_profit"] * df["resale_profit_pct"]
-    without_resale = base_score / (1 - w["resale_profit"])
+    other_weight_sum = 1 - w["resale_profit"]  # e.g. 0.92 - the "reference" weight left for the other 5
+
+    # When resale data IS known, how much it counts scales with tenure
+    # length (compute_resale_weight) rather than the flat reference weight
+    # above - a quick flip weights the resale outcome heavily, a long
+    # career barely at all, since the club already extracted years of
+    # value regardless of the eventual sale price.
+    df["resale_weight"] = compute_resale_weight(df["tenure_days"] / 365.25)
+    rescale = (1 - df["resale_weight"]) / other_weight_sum
+    with_resale = base_score * rescale + df["resale_weight"] * df["resale_profit_pct"]
+    without_resale = base_score / other_weight_sum
     df["success_score"] = np.where(has_resale_data, with_resale, without_resale).round(1)
 
     cols = [
@@ -489,7 +515,7 @@ def main():
         "from_league_ga_baseline", "to_league_ga_baseline",
         "pre_ga_p90_vs_league", "post_ga_p90_vs_league", "expected_post_ga_p90_vs_league",
         "tenure_days", "still_at_club",
-        "next_transfer_fee", "has_resale_data",
+        "next_transfer_fee", "has_resale_data", "resale_weight",
         "perf_level_pct", "perf_delta_pct", "value_growth_pct",
         "playing_time_pct", "value_for_money_pct", "resale_profit_pct",
         "success_score",
