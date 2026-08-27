@@ -6,9 +6,23 @@ raw Transfermarkt dataset.
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.main import app, build_feature_row, explain_prediction, pipeline, PredictRequest
 
 client = TestClient(app)
+
+
+def explain_all(payload_dict):
+    """
+    Call explain_prediction() directly (bypassing the HTTP layer's default
+    top_k=5) so tests can check a feature's contribution/detail even when
+    it isn't one of the top 5 shown in the UI - e.g. transfer fee often
+    isn't, now that it's compared against a sensible paid-transfer
+    reference instead of the free-transfer-skewed overall one.
+    """
+    req = PredictRequest(**payload_dict)
+    feature_row = build_feature_row(req)
+    raw_score = float(pipeline.predict(feature_row)[0])
+    return explain_prediction(feature_row, raw_score, top_k=100)
 
 
 @pytest.fixture
@@ -123,6 +137,37 @@ def test_predict_explanation_shows_league_relative_context(sample_predict_payloa
     ga_row = next(e for e in res.json()["explanation"] if e["feature"] == "pre_ga_p90")
     assert "league's average" in ga_row["actual_value"]
     assert "x" in ga_row["actual_value"]
+
+
+def test_predict_fee_explanation_compares_against_paid_transfers_not_frees(sample_predict_payload):
+    """
+    >50% of transfers in the dataset are free (out-of-contract moves,
+    academy graduates), which drags the overall median fee to €0 - so a
+    real paid fee must be compared against the *typical paid* transfer
+    (~€6m), not "a typical transfer's €0m", which would misleadingly imply
+    paying anything at all is unusual.
+    """
+    all_features = {e["feature"]: e for e in explain_all(sample_predict_payload)}
+    fee_row = all_features["log_transfer_fee"]
+    assert "paid transfer" in fee_row["detail"]
+    assert "€0.0m" not in fee_row["detail"]
+    ratio_row = all_features["fee_to_value_ratio"]
+    assert "paid transfer" in ratio_row["detail"]
+
+
+def test_predict_fee_explanation_for_a_free_transfer_uses_overall_reference():
+    """A genuinely free transfer (fee=0) should display as "free", compared against the overall reference (which is itself mostly free transfers) rather than a nonsensical "paid" comparison."""
+    payload = {
+        "age_at_transfer": 24.0, "height_in_cm": 182.0, "position": "Attack", "foot": "right",
+        "pre_apps": 30.0, "pre_minutes": 2500.0, "pre_goals_p90": 0.5, "pre_ga_p90": 0.7, "pre_mins_per_app": 83.0,
+        "transfer_fee": 0.0, "value_before": 60_000_000.0,
+        "from_domestic_competition_id": "L1", "to_domestic_competition_id": "GB1",
+        "from_total_market_value": 400_000_000.0, "to_total_market_value": 900_000_000.0,
+    }
+    all_features = {e["feature"]: e for e in explain_all(payload)}
+    fee_row = all_features["log_transfer_fee"]
+    assert fee_row["actual_value"] == "free"
+    assert "paid transfer" not in fee_row["detail"]
 
 
 def test_predict_rejects_invalid_payload():

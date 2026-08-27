@@ -44,5 +44,10 @@
     "foot": "right",
     "from_domestic_competition_id": "IT1",
     "to_domestic_competition_id": "GB1"
-  }
+  },
+  "reference_values_paid": {
+    "log_transfer_fee": 15.607270193858982,
+    "fee_to_value_ratio": 1.0
+  },
+  "pct_free_transfers": 0.54
 }

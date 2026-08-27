@@ -160,6 +160,25 @@ lowering the score by 11.1 pts" — a simple, transparent stand-in for a
 proper SHAP explanation, with league codes and fees resolved to readable
 names/€m rather than raw feature values.
 
+**The "typical" reference for fee-related features is conditional on
+whether the transfer being explained is itself paid.** Over half of all
+transfers are free (an out-of-contract move or an academy graduate signing
+- a fundamentally different circumstance from an active paid deal), which
+drags the *overall* median transfer fee to €0. Comparing a real €50m fee
+against "a typical transfer's €0m" is misleading — it reads as if paying
+anything at all is unusual, rather than telling you whether €50m is high
+or low *among paid deals*. So log_transfer_fee and fee_to_value_ratio each
+have a second reference value computed only from transfers with a real fee
+(`reference_values_paid` in metadata.json, e.g. a typical paid fee is
+~€6m, a typical paid fee-to-value ratio is ~1.0x) — used instead of the
+overall reference whenever the transfer being explained has `transfer_fee
+> 0`. A genuinely free transfer still compares against the overall
+reference, which correctly reflects that being free is itself common. One
+side effect worth knowing: since paid-vs-paid variation is naturally
+smaller than paid-vs-free variation, transfer fee's contribution shrank
+and often no longer makes the top-5 explanation — that's the fix working
+as intended, not a regression.
+
 ## Pages
 
 - **`/`** — predict a hypothetical transfer: search a real player, pick a

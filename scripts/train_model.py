@@ -119,6 +119,21 @@ def main():
     reference_values = {f: float(df[f].median()) for f in NUMERIC_FEATURES}
     reference_values.update({f: df[f].mode().iloc[0] for f in CATEGORICAL_FEATURES})
 
+    # log_transfer_fee and fee_to_value_ratio are both 0 for free transfers,
+    # which are >50% of the dataset (out-of-contract moves, academy
+    # graduates - a fundamentally different circumstance from an active
+    # paid deal). That drags their overall median to 0, so "vs. a typical
+    # transfer's €0m" is a misleading comparison for any transfer that DID
+    # involve a fee. Separate "typical paid transfer" references, used
+    # instead of the overall ones whenever the transfer being explained
+    # itself has a nonzero fee (see app/main.py:explain_prediction).
+    paid = df[df["transfer_fee"].fillna(0) > 0]
+    reference_values_paid = {
+        "log_transfer_fee": float(paid["log_transfer_fee"].median()),
+        "fee_to_value_ratio": float(paid["fee_to_value_ratio"].median()),
+    }
+    pct_free_transfers = float((df["transfer_fee"].fillna(0) == 0).mean())
+
     os.makedirs(MODEL_DIR, exist_ok=True)
     joblib.dump(pipeline, os.path.join(MODEL_DIR, "model.joblib"))
     joblib.dump(
@@ -136,6 +151,8 @@ def main():
             "n_train": len(train),
             "n_test": len(test),
             "reference_values": reference_values,
+            "reference_values_paid": reference_values_paid,
+            "pct_free_transfers": round(pct_free_transfers, 3),
         }, f, indent=2)
     print(f"Saved model + metadata to {MODEL_DIR}")
 
