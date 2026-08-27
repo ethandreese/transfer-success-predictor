@@ -26,6 +26,18 @@ NUMERIC_FEATURES = [
     "log_transfer_fee", "log_value_before", "fee_to_value_ratio", "club_quality_ratio",
     "log_from_club_value", "log_to_club_value",
 ]
+# Tried adding pre_ga_p90_vs_league / log_from_league_baseline /
+# log_to_league_baseline (the same league-adjustment used in the success
+# score label) as model inputs too - tested empirically against several
+# combinations and model configs (see git history / README), and none
+# beat this feature set's R^2 on the temporal holdout. The destination
+# league category already captures most of that signal for leagues with
+# enough training data, and the ~4,400-row training set is too small to
+# reliably learn the added continuous relationships on top of that. Kept
+# the simpler, empirically-better feature set rather than adding
+# complexity that doesn't pay off; league_baselines.csv is still used to
+# add league context to the live prediction explanation (app/main.py),
+# just not as a trained feature.
 CATEGORICAL_FEATURES = [
     "position", "foot", "from_domestic_competition_id", "to_domestic_competition_id",
 ]

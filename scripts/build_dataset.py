@@ -191,6 +191,28 @@ def lookup_league_baseline(league_ids, positions, baseline, fallback):
     )
 
 
+LEAGUE_BASELINES_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "league_baselines.csv")
+FALLBACK_COMPETITION_ID = "_default"
+
+
+def save_league_baselines(league_position_baseline, position_fallback):
+    """
+    Persist the (league, position) -> goal-contributions/90 baselines as a
+    small committed CSV, so app/main.py can compute a league-adjusted
+    performance feature for *live predictions* using the exact same
+    baselines the label was built from, instead of only being available
+    inside this script. Fallback rows use competition_id="_default".
+    """
+    real = league_position_baseline.reset_index()
+    real.columns = ["competition_id", "position", "ga_p90_baseline"]
+    fallback = position_fallback.reset_index()
+    fallback.columns = ["position", "ga_p90_baseline"]
+    fallback.insert(0, "competition_id", FALLBACK_COMPETITION_ID)
+    out = pd.concat([real, fallback], ignore_index=True)
+    out.to_csv(LEAGUE_BASELINES_PATH, index=False)
+    print(f"Wrote {len(out):,} league/position baselines to {LEAGUE_BASELINES_PATH}")
+
+
 def load_valuations():
     df = pd.read_csv(
         os.path.join(RAW_DIR, "player_valuations.csv"),
@@ -324,6 +346,7 @@ def main():
 
     print("Computing league/position goal-contribution baselines...")
     league_position_baseline, position_fallback = compute_league_position_baselines(appearances, players)
+    save_league_baselines(league_position_baseline, position_fallback)
 
     print("Computing team games played during each tenure...")
     team_games_in_tenure = compute_team_games_in_window(transfers, team_games)

@@ -109,6 +109,18 @@ def test_predict_returns_score_range_and_explanation(sample_predict_payload):
         assert isinstance(e["contribution"], (int, float))
 
 
+def test_predict_explanation_shows_league_relative_context(sample_predict_payload):
+    """
+    'Recent goal contributions per 90' should show the player's output as a
+    multiple of their current league's average, not just the raw number -
+    consistent with how historical cards explain performance.
+    """
+    res = client.post("/api/predict", json=sample_predict_payload)
+    ga_row = next(e for e in res.json()["explanation"] if e["feature"] == "pre_ga_p90")
+    assert "league's average" in ga_row["actual_value"]
+    assert "x" in ga_row["actual_value"]
+
+
 def test_predict_rejects_invalid_payload():
     res = client.post("/api/predict", json={"age_at_transfer": 5})
     assert res.status_code == 422

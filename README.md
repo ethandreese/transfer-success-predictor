@@ -199,12 +199,26 @@ names/€m rather than raw feature values.
 - Predicting a *new* hypothetical transfer is meaningfully less reliable
   than the historical scores shown for known transfers, since the model
   only sees pre-transfer information by construction.
-- League-adjustment currently only feeds into the *historical* score (the
-  training label). The predictive model's input features still use raw
-  pre-transfer output rather than a league-adjusted version, so it can
-  only learn league-difficulty effects indirectly (via the destination
-  league as a category); giving it an explicit league-relative input
-  feature is a natural next improvement.
+- League-adjustment only feeds into the *label* (the historical success
+  score), not the model's input features. This was tried deliberately:
+  `data/league_baselines.csv` (the same per-league/position goal-
+  contribution baselines the label uses, persisted as a small artifact so
+  the app can share it) was added as extra model features - a
+  league-adjusted pre-transfer performance number, plus the raw
+  origin/destination league baselines - and tested against 5 feature
+  combinations and 5 model configs on the temporal holdout. None beat the
+  original, simpler feature set's R² (0.103); a couple made it slightly
+  worse. The destination league category already captures most of that
+  signal for leagues with enough training transfers, and ~4,400 training
+  rows isn't enough to reliably learn the added continuous relationships
+  on top of that. Kept the simpler feature set rather than adding
+  complexity that measurably doesn't help - see `scripts/train_model.py`
+  for the reasoning. `league_baselines.csv` is still put to use, just for
+  explanation quality rather than accuracy: the live "why this score"
+  panel shows a player's pre-transfer output as a multiple of their
+  current league's average (e.g. "0.43 per 90 (2.1x their current
+  league's average)"), consistent with how historical cards explain
+  performance, even though the model itself learns from the raw number.
 - League baselines are averaged across the whole 2013–2026 window rather
   than computed per-season, so a league that got notably more/less
   attacking over that time isn't captured precisely.

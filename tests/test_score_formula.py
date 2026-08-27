@@ -254,3 +254,22 @@ def test_long_tenure_resale_loss_barely_dents_the_score():
     assert son["next_transfer_fee"] < son["transfer_fee"]  # a genuine resale loss
     assert son["resale_weight"] < 0.03  # counts for almost nothing given the tenure length
     assert son["success_score"] > 70  # so the score stays high regardless
+
+
+def test_league_baselines_csv_has_real_and_fallback_rows():
+    """
+    league_baselines.csv is a shared artifact: build_dataset.py uses it to
+    build the success-score label, and app/main.py separately loads it to
+    add league context to live prediction explanations. Both must be able
+    to find a value for any (league, position) via a "_default" fallback.
+    """
+    baselines = pd.read_csv(os.path.join(DATA_DIR, "league_baselines.csv"))
+    assert set(baselines.columns) == {"competition_id", "position", "ga_p90_baseline"}
+    assert (baselines["competition_id"] == "_default").sum() >= 4  # one per position
+    real = baselines[baselines["competition_id"] != "_default"]
+    assert real["competition_id"].nunique() > 20  # broad league coverage
+    assert (baselines["ga_p90_baseline"] >= 0).all()
+
+    bundesliga = baselines[(baselines["competition_id"] == "L1") & (baselines["position"] == "Attack")]
+    premier_league = baselines[(baselines["competition_id"] == "GB1") & (baselines["position"] == "Attack")]
+    assert bundesliga["ga_p90_baseline"].iloc[0] > premier_league["ga_p90_baseline"].iloc[0]

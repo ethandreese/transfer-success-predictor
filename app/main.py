@@ -50,6 +50,20 @@ competitions_df["display_name"] = competitions_df.apply(
 )
 LEAGUE_NAMES = dict(zip(competitions_df["competition_id"], competitions_df["display_name"]))
 
+league_baselines_df = pd.read_csv(os.path.join(DATA_DIR, "league_baselines.csv"))
+LEAGUE_POSITION_BASELINE = {
+    (r["competition_id"], r["position"]): r["ga_p90_baseline"] for _, r in league_baselines_df.iterrows()
+}
+
+
+def league_ga_baseline(competition_id, position):
+    """Goal contributions/90 baseline for this (league, position), falling back to the position's overall average."""
+    return LEAGUE_POSITION_BASELINE.get(
+        (competition_id, position),
+        LEAGUE_POSITION_BASELINE.get(("_default", position), 0.3),
+    )
+
+
 NUMERIC_FEATURES = metadata["numeric_features"]
 CATEGORICAL_FEATURES = metadata["categorical_features"]
 
@@ -182,7 +196,7 @@ FEATURE_LABELS = {
 LOG_FEATURES = {"log_transfer_fee", "log_value_before", "log_from_club_value", "log_to_club_value"}
 
 
-def format_feature_value(feat, value):
+def format_feature_value(feat, value, context=None):
     if feat in LOG_FEATURES:
         value = np.expm1(value)
         return f"€{value / 1_000_000:.1f}m"
@@ -190,7 +204,14 @@ def format_feature_value(feat, value):
         return f"{value:.1f} yrs"
     if feat == "height_in_cm":
         return f"{value:.0f} cm"
-    if feat in ("pre_goals_p90", "pre_ga_p90"):
+    if feat == "pre_ga_p90":
+        base = f"{value:.2f} per 90"
+        if context:
+            baseline = league_ga_baseline(context.get("from_domestic_competition_id"), context.get("position"))
+            if baseline > 0:
+                base += f" ({value / baseline:.1f}x their current league's average)"
+        return base
+    if feat == "pre_goals_p90":
         return f"{value:.2f} per 90"
     if feat == "pre_apps":
         return f"{value:.0f} apps"
@@ -244,6 +265,10 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, top_k: int 
     transparent stand-in for a proper SHAP explanation.
     """
     reference = metadata["reference_values"]
+    context = {
+        "position": feature_row["position"].iloc[0],
+        "from_domestic_competition_id": feature_row["from_domestic_competition_id"].iloc[0],
+    }
     contributions = []
     for feat in NUMERIC_FEATURES + CATEGORICAL_FEATURES:
         actual_value = feature_row[feat].iloc[0]
@@ -251,8 +276,8 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, top_k: int 
         modified[feat] = reference[feat]
         modified_score = float(pipeline.predict(modified)[0])
         contribution = round(base_score - modified_score, 1)
-        actual_display = format_feature_value(feat, actual_value)
-        typical_display = format_feature_value(feat, reference[feat])
+        actual_display = format_feature_value(feat, actual_value, context)
+        typical_display = format_feature_value(feat, reference[feat], context)
         direction = "raising" if contribution >= 0 else "lowering"
         contributions.append({
             "feature": feat,
