@@ -62,6 +62,7 @@ def load_transfers():
     # destination), or until "now" if they haven't moved again since.
     df = df.sort_values(["player_id", "transfer_date"])
     df["tenure_end"] = df.groupby("player_id")["transfer_date"].shift(-1)
+    df["next_transfer_fee"] = df.groupby("player_id")["transfer_fee"].shift(-1)
     df["tenure_end"] = df["tenure_end"].fillna(REFERENCE_NOW)
     df = df.sort_values("transfer_idx").reset_index(drop=True)
     return df
@@ -350,15 +351,39 @@ def main():
     fee_to_value_pct = percentile_rank(df["transfer_fee"].fillna(0) / df["value_before"].clip(lower=1))
     df["value_for_money_pct"] = percentile_rank(df["perf_level_pct"] - fee_to_value_pct)
 
-    # Weights vary by position - see data/score_weights.json for why.
+    # Resale profit: did the buying club later resell the player for more
+    # than they paid? A real, distinct signal from sporting performance - a
+    # decent-but-unspectacular player who's later flipped for a profit is a
+    # good outcome for the club even if he was never a star there. Only
+    # counted when there's a genuine subsequent sale for a recorded fee
+    # (~17% of transfers); the dataset doesn't distinguish loans from
+    # permanent transfers, and most "next transfer, fee=0" cases are loans
+    # rather than real free exits, so those are treated as unknown rather
+    # than guessed at either way.
+    has_resale_data = df["next_transfer_fee"].notna() & (df["next_transfer_fee"] > 0)
+    transfer_fee_filled = df["transfer_fee"].fillna(0)
+    resale_profit_ratio = (
+        (df["next_transfer_fee"] - transfer_fee_filled) / transfer_fee_filled.clip(lower=1_000_000)
+    )
+    df["resale_profit_pct"] = pd.Series(np.nan, index=df.index)
+    df.loc[has_resale_data, "resale_profit_pct"] = percentile_rank(resale_profit_ratio[has_resale_data])
+    df["has_resale_data"] = has_resale_data
+
+    # Weights vary by position - see data/score_weights.json for why. When
+    # resale_profit is unknown for a transfer, its weight is dropped and the
+    # rest are renormalized to still sum to 1, rather than filling in a
+    # fabricated "neutral" score for data we don't actually have.
     w = df["position"].map(POSITION_WEIGHTS).apply(pd.Series)
-    df["success_score"] = (
+    base_score = (
         w["perf_level"] * df["perf_level_pct"]
         + w["perf_delta"] * df["perf_delta_pct"]
         + w["value_growth"] * df["value_growth_pct"]
         + w["playing_time"] * df["playing_time_pct"]
         + w["value_for_money"] * df["value_for_money_pct"]
-    ).round(1)
+    )
+    with_resale = base_score + w["resale_profit"] * df["resale_profit_pct"]
+    without_resale = base_score / (1 - w["resale_profit"])
+    df["success_score"] = np.where(has_resale_data, with_resale, without_resale).round(1)
 
     cols = [
         "player_id", "name", "transfer_date", "from_club_name", "to_club_name",
@@ -373,8 +398,9 @@ def main():
         "from_league_ga_baseline", "to_league_ga_baseline",
         "pre_ga_p90_vs_league", "post_ga_p90_vs_league", "expected_post_ga_p90_vs_league",
         "tenure_days", "still_at_club",
+        "next_transfer_fee", "has_resale_data",
         "perf_level_pct", "perf_delta_pct", "value_growth_pct",
-        "playing_time_pct", "value_for_money_pct",
+        "playing_time_pct", "value_for_money_pct", "resale_profit_pct",
         "success_score",
     ]
     out = df[cols].sort_values("transfer_date")

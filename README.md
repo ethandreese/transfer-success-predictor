@@ -18,7 +18,7 @@ fixed first-year window either unfairly penalizes a slow starter who took
 time to adapt, or misses someone who started hot and faded once the
 honeymoon period ended.
 
-Five sub-metrics, each converted to a percentile rank across the dataset
+Six sub-metrics, each converted to a percentile rank across the dataset
 (so no single stat's raw scale dominates), then blended with **weights that
 vary by position** (see `data/score_weights.json`):
 
@@ -38,17 +38,36 @@ vary by position** (see `data/score_weights.json`):
   to the player's market value at the time* (comparing fees to the whole
   dataset's fee distribution made any nine-figure move look "expensive"
   even when it was a bargain for that specific player)
+- **resale profit** (8% weight, only when known — see below) — did the
+  buying club later resell the player for more than they paid? A real,
+  distinct signal from sporting performance: a decent-but-unspectacular
+  player who's later flipped for a profit is a good outcome for the club
+  even if he was never a star there.
 
-Weights: attackers lean heavily on performance (30%/15%) since goal
+Weights: attackers lean heavily on performance (28%/14%) since goal
 contributions are a real, differentiating signal for them (only 5% have
 zero goal contributions in a given window). That signal gets progressively
-less reliable for midfielders (12% zero) and defenders (21% zero), and is
+less reliable for midfielders (11% zero) and defenders (21% zero), and is
 essentially meaningless for goalkeepers (nearly all have exactly 0 goals +
 assists both before and after a move — no dataset column captures clean
 sheets, saves, or defensive actions). So performance weight shrinks from
-45% combined (attackers) to 0% (goalkeepers), shifted into value growth,
+42% combined (attackers) to 0% (goalkeepers), shifted into value growth,
 playing time, and value for money instead — signals that stay meaningful
 regardless of position.
+
+**Resale profit is only counted when known**, which is deliberately rare:
+only ~17% of transfers have a genuine subsequent sale for a recorded fee.
+The raw data doesn't distinguish loans from permanent transfers, and most
+"next transfer, fee €0" cases are loans rather than real free exits, so
+those are treated as *unknown* rather than guessed at as a loss either way
+— a still-at-the-club or loaned-out player isn't penalized for something
+that hasn't happened yet. When it's unknown, resale profit's 8% weight is
+dropped and the other five weights are renormalized to still sum to 1,
+rather than filling in a fabricated "neutral" score for data that doesn't
+exist. When it *is* known, it's a real signal: Moisés Caicedo joined
+Brighton for free and was later sold to Chelsea for €116m — a textbook
+example of a transfer that looks fine on the pitch but was primarily a
+business win.
 
 **League-adjusted performance.** Goal contributions are judged against how
 hard it actually is to score in that specific league, not the whole
@@ -116,11 +135,12 @@ names/€m rather than raw feature values.
 - **`/`** — predict a hypothetical transfer: search a real player, pick a
   destination club, see a predicted score, a likely range (min/max among
   the 5 most similar real transfers, since a single point estimate
-  overstates how confident a R²≈0.07 model can be), a "why this score"
+  overstates how confident a R²≈0.10 model can be), a "why this score"
   breakdown, and the nearest historical comparables.
 - **`/browse.html`** — every scored transfer (~7,300), filterable by
   position and destination league, searchable by player/club name, sortable
-  by score/date/fee/age, paginated.
+  by score/date/fee/age, paginated. Click any row to open that transfer's
+  full card (score + breakdown) in a modal.
 - **`/compare.html`** — set up two hypothetical transfers side by side
   (same player to two different clubs, or two different players entirely)
   and see both predictions, ranges, and top factors together with the

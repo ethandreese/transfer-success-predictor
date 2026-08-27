@@ -45,9 +45,27 @@ def test_examples_returns_known_transfers_with_breakdown():
     assert len(data) > 0
     for ex in data:
         assert 0 <= ex["success_score"] <= 100
-        assert len(ex["breakdown"]) == 5
+        # 5 components always; a 6th ("Resale profit") only when the club
+        # later resold the player for a known fee.
+        assert len(ex["breakdown"]) in (5, 6)
         for component in ex["breakdown"]:
             assert "description" in component and component["description"]
+
+
+def test_resale_profit_description_matches_actual_profit_or_loss():
+    """
+    Dembélé's Barcelona spell: bought for €148m, later resold to PSG for
+    €50m - a real loss. The description must say "loss", not imply this
+    was a good outcome just because a resale happened.
+    """
+    res = client.get("/api/examples")
+    dembele = next(
+        ex for ex in res.json()
+        if ex["name"] == "Ousmane Dembélé" and ex["to_club"] == "Barcelona"
+    )
+    resale = next(c for c in dembele["breakdown"] if c["label"] == "Resale profit")
+    assert "loss" in resale["description"].lower()
+    assert "profitable" not in resale["description"].lower()
 
 
 def test_predict_returns_score_range_and_explanation(sample_predict_payload):
@@ -149,3 +167,31 @@ def test_transfers_list_sorted_descending_by_default():
     res = client.get("/api/transfers", params={"limit": 20})
     scores = [r["success_score"] for r in res.json()["results"]]
     assert scores == sorted(scores, reverse=True)
+
+
+def test_transfers_list_includes_player_id_for_detail_lookup():
+    res = client.get("/api/transfers", params={"q": "Haaland"})
+    row = res.json()["results"][0]
+    assert "player_id" in row
+    detail = client.get("/api/transfers/detail", params={
+        "player_id": row["player_id"], "transfer_date": row["transfer_date"],
+    })
+    assert detail.status_code == 200
+    assert detail.json()["name"] == row["name"]
+
+
+def test_transfer_detail_matches_examples_card_shape():
+    examples_res = client.get("/api/examples")
+    haaland = next(e for e in examples_res.json() if e["name"] == "Erling Haaland")
+    detail_res = client.get("/api/transfers/detail", params={
+        "player_id": haaland["player_id"], "transfer_date": haaland["transfer_date"],
+    })
+    assert detail_res.status_code == 200
+    detail = detail_res.json()
+    assert detail["success_score"] == haaland["success_score"]
+    assert detail["breakdown"] == haaland["breakdown"]
+
+
+def test_transfer_detail_404_for_unknown_transfer():
+    res = client.get("/api/transfers/detail", params={"player_id": 999999999, "transfer_date": "2020-01-01"})
+    assert res.status_code == 404

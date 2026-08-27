@@ -129,19 +129,50 @@ def test_success_score_matches_weighted_components(transfers):
     Recompute success_score from the stored per-component percentiles and
     each row's position weights, and check it matches the stored score.
     Catches a formula/weights drift (e.g. someone edits score_weights.json
-    without rerunning build_dataset.py) before it ships.
+    without rerunning build_dataset.py) before it ships. Handles both cases:
+    resale_profit included (when has_resale_data) or its weight dropped and
+    the rest renormalized (when it's unknown).
     """
     sample = transfers.sample(n=min(300, len(transfers)), random_state=42)
     for _, row in sample.iterrows():
         w = POSITION_WEIGHTS[row["position"]]
-        recomputed = (
+        base = (
             w["perf_level"] * row["perf_level_pct"]
             + w["perf_delta"] * row["perf_delta_pct"]
             + w["value_growth"] * row["value_growth_pct"]
             + w["playing_time"] * row["playing_time_pct"]
             + w["value_for_money"] * row["value_for_money_pct"]
         )
+        if row["has_resale_data"]:
+            recomputed = base + w["resale_profit"] * row["resale_profit_pct"]
+        else:
+            recomputed = base / (1 - w["resale_profit"])
         assert recomputed == pytest.approx(row["success_score"], abs=0.15), (
             f"{row['name']} ({row['position']}): recomputed {recomputed:.2f} "
             f"!= stored {row['success_score']}"
         )
+
+
+def test_resale_profit_only_counted_for_genuine_positive_fee_sales():
+    """
+    ~83% of transfers have no known resale (still at the club, or the
+    dataset doesn't distinguish a loan-shaped fee=0 "next transfer" from a
+    genuine free exit) - has_resale_data should be false, and
+    resale_profit_pct null, for all of them.
+    """
+    df = pd.read_csv(os.path.join(DATA_DIR, "transfers_processed.csv"))
+    assert df["has_resale_data"].mean() == pytest.approx(0.169, abs=0.02)
+    assert df.loc[~df["has_resale_data"], "resale_profit_pct"].isna().all()
+    assert df.loc[df["has_resale_data"], "resale_profit_pct"].notna().all()
+    assert df.loc[df["has_resale_data"], "next_transfer_fee"].gt(0).all()
+
+
+def test_resale_profit_rewards_a_profitable_flip():
+    """Moisés Caicedo joined Brighton for free and was later sold to Chelsea for €116m."""
+    df = pd.read_csv(os.path.join(DATA_DIR, "transfers_processed.csv"))
+    row = df[(df["name"] == "Moisés Caicedo") & (df["to_club_name"] == "Brighton")]
+    assert not row.empty
+    r = row.iloc[0]
+    assert r["has_resale_data"]
+    assert r["next_transfer_fee"] > 100_000_000
+    assert r["resale_profit_pct"] > 95

@@ -61,7 +61,7 @@ async function loadTable() {
     tbody.innerHTML = `<tr><td colspan="9">No transfers match these filters.</td></tr>`;
   } else {
     tbody.innerHTML = data.results.map(r => `
-      <tr>
+      <tr data-player-id="${r.player_id}" data-transfer-date="${r.transfer_date}">
         <td>${r.name}</td>
         <td>${r.position}</td>
         <td>${r.from_club} &rarr; ${r.to_club}</td>
@@ -73,6 +73,11 @@ async function loadTable() {
         <td style="color:${scoreColor(r.success_score)}; font-weight:700">${r.success_score}</td>
       </tr>
     `).join("");
+    [...tbody.querySelectorAll("tr")].forEach(row => {
+      row.addEventListener("click", () => {
+        showCard(row.dataset.playerId, row.dataset.transferDate);
+      });
+    });
   }
 
   const page = Math.floor(state.offset / PAGE_SIZE) + 1;
@@ -86,6 +91,59 @@ function resetAndLoad() {
   state.offset = 0;
   loadTable();
 }
+
+function renderBreakdown(breakdown) {
+  return breakdown.map(b => `
+    <div class="breakdown-row">
+      <span class="tooltip-wrap breakdown-label">
+        ${b.label}
+        <span class="tooltip-box">${b.description}</span>
+      </span>
+      <div class="breakdown-bar-track">
+        <div class="breakdown-bar-fill" style="width:${b.value}%; background:${scoreColor(b.value)}"></div>
+      </div>
+      <span class="breakdown-value">${b.value}</span>
+    </div>
+  `).join("");
+}
+
+async function showCard(playerId, transferDate) {
+  const backdrop = document.getElementById("card-modal-backdrop");
+  const content = document.getElementById("card-modal-content");
+  content.innerHTML = "Loading...";
+  backdrop.classList.add("open");
+  try {
+    const res = await fetch(`/api/transfers/detail?player_id=${playerId}&transfer_date=${transferDate}`);
+    if (!res.ok) throw new Error("Could not load this transfer.");
+    const ex = await res.json();
+    const years = (ex.tenure_days / 365.25).toFixed(1);
+    content.innerHTML = `
+      <div class="example-card" style="border:none; padding:0;">
+        <div class="name">${ex.name}</div>
+        <div class="route">${ex.from_club} &rarr; ${ex.to_club} (${ex.transfer_date.slice(0, 7)})</div>
+        <div class="score" style="color:${scoreColor(ex.success_score)}">${ex.success_score}</div>
+        <div class="tenure-note">
+          Scored over ${years} years at the club${ex.still_at_club ? " (still there)" : " (before leaving)"}
+        </div>
+        <div class="breakdown">${renderBreakdown(ex.breakdown)}</div>
+      </div>
+    `;
+  } catch (e) {
+    content.innerHTML = `<div class="error-box">${e.message}</div>`;
+  }
+}
+
+function closeCard() {
+  document.getElementById("card-modal-backdrop").classList.remove("open");
+}
+
+document.getElementById("card-modal-close").addEventListener("click", closeCard);
+document.getElementById("card-modal-backdrop").addEventListener("click", (e) => {
+  if (e.target.id === "card-modal-backdrop") closeCard();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeCard();
+});
 
 document.getElementById("search-input").addEventListener("input", () => {
   clearTimeout(window.__searchDebounce);

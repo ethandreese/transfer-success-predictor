@@ -66,6 +66,15 @@ POSITION_PLURAL = {
 }
 
 
+def resale_outcome_phrase(fee_paid, fee_received):
+    fee_paid = 0 if pd.isna(fee_paid) else fee_paid
+    if fee_received > fee_paid:
+        return "— a profitable flip for the club, regardless of on-pitch performance"
+    if fee_received < fee_paid:
+        return "— sold for less than the club paid, a loss independent of on-pitch performance"
+    return "— resold for the same fee paid, breaking even"
+
+
 def describe_components(r):
     eur_m = lambda v: "free" if pd.isna(v) or v == 0 else f"€{v / 1_000_000:.0f}m"
     position_plural = POSITION_PLURAL.get(r["position"], r["position"])
@@ -106,7 +115,16 @@ def describe_components(r):
             "value": round(float(r["value_for_money_pct"]), 1),
             "description": f"{eur_m(r['transfer_fee'])} fee vs. {eur_m(r['value_before'])} market value at the time",
         },
-    ]
+    ] + ([
+        {
+            "label": "Resale profit",
+            "value": round(float(r["resale_profit_pct"]), 1),
+            "description": (
+                f"Bought for {eur_m(r['transfer_fee'])}, later resold for {eur_m(r['next_transfer_fee'])} "
+                + resale_outcome_phrase(r["transfer_fee"], r["next_transfer_fee"])
+            ),
+        },
+    ] if bool(r["has_resale_data"]) else [])
 
 FEATURE_LABELS = {
     "age_at_transfer": "Age at transfer",
@@ -235,6 +253,22 @@ def find_comparables(feature_row: pd.DataFrame, k: int = 5):
     return out
 
 
+def build_transfer_card(r):
+    return {
+        "player_id": int(r["player_id"]),
+        "name": r["name"],
+        "transfer_date": str(r["transfer_date"])[:10],
+        "from_club": r["from_club_name"],
+        "to_club": r["to_club_name"],
+        "success_score": float(r["success_score"]),
+        "pre_ga_p90": round(float(r["pre_ga_p90"]), 2),
+        "post_ga_p90": round(float(r["post_ga_p90"]), 2),
+        "tenure_days": int(r["tenure_days"]),
+        "still_at_club": bool(r["still_at_club"]),
+        "breakdown": describe_components(r),
+    }
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok", "model_metadata": metadata}
@@ -249,21 +283,18 @@ def examples():
         ]
         if match.empty:
             continue
-        r = match.iloc[-1]
-        breakdown = describe_components(r)
-        out.append({
-            "name": r["name"],
-            "transfer_date": str(r["transfer_date"])[:10],
-            "from_club": r["from_club_name"],
-            "to_club": r["to_club_name"],
-            "success_score": float(r["success_score"]),
-            "pre_ga_p90": round(float(r["pre_ga_p90"]), 2),
-            "post_ga_p90": round(float(r["post_ga_p90"]), 2),
-            "tenure_days": int(r["tenure_days"]),
-            "still_at_club": bool(r["still_at_club"]),
-            "breakdown": breakdown,
-        })
+        out.append(build_transfer_card(match.iloc[-1]))
     return out
+
+
+@app.get("/api/transfers/detail")
+def transfer_detail(player_id: int, transfer_date: str):
+    match = transfers_df[
+        (transfers_df["player_id"] == player_id) & (transfers_df["transfer_date"] == transfer_date)
+    ]
+    if match.empty:
+        raise HTTPException(status_code=404, detail="transfer not found")
+    return build_transfer_card(match.iloc[0])
 
 
 @app.get("/api/players/search")
@@ -383,6 +414,7 @@ def list_transfers(
     for _, r in page.iterrows():
         fee = r["transfer_fee"]
         results.append({
+            "player_id": int(r["player_id"]),
             "name": r["name"],
             "position": r["position"],
             "from_club": r["from_club_name"],
