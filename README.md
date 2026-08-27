@@ -74,6 +74,21 @@ lowering the score by 11.1 pts" — a simple, transparent stand-in for a
 proper SHAP explanation, with league codes and fees resolved to readable
 names/€m rather than raw feature values.
 
+## Pages
+
+- **`/`** — predict a hypothetical transfer: search a real player, pick a
+  destination club, see a predicted score, a likely range (min/max among
+  the 5 most similar real transfers, since a single point estimate
+  overstates how confident a R²≈0.07 model can be), a "why this score"
+  breakdown, and the nearest historical comparables.
+- **`/browse.html`** — every scored transfer (~7,300), filterable by
+  position and destination league, searchable by player/club name, sortable
+  by score/date/fee/age, paginated.
+- **`/compare.html`** — set up two hypothetical transfers side by side
+  (same player to two different clubs, or two different players entirely)
+  and see both predictions, ranges, and top factors together with the
+  point gap between them.
+
 ## Known limitations
 
 - No column in the source data captures defense-specific output (tackles,
@@ -99,8 +114,9 @@ scripts/build_dataset.py   # raw Transfermarkt CSVs -> data/transfers_processed.
 scripts/train_model.py     # trains the model + comparable-transfers index
 scripts/build_lookups.py   # small player/club search tables for the web app
 app/main.py                 # FastAPI backend (serves the API + the static frontend)
-app/static/                 # vanilla HTML/CSS/JS frontend
+app/static/                 # vanilla HTML/CSS/JS frontend (index/browse/compare)
 data/                        # committed: small derived CSVs only (~3.5MB total)
+tests/                       # pytest suite - runs against committed artifacts only
 ```
 
 The raw Transfermarkt CSVs (~730MB) are **not** committed — they're
@@ -123,3 +139,18 @@ python3 -m venv .venv
 ```
 
 Then open http://localhost:8000.
+
+## Testing
+
+```bash
+./.venv/bin/pip install -r requirements-dev.txt
+./.venv/bin/pytest
+```
+
+The suite runs entirely against the committed `data/*.csv` and
+`app/model/*.joblib` artifacts (no raw-dataset dependency), covering:
+`tests/test_score_formula.py` (position weights sum to 1.0, every processed
+transfer's `success_score` matches its stored sub-components recomputed
+through `score_weights.json`, no nulls/out-of-range values) and
+`tests/test_app.py` (every API endpoint, including accent-insensitive
+search and the compare/predict flows).

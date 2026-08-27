@@ -1,5 +1,6 @@
 import json
 import os
+import unicodedata
 
 import joblib
 import numpy as np
@@ -18,6 +19,15 @@ app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
 )
 
+
+def fold_accents(value):
+    """Lowercase with diacritics stripped, e.g. 'Dembélé' -> 'dembele', so a plain-ASCII search matches accented names."""
+    if not isinstance(value, str):
+        return value
+    normalized = unicodedata.normalize("NFKD", value)
+    return "".join(c for c in normalized if not unicodedata.combining(c)).lower()
+
+
 pipeline = joblib.load(os.path.join(MODEL_DIR, "model.joblib"))
 comparables = joblib.load(os.path.join(MODEL_DIR, "comparables.joblib"))
 with open(os.path.join(MODEL_DIR, "metadata.json")) as f:
@@ -26,8 +36,19 @@ with open(os.path.join(MODEL_DIR, "metadata.json")) as f:
 transfers_df = pd.read_csv(os.path.join(DATA_DIR, "transfers_processed.csv"))
 players_df = pd.read_csv(os.path.join(DATA_DIR, "players_lookup.csv"))
 clubs_df = pd.read_csv(os.path.join(DATA_DIR, "clubs_lookup.csv"))
+
+players_df["_name_fold"] = players_df["name"].map(fold_accents)
+clubs_df["_name_fold"] = clubs_df["name"].map(fold_accents)
+transfers_df["_name_fold"] = transfers_df["name"].map(fold_accents)
+transfers_df["_from_club_fold"] = transfers_df["from_club_name"].map(fold_accents)
+transfers_df["_to_club_fold"] = transfers_df["to_club_name"].map(fold_accents)
 competitions_df = pd.read_csv(os.path.join(DATA_DIR, "competitions_lookup.csv"))
-LEAGUE_NAMES = dict(zip(competitions_df["competition_id"], competitions_df["name"]))
+_dup_names = competitions_df["name"][competitions_df["name"].duplicated(keep=False)]
+competitions_df["display_name"] = competitions_df.apply(
+    lambda r: f"{r['name']} ({r['country_name']})" if r["name"] in _dup_names.values and pd.notna(r["country_name"]) else r["name"],
+    axis=1,
+)
+LEAGUE_NAMES = dict(zip(competitions_df["competition_id"], competitions_df["display_name"]))
 
 NUMERIC_FEATURES = metadata["numeric_features"]
 CATEGORICAL_FEATURES = metadata["categorical_features"]
@@ -238,8 +259,8 @@ def examples():
 def search_players(q: str, limit: int = 10):
     if len(q) < 2:
         return []
-    mask = players_df["name"].str.contains(q, case=False, na=False, regex=False)
-    rows = players_df[mask].head(limit)
+    mask = players_df["_name_fold"].str.contains(fold_accents(q), na=False, regex=False)
+    rows = players_df[mask].head(limit).drop(columns=["_name_fold"])
     return rows.fillna("").to_dict(orient="records")
 
 
@@ -247,8 +268,8 @@ def search_players(q: str, limit: int = 10):
 def search_clubs(q: str, limit: int = 10):
     if len(q) < 2:
         return []
-    mask = clubs_df["name"].str.contains(q, case=False, na=False, regex=False)
-    rows = clubs_df[mask].head(limit)
+    mask = clubs_df["_name_fold"].str.contains(fold_accents(q), na=False, regex=False)
+    rows = clubs_df[mask].head(limit).drop(columns=["_name_fold"])
     return rows.fillna("").to_dict(orient="records")
 
 
@@ -257,7 +278,7 @@ def get_club(club_id: int):
     row = clubs_df[clubs_df["club_id"] == club_id]
     if row.empty:
         raise HTTPException(status_code=404, detail="club not found")
-    return row.iloc[0].fillna("").to_dict()
+    return row.iloc[0].drop("_name_fold").fillna("").to_dict()
 
 
 @app.post("/api/predict")
@@ -270,13 +291,100 @@ def predict(req: PredictRequest):
         explanation = explain_prediction(feature_row, raw_score)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    comp_scores = [c["success_score"] for c in comps]
+    score_range = [round(min(comp_scores), 1), round(max(comp_scores), 1)] if comp_scores else [score, score]
     return {
         "success_score": round(score, 1),
+        "score_range": score_range,
         "comparable_transfers": comps,
         "explanation": explanation,
         "model_test_mae": metadata["test_mae"],
         "model_test_r2": metadata["test_r2"],
     }
+
+
+class CompareRequest(BaseModel):
+    a: PredictRequest
+    b: PredictRequest
+    label_a: str = "Option A"
+    label_b: str = "Option B"
+
+
+@app.post("/api/compare")
+def compare(req: CompareRequest):
+    result_a = predict(req.a)
+    result_b = predict(req.b)
+    return {
+        "a": {**result_a, "label": req.label_a},
+        "b": {**result_b, "label": req.label_b},
+        "delta": round(result_a["success_score"] - result_b["success_score"], 1),
+    }
+
+
+TRANSFER_SORT_FIELDS = {
+    "success_score", "transfer_date", "age_at_transfer", "transfer_fee", "tenure_days",
+}
+
+
+@app.get("/api/filters")
+def get_filters():
+    positions = sorted(transfers_df["position"].dropna().unique().tolist())
+    league_ids = transfers_df["to_domestic_competition_id"].dropna().unique().tolist()
+    leagues = sorted(
+        ({"id": lid, "name": LEAGUE_NAMES.get(lid, lid)} for lid in league_ids),
+        key=lambda x: x["name"],
+    )
+    return {"positions": positions, "leagues": leagues}
+
+
+@app.get("/api/transfers")
+def list_transfers(
+    position: str | None = None,
+    league: str | None = None,
+    q: str | None = None,
+    sort: str = "success_score",
+    order: str = "desc",
+    limit: int = 25,
+    offset: int = 0,
+):
+    df = transfers_df
+    if position:
+        df = df[df["position"] == position]
+    if league:
+        df = df[df["to_domestic_competition_id"] == league]
+    if q:
+        q_fold = fold_accents(q)
+        mask = (
+            df["_name_fold"].str.contains(q_fold, na=False)
+            | df["_to_club_fold"].str.contains(q_fold, na=False)
+            | df["_from_club_fold"].str.contains(q_fold, na=False)
+        )
+        df = df[mask]
+
+    sort_field = sort if sort in TRANSFER_SORT_FIELDS else "success_score"
+    df = df.sort_values(sort_field, ascending=(order == "asc"))
+
+    total = len(df)
+    limit = max(1, min(limit, 100))
+    page = df.iloc[offset:offset + limit]
+
+    results = []
+    for _, r in page.iterrows():
+        fee = r["transfer_fee"]
+        results.append({
+            "name": r["name"],
+            "position": r["position"],
+            "from_club": r["from_club_name"],
+            "to_club": r["to_club_name"],
+            "to_league": LEAGUE_NAMES.get(r["to_domestic_competition_id"], r["to_domestic_competition_id"]),
+            "transfer_date": str(r["transfer_date"])[:10],
+            "age_at_transfer": round(float(r["age_at_transfer"]), 1),
+            "transfer_fee": None if pd.isna(fee) else float(fee),
+            "tenure_days": int(r["tenure_days"]),
+            "still_at_club": bool(r["still_at_club"]),
+            "success_score": float(r["success_score"]),
+        })
+    return {"total": total, "limit": limit, "offset": offset, "results": results}
 
 
 app.mount("/", StaticFiles(directory=os.path.join(BASE_DIR, "static"), html=True), name="static")

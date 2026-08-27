@@ -165,6 +165,9 @@ document.getElementById("predict-btn").addEventListener("click", async () => {
     const scoreEl = document.getElementById("score-value");
     scoreEl.textContent = data.success_score;
     scoreEl.style.color = scoreColor(data.success_score);
+    const [lo, hi] = data.score_range;
+    document.getElementById("score-range-note").textContent =
+      `Likely range: ${lo}–${hi}, based on the most similar historical transfers`;
     document.getElementById("mae-value").textContent = data.model_test_mae;
     document.getElementById("r2-value").textContent = data.model_test_r2;
     document.getElementById("comparables-list").innerHTML = data.comparable_transfers.map(c => `

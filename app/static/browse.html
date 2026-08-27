@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Browse Transfers - Transfer Success Predictor</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header>
+    <h1>⚽ Transfer Success Predictor</h1>
+    <p>Browse all ~7,300 scored transfers &mdash; filter, search, and sort.</p>
+    <nav class="topnav">
+      <a href="/">Predict</a>
+      <a href="/browse.html" class="active">Browse all transfers</a>
+      <a href="/compare.html">Compare two transfers</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="card">
+      <div class="browse-controls">
+        <div class="field">
+          <label for="search-input">Search</label>
+          <input id="search-input" type="text" placeholder="Player or club name" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="position-select">Position</label>
+          <select id="position-select"><option value="">All positions</option></select>
+        </div>
+        <div class="field">
+          <label for="league-select">Destination league</label>
+          <select id="league-select"><option value="">All leagues</option></select>
+        </div>
+        <div class="field">
+          <label for="sort-select">Sort by</label>
+          <select id="sort-select">
+            <option value="success_score:desc">Success score (high to low)</option>
+            <option value="success_score:asc">Success score (low to high)</option>
+            <option value="transfer_date:desc">Date (newest first)</option>
+            <option value="transfer_date:asc">Date (oldest first)</option>
+            <option value="transfer_fee:desc">Fee (highest first)</option>
+            <option value="age_at_transfer:asc">Age (youngest first)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="transfers-table">
+          <thead>
+            <tr>
+              <th>Player</th>
+              <th>Position</th>
+              <th>Route</th>
+              <th>League</th>
+              <th>Date</th>
+              <th>Age</th>
+              <th>Fee</th>
+              <th>Tenure</th>
+              <th>Score</th>
+            </tr>
+          </thead>
+          <tbody id="table-body">
+            <tr><td colspan="9">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="pagination">
+        <button id="prev-page" disabled>&larr; Prev</button>
+        <span id="page-info"></span>
+        <button id="next-page" disabled>Next &rarr;</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="/browse.js"></script>
+</body>
+</html>

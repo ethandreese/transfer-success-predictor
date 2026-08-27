@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Compare Transfers - Transfer Success Predictor</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header>
+    <h1>⚽ Transfer Success Predictor</h1>
+    <p>Compare two hypothetical transfers side by side &mdash; same player, different clubs, or two different players entirely.</p>
+    <nav class="topnav">
+      <a href="/">Predict</a>
+      <a href="/browse.html">Browse all transfers</a>
+      <a href="/compare.html" class="active">Compare two transfers</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="card">
+      <div class="compare-grid">
+        <div class="compare-col" data-scenario="a">
+          <h2>Option A</h2>
+          <div class="field">
+            <label>Player</label>
+            <input class="player-search" type="text" placeholder="Search a player" autocomplete="off" />
+            <div class="autocomplete-list player-list"></div>
+            <div class="player-chip"></div>
+          </div>
+          <div class="field">
+            <label>Destination club</label>
+            <input class="club-search" type="text" placeholder="Search a club" autocomplete="off" />
+            <div class="autocomplete-list club-list"></div>
+            <div class="club-chip"></div>
+          </div>
+          <div class="field">
+            <label>Transfer fee (&euro;m)</label>
+            <input class="fee-input" type="number" min="0" step="0.5" value="50" />
+          </div>
+          <div class="field">
+            <label>Age at transfer</label>
+            <input class="age-input" type="number" min="15" max="42" step="0.1" />
+          </div>
+        </div>
+
+        <div class="compare-col" data-scenario="b">
+          <h2>Option B</h2>
+          <div class="field">
+            <label>Player</label>
+            <input class="player-search" type="text" placeholder="Search a player" autocomplete="off" />
+            <div class="autocomplete-list player-list"></div>
+            <div class="player-chip"></div>
+          </div>
+          <div class="field">
+            <label>Destination club</label>
+            <input class="club-search" type="text" placeholder="Search a club" autocomplete="off" />
+            <div class="autocomplete-list club-list"></div>
+            <div class="club-chip"></div>
+          </div>
+          <div class="field">
+            <label>Transfer fee (&euro;m)</label>
+            <input class="fee-input" type="number" min="0" step="0.5" value="50" />
+          </div>
+          <div class="field">
+            <label>Age at transfer</label>
+            <input class="age-input" type="number" min="15" max="42" step="0.1" />
+          </div>
+        </div>
+      </div>
+
+      <button class="predict-btn" id="compare-btn" disabled>Compare</button>
+      <div class="error-box" id="error-box"></div>
+
+      <div class="result" id="result">
+        <div class="compare-delta" id="compare-delta"></div>
+        <div class="compare-results-grid">
+          <div class="compare-result-col" id="result-a">
+            <h2>Option A</h2>
+            <div class="score-display">
+              <div class="big" id="score-value-a">-</div>
+              <div class="score-label">/ 100</div>
+            </div>
+            <div class="score-range-note" id="score-range-note-a"></div>
+            <div class="comparables">
+              <h3>Top factors</h3>
+              <div id="explanation-list-a"></div>
+            </div>
+          </div>
+          <div class="compare-result-col" id="result-b">
+            <h2>Option B</h2>
+            <div class="score-display">
+              <div class="big" id="score-value-b">-</div>
+              <div class="score-label">/ 100</div>
+            </div>
+            <div class="score-range-note" id="score-range-note-b"></div>
+            <div class="comparables">
+              <h3>Top factors</h3>
+              <div id="explanation-list-b"></div>
+            </div>
+          </div>
+        </div>
+        <p class="disclaimer">
+          Both predictions carry the same uncertainty as a single prediction &mdash; typical
+          error is about 15 points on this 0&ndash;100 scale. Treat a close comparison as
+          "roughly a toss-up," not a precise verdict.
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <script src="/compare.js"></script>
+</body>
+</html>
