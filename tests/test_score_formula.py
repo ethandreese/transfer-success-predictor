@@ -57,6 +57,30 @@ def test_success_score_within_bounds(transfers):
     assert transfers["success_score"].between(0, 100).all()
 
 
+def test_league_baselines_reflect_real_scoring_difficulty(transfers):
+    """
+    Bundesliga attackers genuinely average more goal contributions/90 than
+    Premier League attackers across the full appearances dataset (~0.54 vs
+    ~0.48) - a Bundesliga -> Premier League move should be read as stepping
+    into a harder-to-score-in league, not judged on raw output alone.
+    """
+    bundesliga = transfers[
+        (transfers["to_domestic_competition_id"] == "L1") & (transfers["position"] == "Attack")
+    ]["to_league_ga_baseline"]
+    premier_league = transfers[
+        (transfers["to_domestic_competition_id"] == "GB1") & (transfers["position"] == "Attack")
+    ]["to_league_ga_baseline"]
+    assert bundesliga.nunique() == 1
+    assert premier_league.nunique() == 1
+    assert bundesliga.iloc[0] > premier_league.iloc[0]
+
+
+def test_league_adjusted_ratio_matches_raw_over_baseline(transfers):
+    sample = transfers.sample(n=min(200, len(transfers)), random_state=7)
+    expected = sample["post_ga_p90"] / sample["to_league_ga_baseline"].clip(lower=0.05)
+    assert (sample["post_ga_p90_vs_league"] - expected).abs().max() < 1e-6
+
+
 def test_percentile_components_within_bounds(transfers):
     for col in PCT_COLUMNS:
         assert transfers[col].between(0, 100).all(), f"{col} has values outside [0, 100]"

@@ -105,10 +105,52 @@ def compute_club_value_proxy(players):
 def load_appearances():
     df = pd.read_csv(
         os.path.join(RAW_DIR, "appearances.csv"),
-        usecols=["player_id", "player_club_id", "date", "goals", "assists", "minutes_played"],
+        usecols=[
+            "player_id", "player_club_id", "competition_id", "date",
+            "goals", "assists", "minutes_played",
+        ],
         parse_dates=["date"],
     )
     return df
+
+
+MIN_LEAGUE_BASELINE_MINUTES = 5000
+
+
+def compute_league_position_baselines(appearances, players):
+    """
+    For each (competition_id, position), the average goal contributions per
+    90 minutes across *all* appearances in that league - not just the
+    filtered transfer set - used to judge a player's output against how
+    hard it actually is to contribute goals in that specific league/role,
+    rather than against the whole dataset regardless of league. A decline
+    in raw output after moving into a tougher-to-score-in league (e.g.
+    Bundesliga -> Premier League, which averages ~12% fewer goal
+    contributions per 90 for attackers) shouldn't be read the same as a
+    decline moving into an easier one.
+    """
+    merged = appearances.merge(players[["player_id", "position"]], on="player_id", how="left")
+    agg = merged.groupby(["competition_id", "position"]).agg(
+        goals=("goals", "sum"), assists=("assists", "sum"), minutes=("minutes_played", "sum"),
+    )
+    agg = agg[agg["minutes"] >= MIN_LEAGUE_BASELINE_MINUTES]
+    agg["ga_p90"] = (agg["goals"] + agg["assists"]) / agg["minutes"].clip(lower=1) * 90
+    league_position_baseline = agg["ga_p90"]
+
+    position_agg = merged.groupby("position").agg(
+        goals=("goals", "sum"), assists=("assists", "sum"), minutes=("minutes_played", "sum"),
+    )
+    position_fallback = (position_agg["goals"] + position_agg["assists"]) / position_agg["minutes"].clip(lower=1) * 90
+
+    return league_position_baseline, position_fallback
+
+
+def lookup_league_baseline(league_ids, positions, baseline, fallback):
+    keys = list(zip(league_ids, positions))
+    return pd.Series(
+        [baseline.get(k, fallback.get(k[1], fallback.mean())) for k in keys],
+        index=league_ids.index,
+    )
 
 
 def load_valuations():
@@ -185,6 +227,9 @@ def main():
     valuations = load_valuations()
     print(f"{len(transfers):,} candidate transfers in {MIN_DATE.date()}..{MAX_DATE.date()}")
 
+    print("Computing league/position goal-contribution baselines...")
+    league_position_baseline, position_fallback = compute_league_position_baselines(appearances, players)
+
     print("Computing pre/post appearance windows...")
     pre, post = compute_windowed_appearance_stats(transfers, appearances)
 
@@ -240,13 +285,30 @@ def main():
     df = df[valid].copy()
 
     print("Computing composite success scores...")
+    # Goal contributions are judged against the league they were actually
+    # produced in, not just the whole dataset - 0.9 G+A/90 means something
+    # different in a league that averages 0.55 for that position than one
+    # that averages 0.46. Dividing by each league's empirical baseline
+    # (from ALL appearances in that league, not just our filtered transfer
+    # set) turns raw output into "how many times the going rate for this
+    # league and position", so a raw decline after moving into a tougher
+    # league isn't penalized the same as one moving into an easier league.
+    df["from_league_ga_baseline"] = lookup_league_baseline(
+        df["from_domestic_competition_id"], df["position"], league_position_baseline, position_fallback,
+    )
+    df["to_league_ga_baseline"] = lookup_league_baseline(
+        df["to_domestic_competition_id"], df["position"], league_position_baseline, position_fallback,
+    )
+    df["pre_ga_p90_vs_league"] = df["pre_ga_p90"] / df["from_league_ga_baseline"].clip(lower=0.05)
+    df["post_ga_p90_vs_league"] = df["post_ga_p90"] / df["to_league_ga_baseline"].clip(lower=0.05)
+
     # Performance level/delta are ranked *within position group* - goal
     # contributions per 90 minutes isn't comparable between a striker and a
     # centre-back, and ranking against the whole dataset drowns out real
     # differences among attackers (everyone not a defender/keeper clusters
     # near the top).
-    df["perf_level_pct"] = df.groupby("position")["post_ga_p90"].rank(pct=True) * 100
-    perf_delta = df["post_ga_p90"] - df["pre_ga_p90"]
+    df["perf_level_pct"] = df.groupby("position")["post_ga_p90_vs_league"].rank(pct=True) * 100
+    perf_delta = df["post_ga_p90_vs_league"] - df["pre_ga_p90_vs_league"]
     df["perf_delta_pct"] = perf_delta.groupby(df["position"]).rank(pct=True) * 100
 
     value_growth = df["value_after"] / df["value_before"].clip(lower=1)
@@ -281,6 +343,8 @@ def main():
         "pre_apps", "pre_minutes", "pre_goals", "pre_assists",
         "pre_ga_p90", "pre_goals_p90", "pre_mins_per_app",
         "post_apps", "post_minutes", "post_goals", "post_assists", "post_ga_p90",
+        "from_league_ga_baseline", "to_league_ga_baseline",
+        "pre_ga_p90_vs_league", "post_ga_p90_vs_league",
         "tenure_days", "still_at_club",
         "perf_level_pct", "perf_delta_pct", "value_growth_pct",
         "playing_time_pct", "value_for_money_pct",

@@ -23,11 +23,13 @@ Five sub-metrics, each converted to a percentile rank across the dataset
 vary by position** (see `data/score_weights.json`):
 
 - **performance level** — goal contributions per 90 minutes at the new
-  club, ranked *within the player's position group* (comparing a striker's
-  output to the whole dataset, mostly defenders and keepers, made every
-  decent attacker look elite and barely separated "good" from "Haaland")
-- **performance change** — improved or declined vs. their level before
-  the move, also position-ranked
+  club *relative to the actual league average for that position* (see
+  below), ranked *within the player's position group* (comparing a
+  striker's output to the whole dataset, mostly defenders and keepers,
+  made every decent attacker look elite and barely separated "good" from
+  "Haaland")
+- **performance change** — improved or declined vs. their league-relative
+  level before the move, also position-ranked
 - **market value growth** — from just before the transfer to near the
   end of the tenure
 - **playing time** — total appearances made (established starter vs.
@@ -47,6 +49,22 @@ sheets, saves, or defensive actions). So performance weight shrinks from
 45% combined (attackers) to 0% (goalkeepers), shifted into value growth,
 playing time, and value for money instead — signals that stay meaningful
 regardless of position.
+
+**League-adjusted performance.** Goal contributions are judged against how
+hard it actually is to score in that specific league, not the whole
+dataset. For each (league, position) pair we compute the average goal
+contributions/90 across *all* appearances in that league (not just our
+~7,300 filtered transfers — this uses the full ~1.9M-appearance dataset, so
+even leagues with few transfers in our sample get a stable baseline). A
+player's raw output is then expressed as a multiple of that baseline (e.g.
+"2.2x the league average") before being percentile-ranked. Concretely:
+Bundesliga attackers average 0.54 goal contributions/90 across the whole
+dataset, Premier League attackers average 0.48 — moving from one to the
+other is a real step up in difficulty, and the score now reflects that.
+This is what fixed Haaland's Dortmund→Man City score initially looking too
+low: his raw output dipped slightly (1.39→1.07 per 90), but relative to
+each league's baseline he stayed just as dominant (2.6x→2.2x), which the
+formula now credits instead of penalizing.
 
 **Model.** A gradient-boosted regressor trained on pre-transfer-only
 features (age, position, physical attributes, fee, market value, prior-year
@@ -106,6 +124,15 @@ names/€m rather than raw feature values.
 - Predicting a *new* hypothetical transfer is meaningfully less reliable
   than the historical scores shown for known transfers, since the model
   only sees pre-transfer information by construction.
+- League-adjustment currently only feeds into the *historical* score (the
+  training label). The predictive model's input features still use raw
+  pre-transfer output rather than a league-adjusted version, so it can
+  only learn league-difficulty effects indirectly (via the destination
+  league as a category); giving it an explicit league-relative input
+  feature is a natural next improvement.
+- League baselines are averaged across the whole 2013–2026 window rather
+  than computed per-season, so a league that got notably more/less
+  attacking over that time isn't captured precisely.
 
 ## Project layout
 

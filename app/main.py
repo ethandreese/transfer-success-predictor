@@ -69,16 +69,25 @@ POSITION_PLURAL = {
 def describe_components(r):
     eur_m = lambda v: "free" if pd.isna(v) or v == 0 else f"€{v / 1_000_000:.0f}m"
     position_plural = POSITION_PLURAL.get(r["position"], r["position"])
+    to_league = LEAGUE_NAMES.get(r["to_domestic_competition_id"], r["to_domestic_competition_id"])
     return [
         {
             "label": "Performance level",
             "value": round(float(r["perf_level_pct"]), 1),
-            "description": f"{r['post_ga_p90']:.2f} goal contributions/90 at {r['to_club_name']}, ranked vs. other {position_plural}",
+            "description": (
+                f"{r['post_ga_p90']:.2f} goal contributions/90 at {r['to_club_name']} "
+                f"({r['post_ga_p90_vs_league']:.1f}x the {to_league} average for {position_plural}), "
+                f"ranked vs. other {position_plural}"
+            ),
         },
         {
             "label": "Performance change",
             "value": round(float(r["perf_delta_pct"]), 1),
-            "description": f"{r['pre_ga_p90']:.2f} → {r['post_ga_p90']:.2f} goal contributions/90 (before → after)",
+            "description": (
+                f"{r['pre_ga_p90_vs_league']:.1f}x → {r['post_ga_p90_vs_league']:.1f}x their league's average "
+                f"goal contributions/90 for {position_plural} (before → after, adjusted for how hard it is "
+                f"to score in each league)"
+            ),
         },
         {
             "label": "Market value growth",
