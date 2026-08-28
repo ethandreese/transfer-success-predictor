@@ -6,12 +6,14 @@ For every transfer we compute:
   - pre-transfer features: age, position, physical attributes, fee, market
     value, and performance in the player's final year at the old club
   - a post-hoc "success score" (0-100) blending performance level/delta,
-    market value growth, playing time, and value-for-money, all measured
-    over the player's *entire tenure* at the new club (from the transfer
-    until their next departure, or "now" if they're still there) rather
-    than a fixed first-year window. A fixed window either penalizes slow
-    starters who took time to adapt, or misses a player who started hot
-    and faded once the honeymoon period ended.
+    market value growth, playing time, value-for-money, and (where FotMob
+    data is available - see load_fotmob_stats) a defensive/technical
+    contribution signal, all measured over the player's *entire tenure* at
+    the new club (from the transfer until their next departure, or "now" if
+    they're still there) rather than a fixed first-year window. A fixed
+    window either penalizes slow starters who took time to adapt, or
+    misses a player who started hot and faded once the honeymoon period
+    ended.
 
 Only the pre-transfer features are used as model inputs; the success score
 is the training label.
@@ -22,6 +24,15 @@ would judge a temporary loan spell as if a club had chosen to buy the
 player outright. Detecting them requires data/raw/transfer_types_cache.csv
 (built by scripts/fetch_transfer_types.py) since the packaged dataset itself
 can't tell a loan from a free transfer - both parse to a fee of 0.
+
+The base Transfermarkt dataset has no column at all for defense-specific
+output (tackles, clean sheets, saves), so scripts/fetch_fotmob_stats.py
+(optional, like fetch_transfer_types.py) separately pulls FotMob's season
+stat leaderboards for the 23 leagues that appear as a transfer destination
+and stitches each tenure's stats into data/raw/fotmob_stats_cache.csv -
+see compute_defensive_technical_pct for how that becomes a real score
+component instead of leaving defenders and goalkeepers to be judged almost
+entirely on market value and playing time.
 """
 import json
 import os
@@ -51,6 +62,7 @@ RAW_DIR = os.environ.get(
 OUT_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "transfers_processed.csv")
 LOANS_OUT_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "loans_processed.csv")
 TRANSFER_TYPES_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "raw", "transfer_types_cache.csv")
+FOTMOB_STATS_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "raw", "fotmob_stats_cache.csv")
 
 PRE_WINDOW_DAYS = 365
 MIN_APPS_PER_WINDOW = 10
@@ -93,6 +105,51 @@ def load_transfer_types():
     # A resumed fetch run could in principle append a player's rows twice;
     # de-dupe defensively on the natural key so the join below can't fan out.
     return types.drop_duplicates(subset=["player_id", "transfer_date", "from_club_id", "to_club_id"])
+
+
+# The raw FotMob columns compute_defensive_technical_pct() actually uses.
+# fetch_fotmob_stats.py pulls more than this (goals_per_90, expected_goals,
+# tackles, interceptions, clearances, etc.) but those either duplicate a
+# signal we already get from the base Transfermarkt appearances data (goals/
+# assists) or weren't judged reliable/general enough for a first version of
+# this component - defensive_contributions is FotMob's own composite of
+# tackles+interceptions+clearances+recoveries, so it's used directly instead
+# of re-combining those sub-stats by hand.
+FOTMOB_RAW_COLS = [
+    "fotmob_rating", "fotmob_total_minutes", "fotmob_seasons_used", "fotmob_total_matches",
+    "fotmob_defensive_contributions", "fotmob_accurate_pass", "fotmob_total_att_assist",
+    "fotmob_saves", "fotmob__save_percentage", "fotmob_goals_conceded",
+]
+
+
+def load_fotmob_stats():
+    """
+    Load the per-transfer FotMob tenure stats built by
+    scripts/fetch_fotmob_stats.py (season-leaderboard data - rating,
+    defensive actions/90, passes/90, saves/90, etc. - stitched across
+    whatever seasons each tenure spans; see that script for the full
+    fetch/match/stitch reasoning). Only covers permanent transfers into the
+    23 leagues in LEAGUE_MAP there, and only from whatever season FotMob's
+    own coverage happens to start for that specific league (nothing before
+    2013/2014 anywhere, later still for most leagues) - so plenty of
+    real transfers legitimately have no row here. Returns an empty frame
+    with the right columns if the cache hasn't been built yet, so callers
+    degrade to treating every transfer as missing FotMob data rather than
+    failing.
+    """
+    if not os.path.exists(FOTMOB_STATS_PATH):
+        print(f"  (no FotMob stats cache at {FOTMOB_STATS_PATH} - run scripts/fetch_fotmob_stats.py to enable the defensive/technical component; continuing without it)")
+        return pd.DataFrame(columns=["player_id", "transfer_date"] + FOTMOB_RAW_COLS)
+    stats = pd.read_csv(
+        FOTMOB_STATS_PATH,
+        usecols=["player_id", "transfer_date"] + FOTMOB_RAW_COLS,
+        parse_dates=["transfer_date"],
+    )
+    # One row per (player_id, transfer_date) by construction (each transfer
+    # is fetched/matched once) - de-duped defensively anyway so the merge
+    # in main() can't fan out if fetch_fotmob_stats.py is ever re-run in a
+    # way that appends rather than overwrites.
+    return stats.drop_duplicates(subset=["player_id", "transfer_date"])
 
 
 def _load_raw_candidate_transfers():
@@ -475,6 +532,54 @@ def percentile_rank(series):
     return series.rank(pct=True) * 100
 
 
+def compute_defensive_technical_pct(df):
+    """
+    A defensive/technical performance signal from FotMob's stitched tenure
+    stats (see load_fotmob_stats), filling the gap the base Transfermarkt
+    dataset has no column for at all: tackles, clean sheets, saves, or any
+    other defense-specific output. Built the same way perf_level_pct is -
+    percentile-rank each underlying raw stat *within position group* (a
+    goalkeeper's save rate isn't comparable to an outfielder's pass
+    completion, and vice versa), then average whichever of those percentiles
+    are actually available for each row, so one missing sub-stat doesn't
+    zero out the whole component.
+
+    Goalkeepers use save-specific stats (saves/90, save %, goals conceded/90
+    - inverted, since fewer conceded is better) instead of the outfield
+    stats, since none of defensive_contributions/accurate_pass/chances-
+    created meaningfully describe a goalkeeper's game. FotMob's own rating
+    is included for every position - a holistic per-match quality score
+    that's especially valuable for goalkeepers, who otherwise have zero
+    performance-based signal anywhere else in this formula (see
+    data/score_weights.json).
+
+    Returns a Series aligned to df's index; NaN wherever a row has no
+    FotMob data for its own position's relevant stats at all (has_fotmob_data
+    is false, or a goalkeeper only ever matched on outfield-only categories,
+    or vice versa) - main() treats that the same way as unknown
+    resale_profit: the component's weight is dropped and the rest
+    renormalized, not filled in with a fabricated neutral value.
+    """
+    is_gk = df["position"] == "Goalkeeper"
+
+    df = df.copy()
+    df["fotmob_chances_created_p90"] = df["fotmob_total_att_assist"] / (df["fotmob_total_minutes"] / 90).clip(lower=1)
+    df["fotmob_goals_conceded_inv"] = -df["fotmob_goals_conceded"]  # fewer conceded is better - negate before ranking so higher percentile = better
+
+    outfield_stats = ["fotmob_rating", "fotmob_defensive_contributions", "fotmob_accurate_pass", "fotmob_chances_created_p90"]
+    gk_stats = ["fotmob_rating", "fotmob_saves", "fotmob__save_percentage", "fotmob_goals_conceded_inv"]
+
+    pct_cols = []
+    for stat in set(outfield_stats + gk_stats):
+        col = f"{stat}_pct"
+        df[col] = df.groupby("position")[stat].rank(pct=True) * 100
+        pct_cols.append(col)
+
+    outfield_pct = df.loc[~is_gk, [f"{s}_pct" for s in outfield_stats]].mean(axis=1, skipna=True)
+    gk_pct = df.loc[is_gk, [f"{s}_pct" for s in gk_stats]].mean(axis=1, skipna=True)
+    return pd.concat([outfield_pct, gk_pct]).reindex(df.index)
+
+
 def compute_resale_weight(tenure_years):
     """
     How much resale profit should count, as a function of tenure length -
@@ -745,6 +850,12 @@ def main():
     )
     df = df[valid].copy()
 
+    print("Attaching FotMob defensive/technical stats...")
+    fotmob_stats = load_fotmob_stats()
+    df = df.merge(fotmob_stats, on=["player_id", "transfer_date"], how="left")
+    n_matched = df["fotmob_total_minutes"].notna().sum()  # present whenever the player was matched at all, unlike any single stat category (see compute_defensive_technical_pct's has_fotmob_data, set after it below)
+    print(f"  {n_matched:,} / {len(df):,} transfers matched to FotMob tenure stats ({100 * n_matched / len(df):.0f}%)")
+
     print("Computing composite success scores...")
     # Goal contributions are judged against the league they were actually
     # produced in, not just the whole dataset - 0.9 G+A/90 means something
@@ -812,6 +923,19 @@ def main():
     fee_to_value_pct = percentile_rank(df["transfer_fee"].fillna(0) / df["value_before"].clip(lower=1))
     df["value_for_money_pct"] = percentile_rank(df["perf_level_pct"] - fee_to_value_pct)
 
+    # Defensive/technical contribution: see compute_defensive_technical_pct
+    # for the full reasoning. Real coverage gaps mean not every matched
+    # transfer even ends up with a usable composite here (e.g. matched, but
+    # missing every one of that position's relevant sub-stats specifically),
+    # so has_fotmob_data is defined off this column directly - not off the
+    # merge/match above - so it's never true for a row whose weight would
+    # have nothing real to multiply. Like resale_profit below, the weight is
+    # dropped and the rest renormalized when it's false, rather than
+    # guessing at a neutral value for data we don't have.
+    df["defensive_technical_pct"] = compute_defensive_technical_pct(df)
+    df["has_fotmob_data"] = df["defensive_technical_pct"].notna()
+    print(f"  {df['has_fotmob_data'].sum():,} / {len(df):,} transfers have a usable defensive/technical score ({100 * df['has_fotmob_data'].mean():.0f}%)")
+
     # Resale profit: did the buying club later resell the player for more
     # than they paid? A real, distinct signal from sporting performance - a
     # decent-but-unspectacular player who's later flipped for a profit is a
@@ -834,16 +958,34 @@ def main():
     # Weights vary by position - see data/score_weights.json for why. When
     # resale_profit is unknown for a transfer, its weight is dropped and the
     # rest are renormalized to still sum to 1, rather than filling in a
-    # fabricated "neutral" score for data we don't actually have.
+    # fabricated "neutral" score for data we don't actually have. Same
+    # pattern now applies to defensive_technical (has_fotmob_data): computed
+    # first, below, since it needs to be folded into "the other 5" BEFORE
+    # the resale-profit renormalization runs on top of it.
     w = df["position"].map(POSITION_WEIGHTS).apply(pd.Series)
-    base_score = (
+    other_weight_sum = 1 - w["resale_profit"]  # e.g. 0.92 - the reference weight left for everything except resale_profit
+
+    five_component_score = (
         w["perf_level"] * df["perf_level_pct"]
         + w["perf_delta"] * df["perf_delta_pct"]
         + w["value_growth"] * df["value_growth_pct"]
         + w["playing_time"] * df["playing_time_pct"]
         + w["value_for_money"] * df["value_for_money_pct"]
     )
-    other_weight_sum = 1 - w["resale_profit"]  # e.g. 0.92 - the "reference" weight left for the other 5
+    # By construction this sums to (other_weight_sum - w["defensive_technical"])
+    # when weights are fractions of 1 and every _pct column is on 0-100 -
+    # i.e. it's short by exactly defensive_technical's share, which is
+    # filled in next when known.
+    six_component_score = five_component_score + np.where(
+        df["has_fotmob_data"], w["defensive_technical"] * df["defensive_technical_pct"], 0,
+    )
+    # Rescale up to other_weight_sum either way: when defensive_technical IS
+    # known this is a no-op (six_component_score already sums to
+    # other_weight_sum); when it's NOT known, this redistributes its share
+    # proportionally across the other 5 - same renormalization idea as
+    # "without_resale" below, just one layer earlier.
+    six_component_weight_sum = other_weight_sum - np.where(df["has_fotmob_data"], 0, w["defensive_technical"])
+    base_score = six_component_score / six_component_weight_sum * other_weight_sum
 
     # When resale data IS known, how much it counts scales with tenure
     # length (compute_resale_weight) rather than the flat reference weight
@@ -871,8 +1013,9 @@ def main():
         "pre_ga_p90_vs_league", "post_ga_p90_vs_league", "expected_post_ga_p90_vs_league",
         "tenure_days", "still_at_club",
         "next_transfer_fee", "has_resale_data", "resale_weight",
+        "has_fotmob_data"] + FOTMOB_RAW_COLS + [
         "perf_level_pct", "perf_delta_pct", "value_growth_pct",
-        "playing_time_pct", "value_for_money_pct", "resale_profit_pct",
+        "playing_time_pct", "value_for_money_pct", "defensive_technical_pct", "resale_profit_pct",
         "success_score",
     ]
     out = df[cols].sort_values("transfer_date")

@@ -144,14 +144,18 @@ def test_success_score_matches_weighted_components(transfers):
     Recompute success_score from the stored per-component percentiles and
     each row's position weights, and check it matches the stored score.
     Catches a formula/weights drift (e.g. someone edits score_weights.json
-    without rerunning build_dataset.py) before it ships. Handles both cases:
-    resale_profit included at its tenure-scaled weight (when has_resale_data)
-    or dropped entirely and the rest renormalized (when it's unknown).
+    without rerunning build_dataset.py) before it ships. Handles all four
+    combinations of the two components that can independently be missing:
+    defensive_technical (dropped/renormalized first, when has_fotmob_data is
+    false) and resale_profit (layered on top at its tenure-scaled weight,
+    or dropped/renormalized, when has_resale_data is false) - see
+    build_dataset.py's main() for why defensive_technical has to be folded
+    in before the resale-profit renormalization runs.
     """
     sample = transfers.sample(n=min(300, len(transfers)), random_state=42)
     for _, row in sample.iterrows():
         w = POSITION_WEIGHTS[row["position"]]
-        base = (
+        five = (
             w["perf_level"] * row["perf_level_pct"]
             + w["perf_delta"] * row["perf_delta_pct"]
             + w["value_growth"] * row["value_growth_pct"]
@@ -159,6 +163,14 @@ def test_success_score_matches_weighted_components(transfers):
             + w["value_for_money"] * row["value_for_money_pct"]
         )
         other_weight_sum = 1 - w["resale_profit"]
+        if row["has_fotmob_data"]:
+            six = five + w["defensive_technical"] * row["defensive_technical_pct"]
+            six_weight_sum = other_weight_sum
+        else:
+            six = five
+            six_weight_sum = other_weight_sum - w["defensive_technical"]
+        base = six / six_weight_sum * other_weight_sum
+
         if row["has_resale_data"]:
             rescale = (1 - row["resale_weight"]) / other_weight_sum
             recomputed = base * rescale + row["resale_weight"] * row["resale_profit_pct"]
@@ -168,6 +180,30 @@ def test_success_score_matches_weighted_components(transfers):
             f"{row['name']} ({row['position']}): recomputed {recomputed:.2f} "
             f"!= stored {row['success_score']}"
         )
+
+
+def test_defensive_technical_only_counted_when_fotmob_data_known(transfers):
+    """has_fotmob_data should exactly gate whether defensive_technical_pct is present - never null-but-true or non-null-but-false, or its weight would multiply into a NaN or silently vanish."""
+    assert transfers.loc[transfers["has_fotmob_data"], "defensive_technical_pct"].notna().all()
+    assert transfers.loc[~transfers["has_fotmob_data"], "defensive_technical_pct"].isna().all()
+
+
+def test_defensive_technical_pct_within_bounds(transfers):
+    """Like every other sub-score, defensive_technical_pct should itself be a valid 0-100 percentile wherever it's known."""
+    known = transfers.loc[transfers["has_fotmob_data"], "defensive_technical_pct"]
+    assert known.between(0, 100).all()
+
+
+def test_defensive_technical_covers_most_transfers_but_not_all():
+    """
+    FotMob coverage is real but not universal (nothing before a league-
+    specific season, and Ukraine has no usable stats at all - see
+    scripts/fetch_fotmob_stats.py) - most transfers should have it, but a
+    meaningful minority shouldn't, or the renormalization path would never
+    actually be exercised.
+    """
+    df = pd.read_csv(os.path.join(DATA_DIR, "transfers_processed.csv"))
+    assert 0.6 < df["has_fotmob_data"].mean() < 0.95
 
 
 def test_resale_profit_only_counted_for_genuine_positive_fee_sales():

@@ -128,6 +128,33 @@ def describe_resale_profit(r, eur_m):
     )
 
 
+def describe_defensive_technical(r, position_plural):
+    """
+    Build the 'Defensive/technical contribution' breakdown row's
+    description: the underlying FotMob numbers behind
+    defensive_technical_pct (see compute_defensive_technical_pct in
+    build_dataset.py), phrased differently for goalkeepers (saves/save %/
+    goals conceded) vs. everyone else (defensive actions/passing/rating).
+    """
+    seasons = int(r["fotmob_seasons_used"])
+    season_note = "1 season" if seasons == 1 else f"{seasons} seasons"
+    if r["position"] == "Goalkeeper":
+        detail = (
+            f"{r['fotmob_saves']:.1f} saves/90, {r['fotmob__save_percentage']:.0f}% save rate, "
+            f"{r['fotmob_goals_conceded']:.1f} goals conceded/90"
+        )
+    else:
+        detail = (
+            f"{r['fotmob_defensive_contributions']:.1f} defensive actions/90 "
+            f"(tackles, interceptions, clearances, recoveries combined), "
+            f"{r['fotmob_accurate_pass']:.1f} accurate passes/90"
+        )
+    return (
+        f"FotMob rating {r['fotmob_rating']:.2f}, {detail} — averaged across {season_note} "
+        f"at {r['to_club_name']}, ranked vs. other {position_plural}"
+    )
+
+
 def eur_m(v):
     """Format a euro amount for display, e.g. 50_000_000 -> "€50m", 300_000 -> "€0.3m", 0/NaN -> "free"."""
     if pd.isna(v) or v == 0:
@@ -143,8 +170,9 @@ def describe_components(r):
     Build the full "why this score" breakdown for one row of
     transfers_processed.csv: a list of {label, value, description} dicts,
     one per success-score component actually used for this transfer (5
-    always, plus a 6th "Resale profit" row when has_resale_data is true).
-    Used by both /api/examples and /api/transfers/detail via
+    always, plus "Defensive/technical contribution" when has_fotmob_data is
+    true and "Resale profit" when has_resale_data is true - so 5 to 7 rows
+    total). Used by both /api/examples and /api/transfers/detail via
     build_transfer_card().
     """
     position_plural = POSITION_PLURAL.get(r["position"], r["position"])
@@ -197,6 +225,12 @@ def describe_components(r):
             "description": f"{eur_m(r['transfer_fee'])} fee vs. {eur_m(r['value_before'])} market value at the time",
         },
     ] + ([
+        {
+            "label": "Defensive/technical contribution",
+            "value": round(float(r["defensive_technical_pct"]), 1),
+            "description": describe_defensive_technical(r, position_plural),
+        },
+    ] if bool(r["has_fotmob_data"]) else []) + ([
         {
             "label": "Resale profit",
             "value": round(float(r["resale_profit_pct"]), 1),
