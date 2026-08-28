@@ -78,10 +78,43 @@ CLUB_FILLER_TOKENS = {
     "1", "04", "05", "1925", "de", "la", "le", "der",
 }
 
+# unicodedata's NFKD decomposition only handles letters that ARE a base
+# letter + combining diacritic (e.g. e-acute). These Nordic/Slavic letters
+# are their own codepoints, not decomposable that way, so the ascii-encode/
+# ignore step in normalize_club() below would silently DROP them instead
+# of transliterating them - "København" was coming out "Kbenhavn" and no
+# longer matching "Copenhagen" at all. Mapped explicitly using each
+# letter's standard transliteration instead.
+NORDIC_SLAVIC_TRANSLATION = str.maketrans({
+    "ø": "o", "Ø": "O", "æ": "ae", "Æ": "AE", "å": "a", "Å": "A",
+    "ł": "l", "Ł": "L", "đ": "d", "Đ": "D", "ð": "d", "Ð": "D", "þ": "th", "ß": "ss",
+})
+
+# A small number of clubs whose FotMob name and Transfermarkt short name
+# share no substring, common significant word, or high fuzzy ratio at all -
+# an acronym (PSG), an old/nickname form (Stade Rennais -> Rennes), or a
+# name that's in a different language entirely (Copenhagen -> Kobenhavn).
+# The rest of each league's clubs are left to the generic matcher; these
+# are only the ones found by inspecting real unmatched Ligue 1/Denmark
+# rows (see fotmob_multi_league_pilot's follow-up commit).
+LEAGUE_CLUB_ALIASES = {
+    "FR1": {"psg": "paris saint germain", "stade rennais": "rennes"},
+    "DK1": {"copenhagen": "fc kobenhavn", "fc copenhagen": "fc kobenhavn"},
+}
+
 
 def normalize_club(name):
-    """Same accent/punctuation stripping as fotmob_epl_pilot.normalize_name, factored out so it's reusable on club names here."""
-    n = unicodedata.normalize("NFKD", str(name)).encode("ascii", "ignore").decode("ascii")
+    """
+    Same accent/punctuation stripping as fotmob_epl_pilot.normalize_name,
+    factored out so it's reusable on club names here, plus an explicit
+    pre-translation for Latin-extended letters NFKD doesn't decompose
+    (o/a/ae-with-ring-or-slash etc.) - found because "FC Kobenhavn" was
+    silently losing its o to "FC Kbenhavn" and no longer matching
+    "Copenhagen" at all once that letter vanished, which would otherwise
+    affect any Danish/Norwegian/Polish/Croatian name using them.
+    """
+    n = str(name).translate(NORDIC_SLAVIC_TRANSLATION)
+    n = unicodedata.normalize("NFKD", n).encode("ascii", "ignore").decode("ascii")
     n = re.sub(r"[^a-z0-9 ]", " ", n.lower())
     return re.sub(r"\s+", " ", n).strip()
 
@@ -91,14 +124,19 @@ def club_significant_words(norm_name):
     return {w for w in norm_name.split() if w not in CLUB_FILLER_TOKENS and len(w) >= 4}
 
 
-def club_names_match_generic(norm_a, norm_b):
+def club_names_match_generic(norm_a, norm_b, comp_id=None):
     """
-    No per-league alias table exists here (see module docstring), so this
-    falls back to three progressively looser generic checks: exact/
-    substring match, a shared significant word (post-filler-stripping),
-    or a high fuzzy-ratio (catches transliteration drift, e.g. Cyrillic
-    names romanized slightly differently by the two sites).
+    Checked in order: an explicit LEAGUE_CLUB_ALIASES entry for this
+    league (for the handful of pairs no generic rule can catch - an
+    acronym, a nickname, a different-language name), then three
+    progressively looser generic checks: exact/substring match, a shared
+    significant word (post-filler-stripping), or a high fuzzy-ratio
+    (catches transliteration drift, e.g. Cyrillic names romanized
+    slightly differently by the two sites).
     """
+    aliases = LEAGUE_CLUB_ALIASES.get(comp_id, {})
+    if aliases.get(norm_a) == norm_b or aliases.get(norm_b) == norm_a:
+        return True
     if norm_a == norm_b or norm_a in norm_b or norm_b in norm_a:
         return True
     if club_significant_words(norm_a) & club_significant_words(norm_b):
@@ -155,7 +193,7 @@ def load_or_fetch_season(client, comp_id, league_id, season_label):
     return pd.DataFrame(records)
 
 
-def find_fotmob_id(transfer_row, season_tables, seasons_newest_first):
+def find_fotmob_id(transfer_row, season_tables, seasons_newest_first, comp_id=None):
     """Same identity-resolution strategy as fotmob_epl_pilot_v2 (newest-season-first, name+club), using the generic club matcher above."""
     norm_name = normalize_club(transfer_row["name"])  # club normalizer works fine for player names too (same char stripping)
     club_norm = normalize_club(transfer_row["to_club_name"])
@@ -171,7 +209,7 @@ def find_fotmob_id(transfer_row, season_tables, seasons_newest_first):
             candidates = table[table["norm_name"].isin(close)]
         if candidates.empty:
             continue
-        club_hits = candidates[candidates["fotmob_team"].map(lambda t: club_names_match_generic(club_norm, normalize_club(t)))]
+        club_hits = candidates[candidates["fotmob_team"].map(lambda t: club_names_match_generic(club_norm, normalize_club(t), comp_id))]
         if len(club_hits) >= 1:
             return club_hits.iloc[0]["fotmob_id"]
     return None
@@ -239,7 +277,7 @@ def run_league(client, comp_id, transfers):
         if contaminated:
             n_contaminated += 1
 
-        fotmob_id = find_fotmob_id(t, season_tables, list(reversed(tenure_seasons)))
+        fotmob_id = find_fotmob_id(t, season_tables, list(reversed(tenure_seasons)), comp_id)
         if fotmob_id is None:
             unidentified += 1
             continue
