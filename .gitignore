@@ -3,3 +3,7 @@ __pycache__/
 *.pyc
 .DS_Store
 .pytest_cache/
+# Per-league-season FotMob leaderboard cache used only to resume/speed up
+# scripts/fetch_fotmob_stats.py - the final per-transfer result it produces
+# (data/raw/fotmob_stats_cache.csv) is what's actually committed and used.
+data/raw/fotmob_season_cache/

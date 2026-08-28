@@ -18,7 +18,7 @@ fixed first-year window either unfairly penalizes a slow starter who took
 time to adapt, or misses someone who started hot and faded once the
 honeymoon period ended.
 
-Six sub-metrics, each converted to a percentile rank across the dataset
+Seven sub-metrics, each converted to a percentile rank across the dataset
 (so no single stat's raw scale dominates), then blended with **weights that
 vary by position** (see `data/score_weights.json`):
 
@@ -53,22 +53,37 @@ vary by position** (see `data/score_weights.json`):
   to the player's market value at the time* (comparing fees to the whole
   dataset's fee distribution made any nine-figure move look "expensive"
   even when it was a bargain for that specific player)
+- **defensive/technical contribution** (only when FotMob tenure stats are
+  known — see below) — a holistic quality/defensive-work signal the base
+  Transfermarkt dataset has no column for at all: FotMob's own per-match
+  rating, defensive actions per 90 (tackles + interceptions + clearances +
+  recoveries combined), and accurate passes per 90 — or, for goalkeepers,
+  rating, saves per 90, save percentage, and goals conceded per 90
+  (inverted, since fewer is better). Each is percentile-ranked *within
+  position group* like performance level, then averaged. This is the one
+  component goalkeepers actually get real performance signal from — every
+  other component either doesn't apply to them (performance level/change)
+  or is a financial/availability proxy (value growth, playing time, value
+  for money).
 - **resale profit** (weight varies by tenure length, only when known —
   see below) — did the buying club later resell the player for more than
   they paid? A real, distinct signal from sporting performance: a
   decent-but-unspectacular player who's later flipped for a profit is a
   good outcome for the club even if he was never a star there.
 
-Weights: attackers lean heavily on performance (28%/14%) since goal
+Weights: attackers lean heavily on performance (26%/13%) since goal
 contributions are a real, differentiating signal for them (only 5% have
 zero goal contributions in a given window). That signal gets progressively
 less reliable for midfielders (11% zero) and defenders (21% zero), and is
 essentially meaningless for goalkeepers (nearly all have exactly 0 goals +
-assists both before and after a move — no dataset column captures clean
-sheets, saves, or defensive actions). So performance weight shrinks from
-42% combined (attackers) to 0% (goalkeepers), shifted into value growth,
-playing time, and value for money instead — signals that stay meaningful
-regardless of position.
+assists both before and after a move — no *Transfermarkt* column captures
+clean sheets, saves, or defensive actions). So performance weight shrinks
+from 39% combined (attackers) to 0% (goalkeepers), shifted into value
+growth, playing time, value for money, and — now that it exists —
+defensive/technical contribution instead, which grows from 10% (attackers,
+a minor signal on top of real goal data) up to 35% (goalkeepers, where
+it's the only performance signal at all) as goal contributions become less
+meaningful.
 
 **Resale profit is only counted when known**, which is deliberately rare:
 only ~31% of transfers have a genuine subsequent sale for a recorded fee
@@ -140,6 +155,59 @@ out and never played is a real (bad) outcome the Loans tab exists to
 surface, not missing data. 3,199 loan spells (of ~28k candidates) are
 scored this way - see `/loans.html`.
 
+**Defensive/technical contribution comes from FotMob, not Transfermarkt.**
+The packaged Transfermarkt dataset has no column at all for defense-specific
+output — no tackles, clean sheets, saves, or any other defensive stat — so
+`scripts/fetch_fotmob_stats.py` (optional, like `fetch_transfer_types.py`)
+separately pulls FotMob's public season stat leaderboards (rating,
+defensive actions/90, passes/90, saves/90, etc.) for the 23 leagues that
+appear as a transfer destination, and stitches each transfer's *entire
+tenure* into `data/raw/fotmob_stats_cache.csv`, the same tenure-window
+philosophy as the rest of the score. Two problems had to be solved to make
+that stitching correct, not just plausible:
+
+- *Multi-season tenures.* FotMob only exposes whole-season leaderboards, so
+  a multi-year tenure needs several seasons combined — rate stats
+  (rating, per-90 numbers) are minutes-weighted averages across the
+  seasons used, count stats are summed.
+- *Same-league, mid-season moves.* FotMob attributes a player's entire
+  season total to whichever club they're registered at when fetched, not
+  split by stint — confirmed on real cases, e.g. Marc Guéhi's 19 Jan 2026
+  Crystal Palace → Man City move showing a near-full season of minutes
+  under Man City, most of which were actually played for Palace. This only
+  contaminates a same-*league* move made mid-season (a cross-league
+  arrival's "before" stats live in an entirely different league's
+  leaderboard, so they can't leak in) — the contaminated join season is
+  excluded from the stitched aggregate whenever it applies, verified
+  correct on real cases like Virgil van Dijk's January 2018
+  Southampton → Liverpool move (2017/18 correctly excluded, the other 9
+  seasons stitched together).
+
+Matching a FotMob player onto a Transfermarkt one is also harder than it
+sounds — neither site exposes the other's player id, and club names often
+share no text in common at all ("Man City"/"Manchester City", "PSG"/"Paris
+Saint-Germain", "Copenhagen"/the Danish spelling "København", which was
+initially a real bug: the accent-stripping step only handled letters that
+decompose into base+diacritic, so `ø` was being silently dropped instead of
+transliterated). A small number of these are handled with an explicit
+alias table per league, found by inspecting real unmatched rows rather than
+guessed at up front — building one for all 23 leagues wasn't attempted,
+since inspecting our own data showed the same club can appear under several
+different short names even within one league (Bundesliga transfers use
+both "Dortmund" and "Bor. Dortmund" for the same club).
+
+FotMob's coverage has two real ceilings, not effort problems: nothing
+before a league-specific season (varies a lot — the Premier League and
+Norway's Eliteserien have opposite ends of that range, 2016/2017 vs.
+2013/2014), and Ukraine's Premier League specifically, where FotMob's own
+league page exposes only 5 basic stat categories (goals, assists,
+goals+assists, yellow/red cards) — nothing that overlaps what this
+component actually needs, so it's a genuine, permanent 0% for that one
+league. Overall, about 81% of scored transfers end up with a usable
+defensive/technical score; for the rest, its weight is dropped and the
+other weights renormalized, the same pattern already used for
+`resale_profit`.
+
 **League-adjusted performance.** Goal contributions are judged against how
 hard it actually is to score in that specific league, not the whole
 dataset. For each (league, position) pair we compute the average goal
@@ -179,8 +247,8 @@ percentile to the 96th without touching genuine busts like Sancho.
 features (age, position, physical attributes, fee, market value, prior-year
 performance, and origin/destination club & league strength) — nothing about
 what happened after the move. Evaluated on a temporal holdout (trained on
-transfers before mid-2023, tested on transfers since): **MAE ≈ 15 points**
-on the 0–100 scale, R² ≈ 0.10, vs. ≈16 MAE for always predicting the
+transfers before mid-2023, tested on transfers since): **MAE ≈ 13.6 points**
+on the 0–100 scale, R² ≈ 0.09, vs. ≈14.6 MAE for always predicting the
 average. That's a modest but real signal, and honestly weaker than scoring
 a fixed first year would give — predicting a player's *entire future stint*
 at a new club from pre-transfer stats alone is genuinely hard, since
@@ -292,11 +360,32 @@ already be similar on it by construction, trivializing the comparison).
 
 ## Known limitations
 
-- No column in the source data captures defense-specific output (tackles,
-  clean sheets, saves) — value growth, playing time, and value for money
-  have to carry defenders' and goalkeepers' scores almost entirely, so a
-  quietly excellent defensive performance that the market didn't
-  re-value accordingly may be underrated.
+- The base Transfermarkt dataset has no column for defense-specific output
+  (tackles, clean sheets, saves) - now substantially addressed by the
+  `defensive_technical_pct` component pulled from FotMob (see above), but
+  not fully: it only covers permanent transfers into the 23 leagues FotMob
+  was matched against (loans still have no defensive signal at all - see
+  `data/loan_score_weights.json`), only from whatever season FotMob's own
+  coverage happens to start for that specific league, and not at all for
+  Ukraine's Premier League. About 19% of scored permanent transfers still
+  have no defensive/technical score and fall back to value growth, playing
+  time, and value for money carrying the position almost entirely, as
+  before.
+- FotMob player/club matching relies on name/club text matching (no shared
+  id exists between the two sites), which is inherently approximate.
+  Verified well for a few high-volume leagues by hand (English club
+  abbreviations, then Ligue 1's "PSG"/"Stade Rennais" and Denmark's
+  "Copenhagen"/"København", found by inspecting real unmatched rows and
+  fixed with explicit aliases - see `scripts/fetch_fotmob_stats.py`), but
+  the other 20 leagues rely on a generic matcher only, so their match rate
+  is somewhat weaker and less scrutinized (e.g. Ligue 1 and Denmark were
+  both under 80% before their specific fixes landed; some other
+  unreviewed league likely has a similar gap sitting in it right now). A
+  wrong match would show a real player's tenure with a different real
+  player's stats rather than failing loudly, which is a meaningfully worse
+  failure mode than simply missing data - the fuzzy-match fallback
+  requires a destination-club match before accepting a non-exact name, as
+  a partial guard against that.
 - Only transfers with ≥10 appearances in both the year before and the whole
   tenure after are included (~5,000 of ~104k candidate permanent transfers,
   once loans are excluded), which skews the training data toward
@@ -361,12 +450,13 @@ already be similar on it by construction, trivializing the comparison).
 
 ```
 scripts/fetch_transfer_types.py  # (optional) backfills data/raw/transfer_types_cache.csv from transfermarkt's live API
+scripts/fetch_fotmob_stats.py    # (optional) backfills data/raw/fotmob_stats_cache.csv from FotMob's public stat leaderboards
 scripts/build_dataset.py   # raw Transfermarkt CSVs -> data/transfers_processed.csv + data/loans_processed.csv
 scripts/train_model.py     # trains the model + comparable-transfers index
 scripts/build_lookups.py   # small player/club search tables for the web app
 app/main.py                 # FastAPI backend (serves the API + the static frontend)
 app/static/                 # vanilla HTML/CSS/JS frontend (index/browse/loans/compare)
-data/                        # committed: small derived CSVs only (~3.5MB total)
+data/                        # committed: small derived CSVs only (~8MB total)
 tests/                       # pytest suite - runs against committed artifacts only
 ```
 
@@ -402,6 +492,7 @@ the app:
 ```bash
 ./.venv/bin/python -c "import kagglehub; kagglehub.dataset_download('davidcariboo/player-scores')"
 ./.venv/bin/python scripts/fetch_transfer_types.py  # optional but recommended - see below
+./.venv/bin/python scripts/fetch_fotmob_stats.py    # optional but recommended - see below
 ./.venv/bin/python scripts/build_dataset.py
 ./.venv/bin/python scripts/build_lookups.py
 ./.venv/bin/python scripts/train_model.py
@@ -416,6 +507,18 @@ rather than starting over). It's optional: skip it and `build_dataset.py`
 still runs, just without loan detection - every zero-fee transfer
 (including loans) is treated as a permanent transfer, and
 `data/loans_processed.csv` comes out empty.
+
+`fetch_fotmob_stats.py` pulls FotMob's season stat leaderboards for the 23
+leagues in `LEAGUE_MAP` and stitches each transfer's tenure into
+`data/raw/fotmob_stats_cache.csv` (see "Defensive/technical contribution
+comes from FotMob..." above) - a few thousand requests across ~14 seasons
+x 23 leagues, politely rate-limited, resumable from
+`data/raw/fotmob_season_cache/` (gitignored - regenerable, not meant to be
+committed) rather than refetching every league-season from scratch. Also
+optional: skip it and `build_dataset.py` still runs, just without the
+`defensive_technical_pct` component - its weight is dropped and the other
+weights renormalized for every transfer, the same as when resale data is
+unknown.
 
 ## Testing
 

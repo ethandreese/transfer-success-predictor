@@ -1,0 +1,24 @@
+competition_id,label,n_transfers,n_seasons_covered,first_covered_season,n_with_any_season_coverage,n_matched,n_contaminated_excluded,n_identified_no_data,n_unidentified,match_rate_of_covered
+GB1,Premier League (England),755,11,2016/2017,743,643,51,5,95,86.5
+IT1,Serie A (Italy),497,11,2016/2017,491,473,41,7,11,96.3
+TR1,Super Lig (Turkey),471,10,2017/2018,459,403,89,21,35,87.8
+L1,Bundesliga (Germany),438,11,2016/2017,429,423,23,4,2,98.6
+FR1,Ligue 1 (France),434,11,2016/2017,426,414,40,6,6,97.2
+ES1,LaLiga (Spain),438,11,2016/2017,432,413,28,6,13,95.6
+RU1,Premier League (Russia),314,8,2019/2020,280,243,58,8,29,86.8
+NL1,Eredivisie (Netherlands),270,10,2017/2018,259,237,23,8,14,91.5
+GR1,Super League 1 (Greece),271,6,2021/2022,212,179,12,4,29,84.4
+UKR1,Premier League (Ukraine),251,14,2013/2014,251,0,67,0,251,0.0
+BE1,First Division A (Belgium),253,9,2018/2019,227,217,22,1,9,95.6
+PO1,Liga Portugal (Portugal),252,10,2017/2018,245,222,42,7,16,90.6
+DK1,Superligaen (Denmark),141,10,2017/2018,134,131,23,0,3,97.8
+SC1,Premiership (Scotland),135,7,2020/2021,120,117,6,0,3,97.5
+A1,Bundesliga (Austria),9,9,2018/2019,9,9,0,0,0,100.0
+SER1,Super Liga (Serbia),8,2,2025/2026,8,1,0,0,7,12.5
+SE1,Allsvenskan (Sweden),8,14,2013/2014,8,7,0,0,1,87.5
+C1,Super League (Switzerland),5,9,2018/2019,5,5,0,0,0,100.0
+NO1,Eliteserien (Norway),4,14,2013/2014,4,4,0,0,0,100.0
+TS1,1. Liga (Czechia),2,3,2024/2025,2,2,0,0,0,100.0
+PL1,Ekstraklasa (Poland),1,5,2022/2023,1,1,0,0,0,100.0
+RO1,Liga I (Romania),1,2,2025/2026,1,1,0,0,0,100.0
+KR1,HNL (Croatia),1,6,2021/2022,1,1,0,0,0,100.0
