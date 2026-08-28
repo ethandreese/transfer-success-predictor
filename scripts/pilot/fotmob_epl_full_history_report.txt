@@ -1,0 +1,28 @@
+EPL transfers since 2016/17 with any season coverage: 633
+  -> matched with usable FotMob tenure stats: 625 (99%)
+  -> identified but zero usable seasons (fully contaminated tenure): 5
+  -> not identified at all (name/club match failed): 3
+
+Stat coverage among matched (non-null %):
+  rating                        82.4%
+  mins_played                  100.0%
+  goals_per_90                  69.8%
+  expected_goals_per_90         73.8%
+  expected_assists_per_90       78.4%
+  accurate_pass                 86.7%
+  total_att_assist              96.2%
+  big_chance_created            84.3%
+  won_contest                   83.8%
+  total_tackle                  85.6%
+  interception                  83.4%
+  effective_clearance           86.2%
+  defensive_contributions       86.7%
+  ball_recovery                 86.6%
+  clean_sheet                    6.1%
+  saves                          5.0%
+  _save_percentage               5.0%
+  goals_conceded                 5.0%
+  fouls                         84.3%
+
+Transfers where a same-season Premier League-to-Premier League move's join season was excluded from the aggregate: 46
+Multi-season tenures (>1 season stitched together): 518

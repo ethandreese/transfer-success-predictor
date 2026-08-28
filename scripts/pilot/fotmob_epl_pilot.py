@@ -42,6 +42,36 @@ STAT_CATEGORIES = [
     "clean_sheet", "saves", "_save_percentage", "goals_conceded", "fouls",
 ]
 
+# Transfermarkt's to_club_name (short/abbreviated) -> FotMob's fotmob_team
+# (full official name), for every club that's played in the EPL since
+# 2016/2017 (extracted from the cached season stat tables in
+# scripts/pilot/cache/). A plain substring check ("man city" in
+# "manchester city") misses most of these - "Man City"/"Manchester City"
+# and "Man Utd"/"Manchester United" don't share a contiguous substring at
+# all - which was silently dropping real matches in fotmob_epl_pilot_v2.py.
+EPL_CLUB_ALIASES = {
+    "brighton": "brighton and hove albion", "huddersfield": "huddersfield town",
+    "hull city": "hull city", "ipswich": "ipswich town", "leeds": "leeds united",
+    "leicester": "leicester city", "luton": "luton town", "man city": "manchester city",
+    "man utd": "manchester united", "newcastle": "newcastle united",
+    "norwich": "norwich city", "nott m forest": "nottingham forest",
+    "nottm forest": "nottingham forest", "sheff utd": "sheffield united",
+    "stoke city": "stoke city", "swansea": "swansea city", "tottenham": "tottenham hotspur",
+    "west brom": "west bromwich albion", "west ham": "west ham united",
+    "wolves": "wolverhampton wanderers",
+}
+
+
+def club_names_match(name_a, name_b):
+    """
+    True if two (already-normalized) club names refer to the same club,
+    via EPL_CLUB_ALIASES or plain substring containment for the many pairs
+    that already share one (e.g. "arsenal"/"arsenal", "chelsea"/"chelsea").
+    """
+    if name_a == name_b or name_a in name_b or name_b in name_a:
+        return True
+    return EPL_CLUB_ALIASES.get(name_a) == name_b or EPL_CLUB_ALIASES.get(name_b) == name_a
+
 OUT_DIR = os.path.dirname(__file__)
 RAW_CACHE_PATH = os.path.join(OUT_DIR, "fotmob_epl_2025_raw.json")
 MATCHED_OUT_PATH = os.path.join(OUT_DIR, "fotmob_epl_2025_matched.csv")
@@ -57,20 +87,25 @@ def normalize_name(name):
     return re.sub(r"\s+", " ", n).strip()
 
 
-def fetch_league_stat_categories(client):
-    """Get the season's stat category list + each category's fetchAllUrl."""
+def fetch_league_stat_categories(client, season=SEASON):
+    """
+    Get one EPL season's stat category list + each category's fetchAllUrl.
+    Returns None if FotMob has no stats at all for that season (confirmed
+    true for every season before 2016/2017 - see fotmob_epl_pilot_v2.py),
+    rather than raising, so callers can probe a season's coverage cheaply.
+    """
     resp = client.get(
         "https://www.fotmob.com/api/data/leagues",
-        params={"id": EPL_LEAGUE_ID, "season": SEASON},
+        params={"id": EPL_LEAGUE_ID, "season": season},
         headers=HEADERS,
         timeout=30,
     )
     resp.raise_for_status()
     data = resp.json()
-    season_id = data["details"]["selectedSeason"]
-    print(f"  Selected season: {season_id} (requested {SEASON})")
-    cats = {p["name"]: p["fetchAllUrl"] for p in data["stats"]["players"]}
-    return cats
+    players = data.get("stats", {}).get("players")
+    if not players:
+        return None
+    return {p["name"]: p["fetchAllUrl"] for p in players}
 
 
 def fetch_stat_list(client, url):
@@ -140,9 +175,9 @@ def match_players(transfers, fotmob_df):
             matched_rows.append(combined)
             continue
         if len(candidates) > 1:
-            # disambiguate by destination club name substring match
+            # disambiguate by destination club name (via EPL_CLUB_ALIASES)
             club_norm = normalize_name(t["to_club_name"])
-            club_hits = [c for c in candidates if club_norm in normalize_name(c["fotmob_team"]) or normalize_name(c["fotmob_team"]) in club_norm]
+            club_hits = [c for c in candidates if club_names_match(club_norm, normalize_name(c["fotmob_team"]))]
             if len(club_hits) == 1:
                 fm = club_hits[0]
                 combined = {**t.to_dict(), **fm.to_dict(), "match_method": "exact_name+club"}
@@ -155,7 +190,7 @@ def match_players(transfers, fotmob_df):
         # accepted when the destination club also matches, so a wrong-but-
         # similar name elsewhere in the league can't silently steal the row.
         club_norm = normalize_name(t["to_club_name"])
-        club_pool = [c for c in fotmob_df.itertuples() if club_norm in normalize_name(c.fotmob_team) or normalize_name(c.fotmob_team) in club_norm]
+        club_pool = [c for c in fotmob_df.itertuples() if club_names_match(club_norm, normalize_name(c.fotmob_team))]
         pool_names = [normalize_name(c.fotmob_name) for c in club_pool]
         close = difflib.get_close_matches(norm, pool_names, n=1, cutoff=0.6)
         if close:
