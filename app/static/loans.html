@@ -3,17 +3,23 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Browse Transfers - Transfer Success Predictor</title>
+  <title>Browse Loans - Transfer Success Predictor</title>
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
   <header>
     <h1>⚽ Transfer Success Predictor</h1>
-    <p>Browse all ~5,000 scored transfers &mdash; filter, search, and sort.</p>
+    <p>
+      Browse scored loan spells &mdash; graded the same way as a permanent transfer, minus the
+      two components that don't apply to a loan (value for money and resale profit, since most
+      loans carry no real fee and don't end in a sale of their own). Playing time counts for
+      more here: whether the loan actually delivered game time is usually the central question
+      it gets judged on.
+    </p>
     <nav class="topnav">
       <a href="/">Predict</a>
-      <a href="/browse.html" class="active">Browse all transfers</a>
-      <a href="/loans.html">Browse loans</a>
+      <a href="/browse.html">Browse all transfers</a>
+      <a href="/loans.html" class="active">Browse loans</a>
       <a href="/compare.html">Compare two transfers</a>
     </nav>
   </header>
@@ -30,24 +36,25 @@
           <select id="position-select"><option value="">All positions</option></select>
         </div>
         <div class="field">
-          <label for="league-select">Destination league</label>
+          <label for="league-select">Loan league</label>
           <select id="league-select"><option value="">All leagues</option></select>
         </div>
         <div class="field">
           <label for="sort-select">Sort by</label>
           <select id="sort-select">
-            <option value="success_score:desc">Success score (high to low)</option>
-            <option value="success_score:asc">Success score (low to high)</option>
+            <option value="loan_success_score:desc">Loan score (high to low)</option>
+            <option value="loan_success_score:asc">Loan score (low to high)</option>
             <option value="transfer_date:desc">Date (newest first)</option>
             <option value="transfer_date:asc">Date (oldest first)</option>
-            <option value="transfer_fee:desc">Fee (highest first)</option>
+            <option value="tenure_days:desc">Duration (longest first)</option>
+            <option value="tenure_days:asc">Duration (shortest first)</option>
             <option value="age_at_transfer:asc">Age (youngest first)</option>
           </select>
         </div>
       </div>
 
       <div class="table-wrap">
-        <table class="transfers-table" id="transfers-table">
+        <table class="transfers-table" id="loans-table">
           <thead>
             <tr>
               <th>Player</th>
@@ -56,13 +63,12 @@
               <th>League</th>
               <th>Date</th>
               <th>Age</th>
-              <th>Fee</th>
-              <th>Tenure</th>
+              <th>Duration</th>
               <th>Score</th>
             </tr>
           </thead>
           <tbody id="table-body">
-            <tr><td colspan="9">Loading...</td></tr>
+            <tr><td colspan="8">Loading...</td></tr>
           </tbody>
         </table>
       </div>
@@ -83,6 +89,6 @@
   </div>
 
   <script src="/settings.js"></script>
-  <script src="/browse.js"></script>
+  <script src="/loans.js"></script>
 </body>
 </html>

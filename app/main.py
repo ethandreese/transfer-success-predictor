@@ -34,6 +34,7 @@ with open(os.path.join(MODEL_DIR, "metadata.json")) as f:
     metadata = json.load(f)
 
 transfers_df = pd.read_csv(os.path.join(DATA_DIR, "transfers_processed.csv"))
+loans_df = pd.read_csv(os.path.join(DATA_DIR, "loans_processed.csv"))
 players_df = pd.read_csv(os.path.join(DATA_DIR, "players_lookup.csv"))
 clubs_df = pd.read_csv(os.path.join(DATA_DIR, "clubs_lookup.csv"))
 
@@ -42,6 +43,9 @@ clubs_df["_name_fold"] = clubs_df["name"].map(fold_accents)
 transfers_df["_name_fold"] = transfers_df["name"].map(fold_accents)
 transfers_df["_from_club_fold"] = transfers_df["from_club_name"].map(fold_accents)
 transfers_df["_to_club_fold"] = transfers_df["to_club_name"].map(fold_accents)
+loans_df["_name_fold"] = loans_df["name"].map(fold_accents)
+loans_df["_from_club_fold"] = loans_df["from_club_name"].map(fold_accents)
+loans_df["_to_club_fold"] = loans_df["to_club_name"].map(fold_accents)
 competitions_df = pd.read_csv(os.path.join(DATA_DIR, "competitions_lookup.csv"))
 _dup_names = competitions_df["name"][competitions_df["name"].duplicated(keep=False)]
 competitions_df["display_name"] = competitions_df.apply(
@@ -54,6 +58,22 @@ league_baselines_df = pd.read_csv(os.path.join(DATA_DIR, "league_baselines.csv")
 LEAGUE_POSITION_BASELINE = {
     (r["competition_id"], r["position"]): r["ga_p90_baseline"] for _, r in league_baselines_df.iterrows()
 }
+
+
+def league_display_name(competition_id):
+    """
+    Look up a league's display name, or "Unknown league" for the rare club
+    that isn't in clubs.csv at all (~7 in transfers_processed.csv, ~23 in
+    the smaller loans_processed.csv - obscure clubs the dataset never
+    populated a domestic_competition_id for), where competition_id itself
+    is NaN. LEAGUE_NAMES.get(competition_id, competition_id) alone would
+    return that same NaN back out (a float NaN never equals itself, so the
+    dict lookup always misses), which isn't JSON-serializable and 500s any
+    endpoint that returns it.
+    """
+    if pd.isna(competition_id):
+        return "Unknown league"
+    return LEAGUE_NAMES.get(competition_id, competition_id)
 
 
 def league_ga_baseline(competition_id, position):
@@ -128,7 +148,7 @@ def describe_components(r):
     build_transfer_card().
     """
     position_plural = POSITION_PLURAL.get(r["position"], r["position"])
-    to_league = LEAGUE_NAMES.get(r["to_domestic_competition_id"], r["to_domestic_competition_id"])
+    to_league = league_display_name(r["to_domestic_competition_id"])
     return [
         {
             "label": "Performance level",
@@ -410,6 +430,82 @@ def build_transfer_card(r):
     }
 
 
+def describe_loan_components(r):
+    """
+    Build the "why this score" breakdown for one row of loans_processed.csv:
+    4 components, always (unlike describe_components(), there's no 6th
+    "resale profit" row - a loan doesn't end in a sale of its own - and no
+    "value for money" row - most loans carry no real fee, see
+    data/loan_score_weights.json).
+    """
+    position_plural = POSITION_PLURAL.get(r["position"], r["position"])
+    to_league = league_display_name(r["to_domestic_competition_id"])
+    return [
+        {
+            "label": "Performance level",
+            "value": round(float(r["perf_level_pct"]), 1),
+            "description": (
+                f"{r['post_ga_p90']:.2f} goal contributions/90 while on loan at {r['to_club_name']} "
+                f"({r['post_ga_p90_vs_league']:.1f}x the {to_league} average for {position_plural}), "
+                f"ranked vs. other loan spells"
+            ),
+        },
+        {
+            "label": "Performance change",
+            "value": round(float(r["perf_delta_pct"]), 1),
+            "description": (
+                f"Started at {r['pre_ga_p90_vs_league']:.1f}x league average, now at "
+                f"{r['post_ga_p90_vs_league']:.1f}x on loan — beat the ~{r['expected_post_ga_p90_vs_league']:.1f}x "
+                f"expected for a player starting that high (some pullback from a peak is normal)"
+                if r["post_ga_p90_vs_league"] >= r["expected_post_ga_p90_vs_league"] else
+                f"Started at {r['pre_ga_p90_vs_league']:.1f}x league average, now at "
+                f"{r['post_ga_p90_vs_league']:.1f}x on loan — below the ~{r['expected_post_ga_p90_vs_league']:.1f}x "
+                f"expected for a player starting that high"
+            ),
+        },
+        {
+            "label": "Market value growth",
+            "value": round(float(r["value_growth_pct"]), 1),
+            "description": (
+                f"{eur_m(r['value_before'])} → peaked at {eur_m(r['value_peak'])} (now {eur_m(r['value_after'])}) during the loan"
+                if r["value_peak"] > r["value_after"] * 1.05
+                else f"{eur_m(r['value_before'])} → {eur_m(r['value_after'])} market value during the loan"
+            ),
+        },
+        {
+            "label": "Playing time",
+            "value": round(float(r["playing_time_pct"]), 1),
+            "description": (
+                f"{int(r['post_apps'])} of {int(r['team_games_in_tenure'])} games "
+                f"{r['to_club_name']} played during the loan "
+                f"({r['pct_team_games_played'] * 100:.0f}% - usually the central question a loan gets "
+                f"judged on, blended with raw appearance count)"
+            ),
+        },
+    ]
+
+
+def build_loan_card(r):
+    """
+    Build the JSON shape shared by /api/loans and /api/loans/detail for one
+    row of loans_processed.csv: identity/route, the score, and the full
+    describe_loan_components() breakdown.
+    """
+    return {
+        "player_id": int(r["player_id"]),
+        "name": r["name"],
+        "transfer_date": str(r["transfer_date"])[:10],
+        "from_club": r["from_club_name"],
+        "to_club": r["to_club_name"],
+        "loan_success_score": float(r["loan_success_score"]),
+        "pre_ga_p90": round(float(r["pre_ga_p90"]), 2),
+        "post_ga_p90": round(float(r["post_ga_p90"]), 2),
+        "tenure_days": int(r["tenure_days"]),
+        "still_on_loan": bool(r["still_on_loan"]),
+        "breakdown": describe_loan_components(r),
+    }
+
+
 @app.get("/api/health")
 def health():
     """Liveness check plus a dump of the deployed model's training metadata (feature lists, test metrics)."""
@@ -577,7 +673,7 @@ def list_transfers(
             "position": r["position"],
             "from_club": r["from_club_name"],
             "to_club": r["to_club_name"],
-            "to_league": LEAGUE_NAMES.get(r["to_domestic_competition_id"], r["to_domestic_competition_id"]),
+            "to_league": league_display_name(r["to_domestic_competition_id"]),
             "transfer_date": str(r["transfer_date"])[:10],
             "age_at_transfer": round(float(r["age_at_transfer"]), 1),
             "transfer_fee": None if pd.isna(fee) else float(fee),
@@ -586,6 +682,82 @@ def list_transfers(
             "success_score": float(r["success_score"]),
         })
     return {"total": total, "limit": limit, "offset": offset, "results": results}
+
+
+LOAN_SORT_FIELDS = {"loan_success_score", "transfer_date", "age_at_transfer", "tenure_days"}
+
+
+@app.get("/api/loans/filters")
+def get_loan_filters():
+    """List the distinct positions and loan-destination leagues present in loans_processed.csv, for the loans page's filter dropdowns."""
+    positions = sorted(loans_df["position"].dropna().unique().tolist())
+    league_ids = loans_df["to_domestic_competition_id"].dropna().unique().tolist()
+    leagues = sorted(
+        ({"id": lid, "name": LEAGUE_NAMES.get(lid, lid)} for lid in league_ids),
+        key=lambda x: x["name"],
+    )
+    return {"positions": positions, "leagues": leagues}
+
+
+@app.get("/api/loans")
+def list_loans(
+    position: str | None = None,
+    league: str | None = None,
+    q: str | None = None,
+    sort: str = "loan_success_score",
+    order: str = "desc",
+    limit: int = 25,
+    offset: int = 0,
+):
+    """Paginated, filterable, sortable listing of every scored loan spell, for the loans page's table."""
+    df = loans_df
+    if position:
+        df = df[df["position"] == position]
+    if league:
+        df = df[df["to_domestic_competition_id"] == league]
+    if q:
+        q_fold = fold_accents(q)
+        mask = (
+            df["_name_fold"].str.contains(q_fold, na=False)
+            | df["_to_club_fold"].str.contains(q_fold, na=False)
+            | df["_from_club_fold"].str.contains(q_fold, na=False)
+        )
+        df = df[mask]
+
+    sort_field = sort if sort in LOAN_SORT_FIELDS else "loan_success_score"
+    df = df.sort_values(sort_field, ascending=(order == "asc"))
+
+    total = len(df)
+    limit = max(1, min(limit, 100))
+    page = df.iloc[offset:offset + limit]
+
+    results = []
+    for _, r in page.iterrows():
+        results.append({
+            "player_id": int(r["player_id"]),
+            "name": r["name"],
+            "position": r["position"],
+            "from_club": r["from_club_name"],
+            "to_club": r["to_club_name"],
+            "to_league": league_display_name(r["to_domestic_competition_id"]),
+            "transfer_date": str(r["transfer_date"])[:10],
+            "age_at_transfer": round(float(r["age_at_transfer"]), 1),
+            "tenure_days": int(r["tenure_days"]),
+            "still_on_loan": bool(r["still_on_loan"]),
+            "loan_success_score": float(r["loan_success_score"]),
+        })
+    return {"total": total, "limit": limit, "offset": offset, "results": results}
+
+
+@app.get("/api/loans/detail")
+def loan_detail(player_id: int, transfer_date: str):
+    """Look up one specific loan spell by (player_id, transfer_date) and return its full card - used by the loans page's click-to-view modal."""
+    match = loans_df[
+        (loans_df["player_id"] == player_id) & (loans_df["transfer_date"] == transfer_date)
+    ]
+    if match.empty:
+        raise HTTPException(status_code=404, detail="loan not found")
+    return build_loan_card(match.iloc[0])
 
 
 app.mount("/", StaticFiles(directory=os.path.join(BASE_DIR, "static"), html=True), name="static")

@@ -334,3 +334,67 @@ def test_transfer_detail_404_for_unknown_transfer():
     """A (player_id, transfer_date) pair that doesn't exist should 404, not 500 or return an empty/malformed card."""
     res = client.get("/api/transfers/detail", params={"player_id": 999999999, "transfer_date": "2020-01-01"})
     assert res.status_code == 404
+
+
+def test_loans_filters_endpoint():
+    """/api/loans/filters should list at least one position and one league, each with an id and a display name."""
+    res = client.get("/api/loans/filters")
+    assert res.status_code == 200
+    data = res.json()
+    assert len(data["positions"]) > 0
+    assert len(data["leagues"]) > 0
+    assert all("id" in l and "name" in l for l in data["leagues"])
+
+
+def test_loans_list_pagination():
+    """A limit=10 request should return exactly 10 results, with the true total count reported separately."""
+    res = client.get("/api/loans", params={"limit": 10, "offset": 0})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["total"] > 50
+    assert len(data["results"]) == 10
+
+
+def test_loans_list_sorted_descending_by_default():
+    """With no explicit sort params, results should default to loan_success_score descending."""
+    res = client.get("/api/loans", params={"limit": 20})
+    scores = [r["loan_success_score"] for r in res.json()["results"]]
+    assert scores == sorted(scores, reverse=True)
+
+
+def test_loans_list_position_filter():
+    """Filtering by position=Goalkeeper should return only goalkeepers."""
+    res = client.get("/api/loans", params={"position": "Goalkeeper", "limit": 50})
+    data = res.json()
+    assert data["total"] > 0
+    assert all(r["position"] == "Goalkeeper" for r in data["results"])
+
+
+def test_loans_list_search_is_accent_insensitive():
+    """The loans page's search box should match accented names via the plain-ASCII query too."""
+    res = client.get("/api/loans", params={"q": "Lossl"})
+    data = res.json()
+    assert data["total"] > 0
+    assert any("Lössl" in r["name"] for r in data["results"])
+
+
+def test_loan_detail_matches_list_card_shape():
+    """/api/loans/detail should return a full 4-component card (no value-for-money/resale-profit rows) matching the list row it came from."""
+    list_res = client.get("/api/loans", params={"limit": 1})
+    row = list_res.json()["results"][0]
+    detail_res = client.get("/api/loans/detail", params={
+        "player_id": row["player_id"], "transfer_date": row["transfer_date"],
+    })
+    assert detail_res.status_code == 200
+    detail = detail_res.json()
+    assert detail["name"] == row["name"]
+    assert detail["loan_success_score"] == row["loan_success_score"]
+    assert len(detail["breakdown"]) == 4
+    for component in detail["breakdown"]:
+        assert "description" in component and component["description"]
+
+
+def test_loan_detail_404_for_unknown_loan():
+    """A (player_id, transfer_date) pair that doesn't exist in loans_processed.csv should 404, not 500."""
+    res = client.get("/api/loans/detail", params={"player_id": 999999999, "transfer_date": "2020-01-01"})
+    assert res.status_code == 404

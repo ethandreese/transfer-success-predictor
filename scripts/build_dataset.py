@@ -15,6 +15,13 @@ For every transfer we compute:
 
 Only the pre-transfer features are used as model inputs; the success score
 is the training label.
+
+Loan spells are excluded entirely (see load_transfers/load_transfer_types):
+they aren't a permanent-transfer decision, so scoring them the same way
+would judge a temporary loan spell as if a club had chosen to buy the
+player outright. Detecting them requires data/raw/transfer_types_cache.csv
+(built by scripts/fetch_transfer_types.py) since the packaged dataset itself
+can't tell a loan from a free transfer - both parse to a fee of 0.
 """
 import json
 import os
@@ -30,6 +37,11 @@ POSITION_WEIGHTS = {
     if not k.startswith("_") and k != "resale_weight_curve"
 }
 
+LOAN_SCORE_WEIGHTS_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "loan_score_weights.json")
+with open(LOAN_SCORE_WEIGHTS_PATH) as f:
+    _loan_score_weights_raw = json.load(f)
+LOAN_POSITION_WEIGHTS = {k: v for k, v in _loan_score_weights_raw.items() if not k.startswith("_")}
+
 RAW_DIR = os.environ.get(
     "TRANSFERMARKT_RAW_DIR",
     os.path.expanduser(
@@ -37,6 +49,8 @@ RAW_DIR = os.environ.get(
     ),
 )
 OUT_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "transfers_processed.csv")
+LOANS_OUT_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "loans_processed.csv")
+TRANSFER_TYPES_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "raw", "transfer_types_cache.csv")
 
 PRE_WINDOW_DAYS = 365
 MIN_APPS_PER_WINDOW = 10
@@ -45,19 +59,49 @@ MAX_DATE = pd.Timestamp.today().normalize()
 REFERENCE_NOW = pd.Timestamp.today().normalize()
 
 
-def load_transfers():
+def load_transfer_types():
     """
-    Load raw transfers.csv, filter to the date range and drop no-op moves
-    (from_club == to_club), then compute two per-transfer fields that need
-    the player's *next* transfer to work out:
-      - tenure_end: the date the player left the new club (their next
-        transfer's date), or REFERENCE_NOW if they haven't moved since
-      - next_transfer_fee: the fee received for that next transfer (NaN if
-        there isn't one yet), used later for the resale-profit component
+    Load the transfer_type cache built by scripts/fetch_transfer_types.py,
+    which re-fetches each player's real transfer history from transfermarkt's
+    live API and classifies each move as paid/free/loan/unknown from its raw
+    fee text - a distinction the packaged transfers.csv doesn't have, since
+    its upstream ETL flattens any non-numeric fee (including "loan
+    transfer"/"End of loan"/"Loan fee: EUR X") down to a plain 0, identical
+    to a genuine free transfer. fee_raw (the original text) is kept too, so
+    load_loan_spells() can tell a loan-out ("loan transfer") from the
+    "End of loan" bookend that closes it. Returns an empty, all-"unknown"
+    frame with the right columns if the cache hasn't been built yet, so
+    callers degrade to their old (loan-unaware) behavior rather than failing.
+    """
+    if not os.path.exists(TRANSFER_TYPES_PATH):
+        print(f"  (no transfer-type cache at {TRANSFER_TYPES_PATH} - run scripts/fetch_transfer_types.py to enable loan detection; continuing without it)")
+        return pd.DataFrame(columns=["player_id", "transfer_date", "from_club_id", "to_club_id", "transfer_type", "fee_raw"])
+    types = pd.read_csv(
+        TRANSFER_TYPES_PATH,
+        usecols=["player_id", "transfer_date", "from_club_id", "to_club_id", "transfer_type", "fee_raw"],
+    )
+    # Parsed separately (not via read_csv's parse_dates) because the live API
+    # occasionally returns the sentinel "0000-00-00" for a transfer's date -
+    # a known artifact the upstream dcaribou pipeline filters out too - and
+    # even one such value makes parse_dates silently leave the whole column
+    # as strings instead of raising. errors="coerce" turns just those rows
+    # into NaT, which can never join onto anything (transfers.csv itself has
+    # no such placeholder), so they're dropped here rather than causing a
+    # dtype mismatch downstream.
+    types["transfer_date"] = pd.to_datetime(types["transfer_date"], errors="coerce")
+    types = types.dropna(subset=["transfer_date"])
+    # A resumed fetch run could in principle append a player's rows twice;
+    # de-dupe defensively on the natural key so the join below can't fan out.
+    return types.drop_duplicates(subset=["player_id", "transfer_date", "from_club_id", "to_club_id"])
 
-    Returns a DataFrame with one row per transfer and a "transfer_idx"
-    column used as the join key by every other compute_* function in this
-    module.
+
+def _load_raw_candidate_transfers():
+    """
+    Shared first step for load_transfers() and load_loan_spells(): read
+    transfers.csv, filter to the date range, and drop no-op moves
+    (from_club == to_club). Does not yet know about transfer_type or
+    tenure_end - both loaders need those computed differently (see each
+    function's docstring).
     """
     df = pd.read_csv(
         os.path.join(RAW_DIR, "transfers.csv"),
@@ -73,17 +117,98 @@ def load_transfers():
     df = df[df["from_club_id"] != df["to_club_id"]]
     df["from_club_id"] = df["from_club_id"].astype(int)
     df["to_club_id"] = df["to_club_id"].astype(int)
+    return df
+
+
+def load_transfers():
+    """
+    Load candidate transfers and drop loan spells (see load_transfer_types) -
+    they aren't a permanent-transfer decision, so scoring them the same way
+    would judge a temporary loan as if a club had chosen to buy the player
+    outright (see load_loan_spells for how loans are scored instead). Then
+    compute two per-transfer fields that need the player's *next* (non-loan)
+    transfer to work out:
+      - tenure_end: the date the player left the new club (their next
+        transfer's date), or REFERENCE_NOW if they haven't moved since
+      - next_transfer_fee: the fee received for that next transfer (NaN if
+        there isn't one yet), used later for the resale-profit component
+
+    Dropping loan rows before these shift()-based lookups matters, not just
+    for the loan transfer itself: it makes tenure_end and next_transfer_fee
+    for the transfers *around* a loan skip straight past it too - e.g. for
+    ClubA -> ClubB -> (loan to ClubC) -> ClubB -> ClubD, the ClubA -> ClubB
+    transfer's tenure now correctly runs through to the ClubD sale (the loan
+    spell folds back into "still registered at ClubB", which is what
+    actually happened) instead of getting cut short at the loan-out date,
+    and next_transfer_fee for it correctly reflects the ClubD sale instead
+    of the loan's unfeed fee.
+
+    Returns a DataFrame with one row per transfer and a "transfer_idx"
+    column used as the join key by every other compute_* function in this
+    module.
+    """
+    df = _load_raw_candidate_transfers()
+
+    transfer_types = load_transfer_types().drop(columns=["fee_raw"])
+    df = df.merge(transfer_types, on=["player_id", "transfer_date", "from_club_id", "to_club_id"], how="left")
+    df["transfer_type"] = df["transfer_type"].fillna("unknown")
+    print(f"  transfer_type breakdown: {df['transfer_type'].value_counts().to_dict()}")
+    n_loans = int((df["transfer_type"] == "loan").sum())
+    df = df[df["transfer_type"] != "loan"].drop(columns=["transfer_type"])
+    print(f"  Dropped {n_loans:,} loan transfers (not a permanent-transfer decision)")
+
     df = df.reset_index(drop=True)
     df["transfer_idx"] = df.index
 
-    # Tenure at the new club runs until the player's next transfer (any
-    # destination), or until "now" if they haven't moved again since.
+    # Tenure at the new club runs until the player's next (non-loan)
+    # transfer, or until "now" if they haven't moved again since.
     df = df.sort_values(["player_id", "transfer_date"])
     df["tenure_end"] = df.groupby("player_id")["transfer_date"].shift(-1)
     df["next_transfer_fee"] = df.groupby("player_id")["transfer_fee"].shift(-1)
     df["tenure_end"] = df["tenure_end"].fillna(REFERENCE_NOW)
     df = df.sort_values("transfer_idx").reset_index(drop=True)
     return df
+
+
+MIN_LOAN_TENURE_DAYS = 14
+
+
+def load_loan_spells():
+    """
+    Load candidate transfers and keep only the loan-out leg of each loan
+    spell - rows whose real fee text (from transfer_types_cache.csv) is
+    "loan transfer" or "Loan fee: ...", not the "End of loan" bookend that
+    closes it back out. tenure_end is the date of the player's very next
+    transfer of any type (almost always that matching "End of loan" return,
+    or REFERENCE_NOW if the loan is still ongoing) - computed the same way
+    load_transfers() computes it for permanent moves, so a loan spell's
+    windows can reuse the exact same compute_* helpers as a permanent
+    transfer's. Spells shorter than MIN_LOAN_TENURE_DAYS are dropped as
+    likely data artifacts (same-day duplicate entries etc).
+
+    Unlike load_transfers(), rows are NOT dropped here for having too few
+    post-loan appearances (see build_loan_dataset) - a loan spell where the
+    player barely featured isn't missing data, it's the actual outcome
+    (benched, frozen out, injured throughout) that the Loans tab exists to
+    surface, not something to filter away.
+    """
+    df = _load_raw_candidate_transfers()
+
+    types = load_transfer_types()
+    df = df.merge(types, on=["player_id", "transfer_date", "from_club_id", "to_club_id"], how="left")
+    df["transfer_type"] = df["transfer_type"].fillna("unknown")
+    df["fee_raw"] = df["fee_raw"].fillna("")
+
+    df = df.sort_values(["player_id", "transfer_date"])
+    df["tenure_end"] = df.groupby("player_id")["transfer_date"].shift(-1)
+    df["tenure_end"] = df["tenure_end"].fillna(REFERENCE_NOW)
+
+    is_loan_start = df["transfer_type"].eq("loan") & ~df["fee_raw"].str.lower().str.contains("end of loan")
+    loans = df[is_loan_start].drop(columns=["transfer_type", "fee_raw"]).copy()
+    loans = loans[(loans["tenure_end"] - loans["transfer_date"]).dt.days >= MIN_LOAN_TENURE_DAYS]
+    loans = loans.reset_index(drop=True)
+    loans["transfer_idx"] = loans.index
+    return loans
 
 
 def load_players():
@@ -387,6 +512,147 @@ def compute_expected_post_performance(df):
     return expected
 
 
+def build_loan_dataset(players, clubs, appearances, valuations, team_games, league_position_baseline, position_fallback):
+    """
+    Loan-spell counterpart to main()'s permanent-transfer pipeline: same
+    windowed appearance/valuation/league-adjustment machinery (every
+    compute_* helper below only cares about a transfer-shaped frame -
+    transfer_idx/player_id/transfer_date/tenure_end/from_club_id/to_club_id
+    - not what kind of move it represents, so they're reused as-is on
+    load_loan_spells()'s output instead of load_transfers()'s), but with
+    two differences:
+
+      - No value_for_money or resale_profit component. Both assume a
+        permanent sale (a fee paid once and, maybe, a later resale); most
+        loans carry no real fee at all, and a loan doesn't end in a sale of
+        its own. The remaining four components are reweighted per
+        data/loan_score_weights.json, with playing_time typically the
+        largest share - whether the loan actually delivered game time is
+        usually the central question a loan gets judged on.
+      - Percentiles are ranked within the loans population only, not mixed
+        with permanent transfers - a loan's value growth or appearance
+        count over a much shorter window isn't on the same scale as a
+        permanent tenure's, so comparing a loan against permanent-transfer
+        norms would be misleading in both directions.
+
+    Writes data/loans_processed.csv.
+    """
+    print("Loading loan spells...")
+    loans = load_loan_spells()
+    print(f"{len(loans):,} candidate loan spells")
+
+    print("Computing pre/post appearance windows for loans...")
+    pre, post = compute_windowed_appearance_stats(loans, appearances)
+    team_games_in_tenure = compute_team_games_in_window(loans, team_games)
+
+    df = loans.set_index("transfer_idx").join(pre).join(post).join(team_games_in_tenure)
+    fill_cols = ["pre_apps", "post_apps", "pre_minutes", "post_minutes", "pre_goals", "post_goals",
+                 "pre_assists", "post_assists", "team_games_in_tenure"]
+    df[fill_cols] = df[fill_cols].fillna(0)
+
+    # Only the PRE window needs a minimum-appearances bar (establishing who
+    # this player was walking into the loan) - the post/loan window
+    # deliberately has none, see load_loan_spells's docstring.
+    before = len(df)
+    df = df[df["pre_apps"] >= MIN_APPS_PER_WINDOW]
+    print(f"Kept {len(df):,} / {before:,} loan spells with >= {MIN_APPS_PER_WINDOW} pre-loan apps")
+
+    df["pre_ga_p90"] = (df["pre_goals"] + df["pre_assists"]) / df["pre_minutes"].clip(lower=1) * 90
+    df["post_ga_p90"] = (df["post_goals"] + df["post_assists"]) / df["post_minutes"].clip(lower=1) * 90
+    df["pre_goals_p90"] = df["pre_goals"] / df["pre_minutes"].clip(lower=1) * 90
+    df["pre_mins_per_app"] = df["pre_minutes"] / df["pre_apps"].clip(lower=1)
+
+    print("Attaching market valuations for loans...")
+    df = df.reset_index()
+    pre_val = nearest_valuation(df, valuations, "transfer_date", "backward", 730, "before")
+    post_val = nearest_valuation(df, valuations, "tenure_end", "nearest", 400, "after")
+    df["value_before"] = df["transfer_idx"].map(pre_val)
+    df["value_after"] = df["transfer_idx"].map(post_val)
+    df["value_before"] = df["value_before"].fillna(df["market_value_in_eur"])
+    peak_val = compute_peak_valuation(df, valuations)
+    df["value_peak"] = df["transfer_idx"].map(peak_val)
+    df["value_peak"] = df["value_peak"].fillna(df["value_after"])
+    df["value_peak"] = df[["value_peak", "value_after"]].max(axis=1)
+    df["tenure_days"] = (df["tenure_end"] - df["transfer_date"]).dt.days
+    df["still_on_loan"] = df["tenure_end"] >= REFERENCE_NOW
+
+    print("Attaching player and club attributes for loans...")
+    player_attrs = players.drop(columns=["current_club_id", "market_value_in_eur"])
+    df = df.merge(player_attrs, on="player_id", how="left")
+    df["age_at_transfer"] = (df["transfer_date"] - df["date_of_birth"]).dt.days / 365.25
+
+    from_clubs = clubs.add_prefix("from_")
+    to_clubs = clubs.add_prefix("to_")
+    df = df.merge(from_clubs, left_on="from_club_id", right_on="from_club_id", how="left")
+    df = df.merge(to_clubs, left_on="to_club_id", right_on="to_club_id", how="left")
+
+    valid = (
+        df["age_at_transfer"].between(15, 42)
+        & df["value_before"].gt(0)
+        & df["value_after"].notna()
+    )
+    df = df[valid].copy()
+
+    print("Computing loan-adjusted performance features...")
+    df["from_league_ga_baseline"] = lookup_league_baseline(
+        df["from_domestic_competition_id"], df["position"], league_position_baseline, position_fallback,
+    )
+    df["to_league_ga_baseline"] = lookup_league_baseline(
+        df["to_domestic_competition_id"], df["position"], league_position_baseline, position_fallback,
+    )
+    df["pre_ga_p90_vs_league"] = df["pre_ga_p90"] / df["from_league_ga_baseline"].clip(lower=0.05)
+    df["post_ga_p90_vs_league"] = df["post_ga_p90"] / df["to_league_ga_baseline"].clip(lower=0.05)
+
+    df["perf_level_pct"] = df.groupby("position")["post_ga_p90_vs_league"].rank(pct=True) * 100
+    df["expected_post_ga_p90_vs_league"] = compute_expected_post_performance(df)
+    perf_delta_residual = df["post_ga_p90_vs_league"] - df["expected_post_ga_p90_vs_league"]
+    df["perf_delta_pct"] = perf_delta_residual.groupby(df["position"]).rank(pct=True) * 100
+
+    growth_to_peak = df["value_peak"] / df["value_before"].clip(lower=1)
+    growth_to_end = df["value_after"] / df["value_before"].clip(lower=1)
+    df["value_growth_pct"] = 0.6 * percentile_rank(growth_to_peak) + 0.4 * percentile_rank(growth_to_end)
+
+    df["pct_team_games_played"] = (df["post_apps"] / df["team_games_in_tenure"].clip(lower=1)).clip(upper=1.0)
+    df["playing_time_pct"] = 0.6 * percentile_rank(df["pct_team_games_played"]) + 0.4 * percentile_rank(df["post_apps"])
+
+    if df.empty:
+        # .map(...).apply(pd.Series) can't infer the perf_level/perf_delta/
+        # value_growth/playing_time columns from zero rows (there's nothing
+        # to infer them from), so it would KeyError below rather than just
+        # producing an empty result. This path is real, not hypothetical:
+        # it's what happens on a fresh clone that skips the optional
+        # fetch_transfer_types.py step, where load_loan_spells() has no
+        # loan rows to find at all.
+        df["loan_success_score"] = pd.Series(dtype=float)
+    else:
+        w = df["position"].map(LOAN_POSITION_WEIGHTS).apply(pd.Series)
+        df["loan_success_score"] = (
+            w["perf_level"] * df["perf_level_pct"]
+            + w["perf_delta"] * df["perf_delta_pct"]
+            + w["value_growth"] * df["value_growth_pct"]
+            + w["playing_time"] * df["playing_time_pct"]
+        ).round(1)
+
+    cols = [
+        "player_id", "name", "transfer_date", "from_club_name", "to_club_name",
+        "position", "sub_position", "foot", "height_in_cm", "age_at_transfer",
+        "transfer_fee", "market_value_in_eur", "value_before", "value_after", "value_peak",
+        "from_domestic_competition_id", "to_domestic_competition_id",
+        "pre_apps", "pre_minutes", "pre_goals", "pre_assists",
+        "pre_ga_p90", "pre_goals_p90", "pre_mins_per_app",
+        "post_apps", "post_minutes", "post_goals", "post_assists", "post_ga_p90",
+        "team_games_in_tenure", "pct_team_games_played",
+        "from_league_ga_baseline", "to_league_ga_baseline",
+        "pre_ga_p90_vs_league", "post_ga_p90_vs_league", "expected_post_ga_p90_vs_league",
+        "tenure_days", "still_on_loan",
+        "perf_level_pct", "perf_delta_pct", "value_growth_pct", "playing_time_pct",
+        "loan_success_score",
+    ]
+    out = df[cols].sort_values("transfer_date")
+    out.to_csv(LOANS_OUT_PATH, index=False)
+    print(f"Wrote {len(out):,} rows to {LOANS_OUT_PATH}")
+
+
 def main():
     """
     End-to-end pipeline: load the raw Transfermarkt CSVs, compute every
@@ -396,7 +662,9 @@ def main():
     data/transfers_processed.csv - the label + features scripts/train_model.py
     trains on. Also writes data/league_baselines.csv as a side effect (see
     save_league_baselines) so app/main.py can share the same league
-    baselines for live-prediction explanations.
+    baselines for live-prediction explanations, and data/loans_processed.csv
+    (see build_loan_dataset) - the same idea applied to loan spells instead
+    of permanent transfers, with its own loan_success_score.
     """
     print("Loading raw CSVs...")
     transfers = load_transfers()
@@ -549,10 +817,11 @@ def main():
     # decent-but-unspectacular player who's later flipped for a profit is a
     # good outcome for the club even if he was never a star there. Only
     # counted when there's a genuine subsequent sale for a recorded fee
-    # (~17% of transfers); the dataset doesn't distinguish loans from
-    # permanent transfers, and most "next transfer, fee=0" cases are loans
-    # rather than real free exits, so those are treated as unknown rather
-    # than guessed at either way.
+    # (~31% of transfers); next_transfer_fee can no longer land on a loan-out
+    # (loan rows are dropped in load_transfers before tenure_end/
+    # next_transfer_fee are computed), but it can still be a real free
+    # transfer or unknown/unrecorded fee, both of which stay "no resale data"
+    # rather than being guessed at either way.
     has_resale_data = df["next_transfer_fee"].notna() & (df["next_transfer_fee"] > 0)
     transfer_fee_filled = df["transfer_fee"].fillna(0)
     resale_profit_ratio = (
@@ -609,6 +878,9 @@ def main():
     out = df[cols].sort_values("transfer_date")
     out.to_csv(OUT_PATH, index=False)
     print(f"Wrote {len(out):,} rows to {OUT_PATH}")
+
+    print("\nBuilding loan-spell dataset...")
+    build_loan_dataset(players, clubs, appearances, valuations, team_games, league_position_baseline, position_fallback)
 
 
 if __name__ == "__main__":

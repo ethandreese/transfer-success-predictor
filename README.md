@@ -71,18 +71,23 @@ playing time, and value for money instead — signals that stay meaningful
 regardless of position.
 
 **Resale profit is only counted when known**, which is deliberately rare:
-only ~17% of transfers have a genuine subsequent sale for a recorded fee.
-The raw data doesn't distinguish loans from permanent transfers, and most
-"next transfer, fee €0" cases are loans rather than real free exits, so
-those are treated as *unknown* rather than guessed at as a loss either way
-— a still-at-the-club or loaned-out player isn't penalized for something
-that hasn't happened yet. When it's unknown, resale profit's weight is
+only ~31% of transfers have a genuine subsequent sale for a recorded fee
+(up from ~17% once loans were pulled out of the transfer chain - see below;
+previously a loan-out sitting between a permanent signing and its eventual
+resale made `next_transfer_fee` land on the loan's own unrecorded fee
+instead of skipping through to the real sale). A still-at-the-club player,
+or one whose next move is a real free transfer or a loan (see "Loan spells
+are scored separately" below — loans can no longer land here at all, now
+that they're detected and pulled out of the chain before this is
+computed), isn't penalized for something that hasn't happened yet; those
+cases are treated as *unknown* rather than guessed at
+as a loss either way. When it's unknown, resale profit's weight is
 dropped and the other five weights are renormalized to still sum to 1,
 rather than filling in a fabricated "neutral" score for data that doesn't
-exist. When it *is* known, it's a real signal: Moisés Caicedo joined
-Brighton for free and was later sold to Chelsea for €116m — a textbook
-example of a transfer that looks fine on the pitch but was primarily a
-business win.
+exist. When it *is* known, it's a real signal: Randal Kolo Muani joined
+Frankfurt from Nantes for free and was sold on to PSG for €95m about 14
+months later — a textbook example of a transfer that looks fine on the
+pitch but was primarily a business win.
 
 **Resale profit's weight scales with tenure length**, from ~20% for a
 transfer of a few months down to ~2% for a decade-long career (see
@@ -99,11 +104,47 @@ but after a decade of service that loss counts for only ~2% of his score
 it applies, e.g. *"counts for only 3% of the score here — after a
 6.0-year tenure the club already got most of its value..."*
 
+**Loans are detected and excluded from the transfer score, then scored
+separately.** The packaged Transfermarkt dataset has no loan/permanent flag
+at all — its upstream ETL parses every non-numeric fee string (including
+"loan transfer", "End of loan", and "Loan fee: €X") down to a flat `0`,
+identical to a genuine free transfer, so a loan spell was originally
+getting judged with `success_score` as if a club had chosen to buy the
+player outright. Fixed by re-fetching each player's real transfer history
+from transfermarkt's own live `transferHistory` API
+(`scripts/fetch_transfer_types.py`), which still carries that distinction
+in its raw fee text, and using it to classify every transfer as
+paid/free/loan/unknown (cached in `data/raw/transfer_types_cache.csv`).
+Loan rows are dropped before `tenure_end`/`next_transfer_fee` are computed
+in `load_transfers()`, which fixes two things at once: the loan spell no
+longer scores as a permanent move, and a loan-out interruption in the
+middle of a permanent tenure (join → loan elsewhere → return → eventual
+sale) no longer cuts that tenure short or gets mistaken for the eventual
+resale. Concretely: 55,433 of the ~159k candidate transfers (2013–2026)
+are loans - more than a third - and removing them shrank the final scored
+transfer set from 7,264 to 5,062, since a fair number of those old rows
+were really a loan's tenure being measured, or a permanent tenure getting
+cut short at a loan-out date that no longer applies.
+
+**Loan spells are scored separately, on a different formula
+(`data/loan_score_weights.json`), not folded into the same score.** A loan
+isn't a permanent-transfer decision, so it's judged on different terms: no
+*value for money* or *resale profit* component (most loans carry no real
+fee, and a loan doesn't end in a sale of its own), and *playing time*
+weighted much more heavily than in the permanent score — whether the loan
+actually delivered game time is usually the central question it gets
+judged on, independent of how well the player performed when they did
+play. Unlike the permanent-transfer pipeline, a loan spell with zero
+post-loan appearances is *kept*, not filtered out — a player who was sent
+out and never played is a real (bad) outcome the Loans tab exists to
+surface, not missing data. 3,199 loan spells (of ~28k candidates) are
+scored this way - see `/loans.html`.
+
 **League-adjusted performance.** Goal contributions are judged against how
 hard it actually is to score in that specific league, not the whole
 dataset. For each (league, position) pair we compute the average goal
 contributions/90 across *all* appearances in that league (not just our
-~7,300 filtered transfers — this uses the full ~1.9M-appearance dataset, so
+~5,000 filtered transfers — this uses the full ~1.9M-appearance dataset, so
 even leagues with few transfers in our sample get a stable baseline). A
 player's raw output is then expressed as a multiple of that baseline (e.g.
 "2.2x the league average") before being percentile-ranked. Concretely:
@@ -138,8 +179,8 @@ percentile to the 96th without touching genuine busts like Sancho.
 features (age, position, physical attributes, fee, market value, prior-year
 performance, and origin/destination club & league strength) — nothing about
 what happened after the move. Evaluated on a temporal holdout (trained on
-transfers before mid-2023, tested on transfers since): **MAE ≈ 16 points**
-on the 0–100 scale, R² ≈ 0.10, vs. ≈17 MAE for always predicting the
+transfers before mid-2023, tested on transfers since): **MAE ≈ 15 points**
+on the 0–100 scale, R² ≈ 0.10, vs. ≈16 MAE for always predicting the
 average. That's a modest but real signal, and honestly weaker than scoring
 a fixed first year would give — predicting a player's *entire future stint*
 at a new club from pre-transfer stats alone is genuinely hard, since
@@ -236,10 +277,14 @@ already be similar on it by construction, trivializing the comparison).
   the 5 most similar real transfers, since a single point estimate
   overstates how confident a R²≈0.10 model can be), a "why this score"
   breakdown, and the nearest historical comparables.
-- **`/browse.html`** — every scored transfer (~7,300), filterable by
+- **`/browse.html`** — every scored transfer (~5,000), filterable by
   position and destination league, searchable by player/club name, sortable
   by score/date/fee/age, paginated. Click any row to open that transfer's
   full card (score + breakdown) in a modal.
+- **`/loans.html`** — every scored loan spell (~3,200), same browse/filter/
+  search/click-to-view-card experience as `/browse.html`, but scored on the
+  loan-specific formula above (no fee/resale rows in the breakdown, and
+  duration shown in months rather than years).
 - **`/compare.html`** — set up two hypothetical transfers side by side
   (same player to two different clubs, or two different players entirely)
   and see both predictions, ranges, and top factors together with the
@@ -253,8 +298,28 @@ already be similar on it by construction, trivializing the comparison).
   quietly excellent defensive performance that the market didn't
   re-value accordingly may be underrated.
 - Only transfers with ≥10 appearances in both the year before and the whole
-  tenure after are included (~7,300 of ~159k), which skews the training
-  data toward established first-team players rather than fringe/loan moves.
+  tenure after are included (~5,000 of ~104k candidate permanent transfers,
+  once loans are excluded), which skews the training data toward
+  established first-team players rather than fringe moves. Loans are
+  covered separately (see `/loans.html`, ~3,200 of ~28k candidate loan
+  spells) with a looser bar — only the pre-loan side needs ≥10
+  appearances, not the loan itself.
+- Loan detection depends on a one-time batch fetch from transfermarkt's
+  live, unofficial `transferHistory` API (`scripts/fetch_transfer_types.py`)
+  — an undocumented endpoint, not a published third-party API, so it isn't
+  polled live and could break if transfermarkt changes it. About 98% of
+  candidate transfers match a fetched record by (player, date, clubs); the
+  rest (an unfetched player, or a rare club id the live API doesn't
+  resolve) default to "unknown" and are treated like any other permanent
+  transfer rather than being dropped, so a small number of undetected loans
+  may still be scored as permanent moves.
+- A loan with an option/obligation to buy that converts to a permanent deal
+  at the same club, without a separate recorded transfer event for the
+  conversion, is still scored as one continuous loan spell running through
+  to whatever transfer comes next - the permanent phase isn't split out and
+  scored on the permanent formula instead. A loan that sends the player
+  onward to a second loan club before they return, by contrast, is handled
+  correctly - each leg gets its own row and its own bounded window.
 - "Playing time" still keeps a 40% raw-count component alongside the
   percent-of-games-played signal, so a longer tenure still has somewhat
   more room to accumulate a high score than a short, excellent one — a
@@ -295,11 +360,12 @@ already be similar on it by construction, trivializing the comparison).
 ## Project layout
 
 ```
-scripts/build_dataset.py   # raw Transfermarkt CSVs -> data/transfers_processed.csv
+scripts/fetch_transfer_types.py  # (optional) backfills data/raw/transfer_types_cache.csv from transfermarkt's live API
+scripts/build_dataset.py   # raw Transfermarkt CSVs -> data/transfers_processed.csv + data/loans_processed.csv
 scripts/train_model.py     # trains the model + comparable-transfers index
 scripts/build_lookups.py   # small player/club search tables for the web app
 app/main.py                 # FastAPI backend (serves the API + the static frontend)
-app/static/                 # vanilla HTML/CSS/JS frontend (index/browse/compare)
+app/static/                 # vanilla HTML/CSS/JS frontend (index/browse/loans/compare)
 data/                        # committed: small derived CSVs only (~3.5MB total)
 tests/                       # pytest suite - runs against committed artifacts only
 ```
@@ -335,10 +401,21 @@ the app:
 
 ```bash
 ./.venv/bin/python -c "import kagglehub; kagglehub.dataset_download('davidcariboo/player-scores')"
+./.venv/bin/python scripts/fetch_transfer_types.py  # optional but recommended - see below
 ./.venv/bin/python scripts/build_dataset.py
 ./.venv/bin/python scripts/build_lookups.py
 ./.venv/bin/python scripts/train_model.py
 ```
+
+`fetch_transfer_types.py` re-fetches every candidate player's real transfer
+history from transfermarkt's live API to tell loans apart from free
+transfers (see "Loans are detected..." above) - one request per player
+(~23k), politely rate-limited, so it takes a few hours and is safe to
+interrupt and re-run (it resumes from `data/raw/transfer_types_cache.csv`
+rather than starting over). It's optional: skip it and `build_dataset.py`
+still runs, just without loan detection - every zero-fee transfer
+(including loans) is treated as a permanent transfer, and
+`data/loans_processed.csv` comes out empty.
 
 ## Testing
 

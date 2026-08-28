@@ -8,7 +8,10 @@ import os
 import pandas as pd
 import pytest
 
-from scripts.build_dataset import POSITION_WEIGHTS, RESALE_WEIGHT_CURVE, compute_resale_weight, percentile_rank
+from scripts.build_dataset import (
+    LOAN_POSITION_WEIGHTS, MIN_LOAN_TENURE_DAYS, POSITION_WEIGHTS,
+    RESALE_WEIGHT_CURVE, compute_resale_weight, percentile_rank,
+)
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 
@@ -169,26 +172,31 @@ def test_success_score_matches_weighted_components(transfers):
 
 def test_resale_profit_only_counted_for_genuine_positive_fee_sales():
     """
-    ~83% of transfers have no known resale (still at the club, or the
-    dataset doesn't distinguish a loan-shaped fee=0 "next transfer" from a
-    genuine free exit) - has_resale_data should be false, and
-    resale_profit_pct null, for all of them.
+    ~31% of transfers have a known resale (a genuine subsequent sale for a
+    recorded fee) - the rest (still at the club, exited for free, or the
+    next move's fee just isn't recorded) should have has_resale_data false
+    and resale_profit_pct null. This rate rose from ~17% once loans were
+    excluded from the transfer chain (see load_transfers/load_loan_spells)
+    - previously, a loan-out sitting between a permanent signing and its
+    eventual resale would make next_transfer_fee land on the loan's
+    (unrecorded) fee instead of skipping through to the real sale.
     """
     df = pd.read_csv(os.path.join(DATA_DIR, "transfers_processed.csv"))
-    assert df["has_resale_data"].mean() == pytest.approx(0.169, abs=0.02)
+    assert df["has_resale_data"].mean() == pytest.approx(0.308, abs=0.02)
     assert df.loc[~df["has_resale_data"], "resale_profit_pct"].isna().all()
     assert df.loc[df["has_resale_data"], "resale_profit_pct"].notna().all()
     assert df.loc[df["has_resale_data"], "next_transfer_fee"].gt(0).all()
 
 
 def test_resale_profit_rewards_a_profitable_flip():
-    """Moisés Caicedo joined Brighton for free and was later sold to Chelsea for €116m."""
+    """Randal Kolo Muani joined Frankfurt from Nantes for free and was sold on to PSG for €95m about 14 months later."""
     df = pd.read_csv(os.path.join(DATA_DIR, "transfers_processed.csv"))
-    row = df[(df["name"] == "Moisés Caicedo") & (df["to_club_name"] == "Brighton")]
+    row = df[(df["name"] == "Randal Kolo Muani") & (df["to_club_name"] == "Frankfurt")]
     assert not row.empty
     r = row.iloc[0]
     assert r["has_resale_data"]
-    assert r["next_transfer_fee"] > 100_000_000
+    assert r["transfer_fee"] == 0
+    assert r["next_transfer_fee"] > 90_000_000
     assert r["resale_profit_pct"] > 95
 
 
@@ -293,3 +301,79 @@ def test_league_baselines_csv_has_real_and_fallback_rows():
     bundesliga = baselines[(baselines["competition_id"] == "L1") & (baselines["position"] == "Attack")]
     premier_league = baselines[(baselines["competition_id"] == "GB1") & (baselines["position"] == "Attack")]
     assert bundesliga["ga_p90_baseline"].iloc[0] > premier_league["ga_p90_baseline"].iloc[0]
+
+
+@pytest.fixture(scope="module")
+def loans():
+    """The committed processed loans dataset, loaded once and shared read-only across this module's tests."""
+    return pd.read_csv(os.path.join(DATA_DIR, "loans_processed.csv"))
+
+
+def test_loan_position_weights_sum_to_one():
+    """Every position's loan-score weights (data/loan_score_weights.json) must sum to 1.0, or the blended score wouldn't be on a 0-100 scale."""
+    for position, w in LOAN_POSITION_WEIGHTS.items():
+        assert sum(w.values()) == pytest.approx(1.0, abs=1e-6), position
+
+
+def test_loan_position_weights_have_no_fee_based_components():
+    """Loan weights must not include value_for_money or resale_profit - neither maps to a loan spell (see data/loan_score_weights.json)."""
+    for w in LOAN_POSITION_WEIGHTS.values():
+        assert "value_for_money" not in w
+        assert "resale_profit" not in w
+
+
+def test_loan_goalkeepers_have_no_goal_contribution_weight():
+    """Same rationale as the permanent-transfer weights: goal contributions are meaningless for goalkeepers."""
+    gk = LOAN_POSITION_WEIGHTS["Goalkeeper"]
+    assert gk["perf_level"] == 0
+    assert gk["perf_delta"] == 0
+
+
+def test_loan_success_score_within_bounds(loans):
+    """loan_success_score is a blend of 0-100 percentiles, so it must itself land in [0, 100]."""
+    assert loans["loan_success_score"].between(0, 100).all()
+
+
+def test_loan_success_score_matches_weighted_components(loans):
+    """
+    Recompute loan_success_score from the stored per-component percentiles
+    and each row's position weights, and check it matches the stored score -
+    catches a formula/weights drift before it ships. Unlike the permanent
+    transfer score, there's no resale/value-for-money renormalization step
+    since loans never have those components in the first place.
+    """
+    sample = loans.sample(n=min(200, len(loans)), random_state=42)
+    for _, row in sample.iterrows():
+        w = LOAN_POSITION_WEIGHTS[row["position"]]
+        recomputed = (
+            w["perf_level"] * row["perf_level_pct"]
+            + w["perf_delta"] * row["perf_delta_pct"]
+            + w["value_growth"] * row["value_growth_pct"]
+            + w["playing_time"] * row["playing_time_pct"]
+        )
+        assert recomputed == pytest.approx(row["loan_success_score"], abs=0.15), (
+            f"{row['name']} ({row['position']}): recomputed {recomputed:.2f} != stored {row['loan_success_score']}"
+        )
+
+
+def test_loan_tenure_at_least_minimum_days(loans):
+    """Every loan spell should be at least MIN_LOAN_TENURE_DAYS long - shorter spells are dropped as likely data artifacts (see load_loan_spells)."""
+    assert (loans["tenure_days"] >= MIN_LOAN_TENURE_DAYS).all()
+
+
+def test_loan_pre_apps_meets_minimum_but_zero_post_apps_allowed(loans):
+    """
+    Unlike permanent transfers (which require >= MIN_APPS_PER_WINDOW
+    appearances on *both* sides), a loan spell only needs the pre-loan bar
+    met - a loan where the player barely or never played is a real outcome
+    the Loans tab exists to surface, not missing data (see
+    build_loan_dataset's docstring). At least one such spell should exist
+    in the real dataset, or the distinction isn't actually doing anything.
+    """
+    assert (loans["post_apps"] == 0).any()
+
+
+def test_loan_no_nulls_in_key_columns(loans):
+    """The score and its four input percentiles should never be null for a row that made it into loans_processed.csv."""
+    key_cols = ["perf_level_pct", "perf_delta_pct", "value_growth_pct", "playing_time_pct", "loan_success_score"]
+    assert not loans[key_cols].isna().any().any()

@@ -1,0 +1,139 @@
+// Shared, cross-page settings: currency, theme, and browse/loans page size.
+// Loaded before every page's own script (index.html/browse.html/loans.html/
+// compare.html) so `formatMoney`/`convertMoneyInText`/settings are ready by
+// the time page scripts run. Persisted to localStorage (per-browser only -
+// there's no user account for this to sync across devices) and broadcast
+// via a "settingschange" DOM event so each page can re-render without a
+// full reload when a setting changes.
+
+// Fixed, approximate conversion rates (checked August 2026) - not a live
+// feed. Good enough for "roughly how big is this fee in dollars", not for
+// anything financial.
+const EXCHANGE_RATES = { EUR: 1, USD: 1.16, GBP: 0.86 };
+const CURRENCY_SYMBOLS = { EUR: "€", USD: "$", GBP: "£" };
+const DEFAULT_SETTINGS = { currency: "EUR", theme: "dark", pageSize: 25 };
+
+/** Load saved settings from localStorage, filling in any missing keys with defaults (e.g. after adding a new setting). */
+function loadSettings() {
+  try {
+    return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem("tsp_settings") || "{}") };
+  } catch (e) {
+    return { ...DEFAULT_SETTINGS };
+  }
+}
+
+const settings = loadSettings();
+
+/** Persist the current settings object and notify every listener (other code on the page) that something changed. */
+function saveSettings() {
+  localStorage.setItem("tsp_settings", JSON.stringify(settings));
+  applyTheme();
+  document.dispatchEvent(new CustomEvent("settingschange", { detail: settings }));
+}
+
+/** Stamp the chosen theme onto <html> so style.css's [data-theme="light"] override block applies (or doesn't, for the default dark theme). */
+function applyTheme() {
+  document.documentElement.setAttribute("data-theme", settings.theme);
+}
+
+/**
+ * Convert a raw euro amount (in whole euros, e.g. 50_000_000) to the
+ * selected currency and format it like the backend's eur_m(): "€50m",
+ * "$54.5m" (sub-1-unit amounts get one decimal place), or "free" for 0/NaN.
+ * Mirrors app/main.py's eur_m() so the two stay visually consistent.
+ */
+function formatMoney(eurValue) {
+  if (eurValue === null || eurValue === undefined || Number.isNaN(eurValue) || eurValue === 0) return "free";
+  const symbol = CURRENCY_SYMBOLS[settings.currency];
+  const millions = (eurValue * EXCHANGE_RATES[settings.currency]) / 1_000_000;
+  return millions < 1 ? `${symbol}${millions.toFixed(1)}m` : `${symbol}${millions.toFixed(0)}m`;
+}
+
+/**
+ * Rewrite every "€X.Ym"/"€Xm" token in backend-generated prose (e.g. a
+ * breakdown description like "Bought for €50m, later resold for €80m...")
+ * into the selected currency. The backend always formats amounts in EUR
+ * (see eur_m() in app/main.py) since that's the dataset's native currency,
+ * so this is the only way to make that prose currency-aware without a
+ * backend round-trip - a no-op when the setting is already EUR.
+ */
+function convertMoneyInText(text) {
+  if (!text || settings.currency === "EUR") return text;
+  return text.replace(/€([\d.]+)m/g, (match, amount) => formatMoney(parseFloat(amount) * 1_000_000));
+}
+
+/** Build and insert the settings gear button + its modal into the page. Call once, after the DOM is ready. */
+function injectSettingsUI() {
+  const btn = document.createElement("button");
+  btn.className = "settings-btn";
+  btn.id = "settings-btn";
+  btn.setAttribute("aria-label", "Settings");
+  btn.textContent = "⚙";
+  document.body.appendChild(btn);
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "modal-backdrop";
+  backdrop.id = "settings-modal-backdrop";
+  backdrop.innerHTML = `
+    <div class="modal-box">
+      <button class="modal-close" id="settings-modal-close" aria-label="Close">&times;</button>
+      <h2>Settings</h2>
+      <div class="field">
+        <label for="currency-select">Currency</label>
+        <select id="currency-select">
+          <option value="EUR">EUR (&euro;)</option>
+          <option value="USD">USD ($)</option>
+          <option value="GBP">GBP (&pound;)</option>
+        </select>
+        <p class="settings-note">Fees and market values shown across the site convert at a fixed, approximate rate - not a live feed.</p>
+      </div>
+      <div class="field">
+        <label for="theme-select">Theme</label>
+        <select id="theme-select">
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="page-size-select">Rows per page (Browse / Loans)</label>
+        <select id="page-size-select">
+          <option value="25">25</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+        </select>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(backdrop);
+
+  document.getElementById("currency-select").value = settings.currency;
+  document.getElementById("theme-select").value = settings.theme;
+  document.getElementById("page-size-select").value = String(settings.pageSize);
+
+  const open = () => backdrop.classList.add("open");
+  const close = () => backdrop.classList.remove("open");
+  btn.addEventListener("click", open);
+  document.getElementById("settings-modal-close").addEventListener("click", close);
+  backdrop.addEventListener("click", (e) => { if (e.target === backdrop) close(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+
+  document.getElementById("currency-select").addEventListener("change", (e) => {
+    settings.currency = e.target.value;
+    saveSettings();
+  });
+  document.getElementById("theme-select").addEventListener("change", (e) => {
+    settings.theme = e.target.value;
+    saveSettings();
+  });
+  document.getElementById("page-size-select").addEventListener("change", (e) => {
+    settings.pageSize = parseInt(e.target.value, 10);
+    saveSettings();
+  });
+}
+
+applyTheme();
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", injectSettingsUI);
+} else {
+  injectSettingsUI();
+}

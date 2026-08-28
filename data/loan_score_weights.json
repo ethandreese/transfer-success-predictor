@@ -1,0 +1,7 @@
+{
+  "_comment": "Loan-success-score component weights, per position. Unlike data/score_weights.json (permanent transfers), there's no value_for_money or resale_profit component: most loans carry no real fee (the packaged fee is 0 even when a real loan fee was agreed - see fetch_transfer_types.py), and a loan doesn't end in a sale of its own. playing_time is weighted heavily across every position - whether the loan actually delivered game time is usually the central question a loan gets judged on, independent of how well the player performed when they did play. Shared by scripts/build_dataset.py (computes the label) and app/main.py (labels the 'why this score' explanation). Each position row must sum to 1.0.",
+  "Attack":     {"perf_level": 0.35, "perf_delta": 0.15, "value_growth": 0.15, "playing_time": 0.35},
+  "Midfield":   {"perf_level": 0.30, "perf_delta": 0.13, "value_growth": 0.17, "playing_time": 0.40},
+  "Defender":   {"perf_level": 0.18, "perf_delta": 0.08, "value_growth": 0.24, "playing_time": 0.50},
+  "Goalkeeper": {"perf_level": 0.00, "perf_delta": 0.00, "value_growth": 0.35, "playing_time": 0.65}
+}

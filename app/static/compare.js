@@ -132,7 +132,7 @@ function renderResult(suffix, result) {
       <div class="explain-row">
         <span class="tooltip-wrap explain-label">
           ${e.label}
-          <span class="tooltip-box">${e.detail}</span>
+          <span class="tooltip-box">${convertMoneyInText(e.detail)}</span>
         </span>
         <div class="explain-bar-track">
           <div class="explain-bar-fill ${positive ? "pos" : "neg"}" style="width:${width}%"></div>
@@ -142,6 +142,24 @@ function renderResult(suffix, result) {
     `;
   }).join("");
 }
+
+/** Render a /api/compare response: both scenario results plus the plain-English delta summary. Factored out so a settings change (currency) can re-render the last comparison without re-comparing. */
+function renderCompareResult(data) {
+  document.getElementById("result").classList.add("open");
+  renderResult("a", data.a);
+  renderResult("b", data.b);
+  const delta = data.delta;
+  const deltaEl = document.getElementById("compare-delta");
+  if (Math.abs(delta) < 3) {
+    deltaEl.textContent = "These two scenarios score within a few points of each other — roughly a toss-up given the model's error margin.";
+  } else if (delta > 0) {
+    deltaEl.textContent = `Option A scores ${delta.toFixed(1)} points higher than Option B.`;
+  } else {
+    deltaEl.textContent = `Option B scores ${Math.abs(delta).toFixed(1)} points higher than Option A.`;
+  }
+}
+
+let lastCompareData = null;
 
 // Build both scenarios' payloads, POST them together to /api/compare, and
 // render both results plus a plain-English delta summary.
@@ -163,22 +181,18 @@ document.getElementById("compare-btn").addEventListener("click", async () => {
       const err = await res.json();
       throw new Error(err.detail || "Comparison failed");
     }
-    const data = await res.json();
-    document.getElementById("result").classList.add("open");
-    renderResult("a", data.a);
-    renderResult("b", data.b);
-    const delta = data.delta;
-    const deltaEl = document.getElementById("compare-delta");
-    if (Math.abs(delta) < 3) {
-      deltaEl.textContent = "These two scenarios score within a few points of each other — roughly a toss-up given the model's error margin.";
-    } else if (delta > 0) {
-      deltaEl.textContent = `Option A scores ${delta.toFixed(1)} points higher than Option B.`;
-    } else {
-      deltaEl.textContent = `Option B scores ${Math.abs(delta).toFixed(1)} points higher than Option A.`;
-    }
+    lastCompareData = await res.json();
+    renderCompareResult(lastCompareData);
   } catch (e) {
     errorBox.textContent = e.message;
   }
+});
+
+// A settings change (currency, ...) doesn't change the underlying data,
+// just how it's displayed - re-render the last comparison from the cached
+// response rather than re-comparing, if one is already showing.
+document.addEventListener("settingschange", () => {
+  if (lastCompareData) renderCompareResult(lastCompareData);
 });
 
 setupScenario("a");

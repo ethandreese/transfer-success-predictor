@@ -10,15 +10,18 @@
   <header>
     <h1>⚽ Transfer Success Predictor</h1>
     <p>
-      Predicts how a football transfer is likely to go, trained on ~7,300 real transfers
-      (2013&ndash;2026) using pre-transfer performance, age, fee, and destination club
-      strength. Success score blends performance level and change, market-value growth,
+      Predicts how a football transfer is likely to go, trained on ~5,000 real permanent
+      transfers (2013&ndash;2026) using pre-transfer performance, age, fee, and destination
+      club strength. Success score blends performance level and change, market-value growth,
       playing time, and value for money &mdash; measured over the player's <em>entire</em>
-      tenure at the new club, not just year one.
+      tenure at the new club, not just year one. Loan spells are scored separately
+      (see <a href="/loans.html">Browse loans</a>) since they aren't a permanent-transfer
+      decision.
     </p>
     <nav class="topnav">
       <a href="/" class="active">Predict</a>
       <a href="/browse.html">Browse all transfers</a>
+      <a href="/loans.html">Browse loans</a>
       <a href="/compare.html">Compare two transfers</a>
     </nav>
   </header>
@@ -82,6 +85,7 @@
     </section>
   </main>
 
+  <script src="/settings.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

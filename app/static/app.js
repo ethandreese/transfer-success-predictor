@@ -11,13 +11,13 @@ function scoreColor(score) {
   return "var(--accent-bad)";
 }
 
-/** Render one transfer's score-component breakdown (label + bar + hover tooltip) as HTML, from the `breakdown` array the API returns. */
+/** Render one transfer's score-component breakdown (label + bar + hover tooltip) as HTML, from the `breakdown` array the API returns. Descriptions run through convertMoneyInText since the backend always formats euro amounts in its prose. */
 function renderBreakdown(breakdown) {
   return breakdown.map(b => `
     <div class="breakdown-row">
       <span class="tooltip-wrap breakdown-label">
         ${b.label}
-        <span class="tooltip-box">${b.description}</span>
+        <span class="tooltip-box">${convertMoneyInText(b.description)}</span>
       </span>
       <div class="breakdown-bar-track">
         <div class="breakdown-bar-fill" style="width:${b.value}%; background:${scoreColor(b.value)}"></div>
@@ -137,9 +137,45 @@ setupAutocomplete({
   },
 });
 
+/** Render a /api/predict response into the #result panel. Factored out from the click handler so a settings change (currency) can re-render the last result without re-predicting. */
+function renderPredictResult(data) {
+  document.getElementById("result").classList.add("open");
+  const scoreEl = document.getElementById("score-value");
+  scoreEl.textContent = data.success_score;
+  scoreEl.style.color = scoreColor(data.success_score);
+  const [lo, hi] = data.score_range;
+  document.getElementById("score-range-note").textContent =
+    `Likely range: ${lo}–${hi}, based on the most similar historical transfers`;
+  document.getElementById("mae-value").textContent = data.model_test_mae;
+  document.getElementById("r2-value").textContent = data.model_test_r2;
+  document.getElementById("comparables-list").innerHTML = data.comparable_transfers.map(c => `
+    <div class="comp-row">
+      <span>${c.name} (${c.from_club} &rarr; ${c.to_club}, ${c.transfer_date.slice(0, 7)})</span>
+      <span style="color:${scoreColor(c.success_score)}">${c.success_score}</span>
+    </div>
+  `).join("");
+  document.getElementById("explanation-list").innerHTML = data.explanation.map(e => {
+    const positive = e.contribution >= 0;
+    const width = Math.min(Math.abs(e.contribution) * 4, 100);
+    return `
+      <div class="explain-row">
+        <span class="tooltip-wrap explain-label">
+          ${e.label}
+          <span class="tooltip-box">${convertMoneyInText(e.detail)}</span>
+        </span>
+        <div class="explain-bar-track">
+          <div class="explain-bar-fill ${positive ? "pos" : "neg"}" style="width:${width}%"></div>
+        </div>
+        <span class="explain-value">${positive ? "+" : ""}${e.contribution}</span>
+      </div>
+    `;
+  }).join("");
+}
+
 // Assemble a PredictRequest from the selected player/club plus the fee and
-// (editable) age fields, POST it to /api/predict, and render the score,
-// range, comparables, and explanation into the #result panel.
+// (editable) age fields, POST it to /api/predict, and render the result.
+// The fee input is always in EUR regardless of the currency setting (it
+// feeds the model directly) - only the displayed output is converted.
 document.getElementById("predict-btn").addEventListener("click", async () => {
   const errorBox = document.getElementById("error-box");
   errorBox.textContent = "";
@@ -178,41 +214,20 @@ document.getElementById("predict-btn").addEventListener("click", async () => {
       const err = await res.json();
       throw new Error(err.detail || "Prediction failed");
     }
-    const data = await res.json();
-    document.getElementById("result").classList.add("open");
-    const scoreEl = document.getElementById("score-value");
-    scoreEl.textContent = data.success_score;
-    scoreEl.style.color = scoreColor(data.success_score);
-    const [lo, hi] = data.score_range;
-    document.getElementById("score-range-note").textContent =
-      `Likely range: ${lo}–${hi}, based on the most similar historical transfers`;
-    document.getElementById("mae-value").textContent = data.model_test_mae;
-    document.getElementById("r2-value").textContent = data.model_test_r2;
-    document.getElementById("comparables-list").innerHTML = data.comparable_transfers.map(c => `
-      <div class="comp-row">
-        <span>${c.name} (${c.from_club} &rarr; ${c.to_club}, ${c.transfer_date.slice(0, 7)})</span>
-        <span style="color:${scoreColor(c.success_score)}">${c.success_score}</span>
-      </div>
-    `).join("");
-    document.getElementById("explanation-list").innerHTML = data.explanation.map(e => {
-      const positive = e.contribution >= 0;
-      const width = Math.min(Math.abs(e.contribution) * 4, 100);
-      return `
-        <div class="explain-row">
-          <span class="tooltip-wrap explain-label">
-            ${e.label}
-            <span class="tooltip-box">${e.detail}</span>
-          </span>
-          <div class="explain-bar-track">
-            <div class="explain-bar-fill ${positive ? "pos" : "neg"}" style="width:${width}%"></div>
-          </div>
-          <span class="explain-value">${positive ? "+" : ""}${e.contribution}</span>
-        </div>
-      `;
-    }).join("");
+    state.lastPredictData = await res.json();
+    renderPredictResult(state.lastPredictData);
   } catch (e) {
     errorBox.textContent = e.message;
   }
+});
+
+// A settings change (currency, ...) doesn't change the underlying data,
+// just how it's displayed - reload the examples grid and, if a prediction
+// is already showing, re-render it from the cached response rather than
+// re-predicting.
+document.addEventListener("settingschange", () => {
+  loadExamples();
+  if (state.lastPredictData) renderPredictResult(state.lastPredictData);
 });
 
 loadExamples();
