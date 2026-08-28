@@ -87,16 +87,18 @@ def normalize_name(name):
     return re.sub(r"\s+", " ", n).strip()
 
 
-def fetch_league_stat_categories(client, season=SEASON):
+def fetch_league_stat_categories(client, season=SEASON, league_id=EPL_LEAGUE_ID):
     """
-    Get one EPL season's stat category list + each category's fetchAllUrl.
-    Returns None if FotMob has no stats at all for that season (confirmed
-    true for every season before 2016/2017 - see fotmob_epl_pilot_v2.py),
-    rather than raising, so callers can probe a season's coverage cheaply.
+    Get one league-season's stat category list + each category's
+    fetchAllUrl. Returns None if FotMob has no stats at all for that
+    league-season (confirmed true for every EPL season before 2016/2017 -
+    see fotmob_epl_pilot_v2.py; other leagues' coverage starts even later
+    - see fotmob_multi_league_pilot.py), rather than raising, so callers
+    can probe a season's coverage cheaply.
     """
     resp = client.get(
         "https://www.fotmob.com/api/data/leagues",
-        params={"id": EPL_LEAGUE_ID, "season": season},
+        params={"id": league_id, "season": season},
         headers=HEADERS,
         timeout=30,
     )
