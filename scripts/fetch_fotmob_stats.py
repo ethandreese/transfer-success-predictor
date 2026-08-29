@@ -84,7 +84,7 @@ LEAGUE_MAP = {
 # don't have anyway - see fotmob_epl_pilot.py's investigation). Header text
 # (captured live) says whether each is a per-90/percentage rate (minutes-
 # weighted average across a multi-season tenure) or a season-total count
-# (summed) - see build_dataset.py's compute_defensive_technical_pct for how
+# (summed) - see build_dataset.py's compute_fotmob_component_pcts for how
 # these actually feed the score.
 STAT_HEADERS = {
     "rating": "FotMob rating", "mins_played": "Minutes played",

@@ -128,30 +128,53 @@ def describe_resale_profit(r, eur_m):
     )
 
 
-def describe_defensive_technical(r, position_plural):
+FOTMOB_COMPONENT_LABELS = {
+    "rating": "FotMob rating",
+    "attacking": "Attacking output",
+    "defensive": "Defensive contribution",
+    "possession": "Possession & passing",
+}
+
+
+def describe_fotmob_component(component, r, position_plural):
     """
-    Build the 'Defensive/technical contribution' breakdown row's
-    description: the underlying FotMob numbers behind
-    defensive_technical_pct (see compute_defensive_technical_pct in
-    build_dataset.py), phrased differently for goalkeepers (saves/save %/
-    goals conceded) vs. everyone else (defensive actions/passing/rating).
+    Build one FotMob-derived breakdown row's description (rating/attacking/
+    defensive/possession - see compute_fotmob_component_pcts in
+    build_dataset.py for why they're kept separate rather than blended into
+    one number). The underlying per-90 rates driving "attacking" aren't
+    stored directly (only the raw season totals are), so chances-created/90
+    is recomputed here the same way build_dataset.py derives it - from
+    fotmob_total_att_assist and fotmob_total_minutes.
     """
     seasons = int(r["fotmob_seasons_used"])
     season_note = "1 season" if seasons == 1 else f"{seasons} seasons"
-    if r["position"] == "Goalkeeper":
+    minutes_per_90 = max(r["fotmob_total_minutes"] / 90, 1)
+    chances_created_p90 = r["fotmob_total_att_assist"] / minutes_per_90
+
+    if component == "rating":
+        detail = f"{r['fotmob_rating']:.2f} average match rating"
+    elif component == "attacking":
+        detail = (
+            f"{r['fotmob_goals_per_90']:.2f} goals/90, {r['fotmob_expected_goals_per_90']:.2f} xG/90, "
+            f"{r['fotmob_expected_assists_per_90']:.2f} xA/90, {chances_created_p90:.1f} chances created/90, "
+            f"{r['fotmob_won_contest']:.1f} dribbles/90"
+        )
+    elif component == "defensive" and r["position"] == "Goalkeeper":
         detail = (
             f"{r['fotmob_saves']:.1f} saves/90, {r['fotmob__save_percentage']:.0f}% save rate, "
             f"{r['fotmob_goals_conceded']:.1f} goals conceded/90"
         )
-    else:
+    elif component == "defensive":
         detail = (
-            f"{r['fotmob_defensive_contributions']:.1f} defensive actions/90 "
-            f"(tackles, interceptions, clearances, recoveries combined), "
-            f"{r['fotmob_accurate_pass']:.1f} accurate passes/90"
+            f"{r['fotmob_total_tackle']:.1f} tackles/90, {r['fotmob_interception']:.1f} interceptions/90, "
+            f"{r['fotmob_effective_clearance']:.1f} clearances/90, {r['fotmob_ball_recovery']:.1f} recoveries/90"
         )
+    else:  # possession
+        detail = f"{r['fotmob_accurate_pass']:.1f} accurate passes/90"
+
     return (
-        f"FotMob rating {r['fotmob_rating']:.2f}, {detail} — averaged across {season_note} "
-        f"at {r['to_club_name']}, ranked vs. other {position_plural}"
+        f"{detail} — averaged across {season_note} at {r['to_club_name']}, "
+        f"ranked vs. other {position_plural}"
     )
 
 
@@ -170,9 +193,10 @@ def describe_components(r):
     Build the full "why this score" breakdown for one row of
     transfers_processed.csv: a list of {label, value, description} dicts,
     one per success-score component actually used for this transfer (5
-    always, plus "Defensive/technical contribution" when has_fotmob_data is
-    true and "Resale profit" when has_resale_data is true - so 5 to 7 rows
-    total). Used by both /api/examples and /api/transfers/detail via
+    always, plus up to 4 FotMob-derived rows - rating/attacking/defensive/
+    possession, each independently shown only when its own has_*_data flag
+    is true - and "Resale profit" when has_resale_data is true - so 5 to 10
+    rows total). Used by both /api/examples and /api/transfers/detail via
     build_transfer_card().
     """
     position_plural = POSITION_PLURAL.get(r["position"], r["position"])
@@ -224,13 +248,15 @@ def describe_components(r):
             "value": round(float(r["value_for_money_pct"]), 1),
             "description": f"{eur_m(r['transfer_fee'])} fee vs. {eur_m(r['value_before'])} market value at the time",
         },
-    ] + ([
+    ] + [
         {
-            "label": "Defensive/technical contribution",
-            "value": round(float(r["defensive_technical_pct"]), 1),
-            "description": describe_defensive_technical(r, position_plural),
-        },
-    ] if bool(r["has_fotmob_data"]) else []) + ([
+            "label": FOTMOB_COMPONENT_LABELS[component],
+            "value": round(float(r[f"{component}_pct"]), 1),
+            "description": describe_fotmob_component(component, r, position_plural),
+        }
+        for component in ("rating", "attacking", "defensive", "possession")
+        if bool(r[f"has_{component}_data"])
+    ] + ([
         {
             "label": "Resale profit",
             "value": round(float(r["resale_profit_pct"]), 1),

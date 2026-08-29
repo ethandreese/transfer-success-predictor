@@ -62,10 +62,11 @@ def test_examples_returns_known_transfers_with_breakdown():
     assert len(data) > 0
     for ex in data:
         assert 0 <= ex["success_score"] <= 100
-        # 5 components always; "Defensive/technical contribution" only when
-        # FotMob tenure stats are known, "Resale profit" only when the club
-        # later resold the player for a known fee - so 5 to 7 total.
-        assert len(ex["breakdown"]) in (5, 6, 7)
+        # 5 components always; up to 4 FotMob-derived rows (rating/
+        # attacking/defensive/possession), each shown only when its own
+        # FotMob data is known; "Resale profit" only when the club later
+        # resold the player for a known fee - so 5 to 10 total.
+        assert 5 <= len(ex["breakdown"]) <= 10
         for component in ex["breakdown"]:
             assert "description" in component and component["description"]
 

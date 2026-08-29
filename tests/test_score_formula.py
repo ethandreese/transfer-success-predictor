@@ -139,18 +139,21 @@ def test_tenure_days_non_negative(transfers):
     assert (transfers["tenure_days"] >= 0).all()
 
 
+FOTMOB_COMPONENTS = ["rating", "attacking", "defensive", "possession"]
+
+
 def test_success_score_matches_weighted_components(transfers):
     """
     Recompute success_score from the stored per-component percentiles and
     each row's position weights, and check it matches the stored score.
     Catches a formula/weights drift (e.g. someone edits score_weights.json
-    without rerunning build_dataset.py) before it ships. Handles all four
-    combinations of the two components that can independently be missing:
-    defensive_technical (dropped/renormalized first, when has_fotmob_data is
-    false) and resale_profit (layered on top at its tenure-scaled weight,
-    or dropped/renormalized, when has_resale_data is false) - see
-    build_dataset.py's main() for why defensive_technical has to be folded
-    in before the resale-profit renormalization runs.
+    without rerunning build_dataset.py) before it ships. Handles every
+    combination of the components that can independently be missing: each
+    of the 4 FotMob components (dropped/renormalized first, per its own
+    has_*_data flag) and resale_profit (layered on top at its tenure-scaled
+    weight, or dropped/renormalized, when has_resale_data is false) - see
+    build_dataset.py's main() for why the FotMob components have to be
+    folded in before the resale-profit renormalization runs.
     """
     sample = transfers.sample(n=min(300, len(transfers)), random_state=42)
     for _, row in sample.iterrows():
@@ -163,13 +166,16 @@ def test_success_score_matches_weighted_components(transfers):
             + w["value_for_money"] * row["value_for_money_pct"]
         )
         other_weight_sum = 1 - w["resale_profit"]
-        if row["has_fotmob_data"]:
-            six = five + w["defensive_technical"] * row["defensive_technical_pct"]
-            six_weight_sum = other_weight_sum
-        else:
-            six = five
-            six_weight_sum = other_weight_sum - w["defensive_technical"]
-        base = six / six_weight_sum * other_weight_sum
+
+        fotmob_numerator = sum(
+            w[c] * row[f"{c}_pct"] for c in FOTMOB_COMPONENTS if row[f"has_{c}_data"]
+        )
+        fotmob_weight_known = sum(
+            w[c] for c in FOTMOB_COMPONENTS if row[f"has_{c}_data"]
+        )
+        missing_fotmob_weight = sum(w[c] for c in FOTMOB_COMPONENTS) - fotmob_weight_known
+        six_weight_sum = other_weight_sum - missing_fotmob_weight
+        base = (five + fotmob_numerator) / six_weight_sum * other_weight_sum
 
         if row["has_resale_data"]:
             rescale = (1 - row["resale_weight"]) / other_weight_sum
@@ -182,25 +188,39 @@ def test_success_score_matches_weighted_components(transfers):
         )
 
 
-def test_defensive_technical_only_counted_when_fotmob_data_known(transfers):
-    """has_fotmob_data should exactly gate whether defensive_technical_pct is present - never null-but-true or non-null-but-false, or its weight would multiply into a NaN or silently vanish."""
-    assert transfers.loc[transfers["has_fotmob_data"], "defensive_technical_pct"].notna().all()
-    assert transfers.loc[~transfers["has_fotmob_data"], "defensive_technical_pct"].isna().all()
+@pytest.mark.parametrize("component", FOTMOB_COMPONENTS)
+def test_fotmob_component_only_counted_when_its_data_known(transfers, component):
+    """has_{component}_data should exactly gate whether {component}_pct is present - never null-but-true or non-null-but-false, or its weight would multiply into a NaN or silently vanish."""
+    flag = transfers[f"has_{component}_data"]
+    assert transfers.loc[flag, f"{component}_pct"].notna().all()
+    assert transfers.loc[~flag, f"{component}_pct"].isna().all()
 
 
-def test_defensive_technical_pct_within_bounds(transfers):
-    """Like every other sub-score, defensive_technical_pct should itself be a valid 0-100 percentile wherever it's known."""
-    known = transfers.loc[transfers["has_fotmob_data"], "defensive_technical_pct"]
+@pytest.mark.parametrize("component", FOTMOB_COMPONENTS)
+def test_fotmob_component_pct_within_bounds(transfers, component):
+    """Like every other sub-score, each FotMob component's _pct should itself be a valid 0-100 percentile wherever it's known."""
+    known = transfers.loc[transfers[f"has_{component}_data"], f"{component}_pct"]
     assert known.between(0, 100).all()
 
 
-def test_defensive_technical_covers_most_transfers_but_not_all():
+def test_goalkeepers_have_no_attacking_weight():
+    """Goals/xG/xA/dribbles are as meaningless for a goalkeeper's *attacking* FotMob bucket as perf_level/perf_delta already are - the weight must be zero, not just small."""
+    assert POSITION_WEIGHTS["Goalkeeper"]["attacking"] == 0
+
+
+def test_defenders_weight_defensive_more_than_attackers():
+    """Sanity check on the position-weighting direction: the defensive FotMob bucket should matter more for defenders than attackers, mirroring the existing perf_level check in reverse."""
+    assert POSITION_WEIGHTS["Defender"]["defensive"] > POSITION_WEIGHTS["Attack"]["defensive"]
+
+
+def test_fotmob_data_covers_most_transfers_but_not_all():
     """
     FotMob coverage is real but not universal (nothing before a league-
     specific season, and Ukraine has no usable stats at all - see
-    scripts/fetch_fotmob_stats.py) - most transfers should have it, but a
-    meaningful minority shouldn't, or the renormalization path would never
-    actually be exercised.
+    scripts/fetch_fotmob_stats.py) - has_fotmob_data (true if ANY of the 4
+    components has data) should cover most transfers, but a meaningful
+    minority shouldn't, or the renormalization path would never actually
+    be exercised.
     """
     df = pd.read_csv(os.path.join(DATA_DIR, "transfers_processed.csv"))
     assert 0.6 < df["has_fotmob_data"].mean() < 0.95
