@@ -44,6 +44,7 @@ SCORE_WEIGHTS_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "scor
 with open(SCORE_WEIGHTS_PATH) as f:
     _score_weights_raw = json.load(f)
 RESALE_WEIGHT_CURVE = _score_weights_raw["resale_weight_curve"]
+SUB_POSITION_WEIGHTS = _score_weights_raw["_sub_positions"]
 POSITION_WEIGHTS = {
     k: v for k, v in _score_weights_raw.items()
     if not k.startswith("_") and k != "resale_weight_curve"
@@ -52,7 +53,29 @@ POSITION_WEIGHTS = {
 LOAN_SCORE_WEIGHTS_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "loan_score_weights.json")
 with open(LOAN_SCORE_WEIGHTS_PATH) as f:
     _loan_score_weights_raw = json.load(f)
+LOAN_SUB_POSITION_WEIGHTS = _loan_score_weights_raw["_sub_positions"]
 LOAN_POSITION_WEIGHTS = {k: v for k, v in _loan_score_weights_raw.items() if not k.startswith("_")}
+
+
+def lookup_weights(df, position_weights, sub_position_weights):
+    """
+    Per-row weight lookup: a row's actual sub_position (see
+    load_actual_sub_positions) selects its weights from
+    sub_position_weights when a distinct profile exists for that specific
+    sub_position; otherwise (an unlisted sub_position like Central
+    Midfield/Centre-Forward, which fall back to the broad row on purpose -
+    see data/score_weights.json's _sub_positions_comment - or a missing
+    sub_position) it falls back to position_weights[row's broad position].
+    Percentile ranking (perf_level_pct, compute_fotmob_component_pcts,
+    etc.) is unaffected by any of this - it still groups by the broad
+    position column only, so e.g. a Centre-Back is still ranked against
+    every Defender, just weighted differently once ranked.
+    """
+    rows = [
+        sub_position_weights.get(sub_position, position_weights[position])
+        for position, sub_position in zip(df["position"], df["sub_position"])
+    ]
+    return pd.DataFrame(rows, index=df.index)
 
 RAW_DIR = os.environ.get(
     "TRANSFERMARKT_RAW_DIR",
@@ -270,8 +293,51 @@ def load_loan_spells():
     return loans
 
 
+def load_actual_sub_positions():
+    """
+    players.csv's own sub_position is a single, undated label - whatever
+    Transfermarkt currently lists for that player, the same value
+    regardless of which transfer or era is being scored. For a player who
+    changed roles over their career (e.g. central midfield early on,
+    pushed into a more defensive role later) that mislabels every older
+    transfer with today's role instead of the one they actually had at
+    the time.
+
+    game_lineups.csv doesn't have that problem: one row per (game,
+    player), across both starting_lineup and substitutes rows, with the
+    sub-position they were actually fielded in for that specific match.
+    This takes each player's single most-common fielded sub-position
+    across their *entire* lineup history - a real, dated career summary
+    rather than a today-only snapshot. Verified against players.csv's own
+    label: for players with a real sample (>=10 lineup rows), the two
+    agree 74.7% of the time - real drift, not a rounding error - and
+    roughly a quarter of players never settle into one dominant role at
+    all (<70% of their own lineup rows at their single most-common
+    position).
+
+    This is still career-wide, not per-tenure - see
+    data/score_weights.json's _sub_positions_comment for why that
+    (coarser but simpler, and immune to short-tenure/loan sample-size
+    issues) tradeoff was chosen. Returns a Series indexed by player_id;
+    load_players() falls back to players.csv's own sub_position for any
+    player with no game_lineups rows at all.
+    """
+    lineups = pd.read_csv(
+        os.path.join(RAW_DIR, "game_lineups.csv"),
+        usecols=["player_id", "position"],
+    ).dropna(subset=["position"])
+    return lineups.groupby("player_id")["position"].agg(lambda s: s.value_counts().idxmax())
+
+
 def load_players():
-    """Load players.csv: one row per player with position, physical attributes, and current club/value."""
+    """
+    Load players.csv: one row per player with position, physical
+    attributes, and current club/value. sub_position is overridden with
+    each player's actual career-wide fielded sub-position from
+    game_lineups.csv (see load_actual_sub_positions) wherever that's
+    available - only falling back to players.csv's own (single, undated)
+    sub_position label for a player with no lineup data at all.
+    """
     df = pd.read_csv(
         os.path.join(RAW_DIR, "players.csv"),
         usecols=[
@@ -281,6 +347,8 @@ def load_players():
         ],
         parse_dates=["date_of_birth"],
     )
+    actual_sub_position = load_actual_sub_positions()
+    df["sub_position"] = df["player_id"].map(actual_sub_position).fillna(df["sub_position"])
     return df
 
 
@@ -902,7 +970,7 @@ def finish_loan_dataset(df, league_position_baseline, position_fallback):
         # and attacking are folded together first (see
         # fold_perf_level_into_attacking) since they'd otherwise double-
         # count the same attacking-output signal.
-        w = df["position"].map(LOAN_POSITION_WEIGHTS).apply(pd.Series)
+        w = lookup_weights(df, LOAN_POSITION_WEIGHTS, LOAN_SUB_POSITION_WEIGHTS)
         has_attacking = fold_perf_level_into_attacking(df)
         perf_level_weight = np.where(has_attacking, 0, w["perf_level"])
         attacking_weight = np.where(has_attacking, w["attacking"] + w["perf_level"], w["attacking"])
@@ -1145,7 +1213,7 @@ def main():
     # (has_rating_data, has_attacking_data, ...): folded in first, below,
     # since they need to be settled BEFORE the resale-profit renormalization
     # runs on top of the result.
-    w = df["position"].map(POSITION_WEIGHTS).apply(pd.Series)
+    w = lookup_weights(df, POSITION_WEIGHTS, SUB_POSITION_WEIGHTS)
     other_weight_sum = 1 - w["resale_profit"]  # e.g. 0.92 - the reference weight left for everything except resale_profit
 
     # perf_level and attacking both measure attacking output (see

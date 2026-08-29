@@ -284,6 +284,58 @@ does this: it merges FotMob stats onto both transfers and loans, then
 runs the percentile ranking once across the combined set before handing
 each its own slice back.
 
+**Weights also vary by sub-position within each broad position, not just
+by the four broad positions above.** A Defensive Midfielder and an
+Attacking Midfielder both get the broad "Midfield" weights above by
+default, which weight attacking output far too heavily for a player
+whose job is mostly disruption and progression, not goals — Moisés
+Caicedo (Brighton → Chelsea, a genuine defensive-midfield profile: 74th
+percentile on defending, 68th on possession, but only 27th on attacking
+output) scored a 45.1 under the broad Midfield weights despite that
+being a clearly strong defensive-midfield tenure. `data/score_weights.json`'s
+`_sub_positions` (and `data/loan_score_weights.json`'s equivalent) give
+a handful of sub-positions their own weight row instead — Defensive
+Midfield, Attacking Midfield, Left/Right Midfield, Centre-Back, Left/
+Right-Back, Left/Right Winger — each shifting weight out of
+perf_level/perf_delta/attacking (the same "attacking output" bloc
+`fold_perf_level_into_attacking` already folds into one number) and into
+defensive/possession for a defense-oriented role, or the other way for
+an attack-oriented one. With the Defensive Midfield weights, Caicedo's
+score becomes 57.6. Central Midfield, Centre-Forward, Second Striker,
+and Goalkeeper have no override — either that already IS the broad
+default's implicit profile, the position has no sub-split at all
+(Goalkeeper), or the sample is too thin in this dataset for a confident
+opinion (Second Striker: ~300 players total, before any transfer/
+appearance filters even apply) — those fall back to the broad position's
+row unchanged. **Percentile ranking itself is untouched by any of
+this** — a Centre-Back is still ranked against every Defender, not just
+other Centre-Backs, so the comparison population stays large and stable;
+only the weights applied to an already-computed percentile differ by
+sub-position.
+
+**The sub-position used for this is not the one in the packaged
+`players.csv`.** That column is a single, undated label — whatever
+Transfermarkt currently lists for a player, the same value regardless of
+which transfer or era is being scored, so a player who changed roles
+over their career (central midfield early on, pushed into a more
+defensive role later) gets every older transfer judged against today's
+label instead of the one they actually held at the time. `game_lineups.csv`
+(3.18M rows, one per (game, player), covering both `starting_lineup` and
+`substitutes` rows) has the sub-position a player was actually fielded
+in for every specific match, so `load_actual_sub_positions` in
+`scripts/build_dataset.py` takes each player's single most-common
+fielded sub-position across their entire lineup history and uses that
+instead — still a career-wide summary, not a per-tenure one (a per-tenure
+version would need to filter to each transfer's specific window, which
+gets thin fast for short tenures and loans), but a real, dated one
+rather than a today-only snapshot. The two disagree more than you'd
+expect: for players with a real sample (≥10 lineup appearances),
+`players.csv`'s label matches the position they were actually fielded in
+most often only 74.7% of the time, and about a quarter of players never
+settle into one dominant role at all (under 70% of their own lineup
+appearances at their single most-common position). A player with no
+`game_lineups.csv` rows at all falls back to `players.csv`'s own label.
+
 **League-adjusted performance.** Goal contributions are judged against how
 hard it actually is to score in that specific league, not the whole
 dataset. For each (league, position) pair we compute the average goal
@@ -467,6 +519,18 @@ already be similar on it by construction, trivializing the comparison).
   failure mode than simply missing data - the fuzzy-match fallback
   requires a destination-club match before accepting a non-exact name, as
   a partial guard against that.
+- Sub-position weighting (see above) uses each player's single most-common
+  fielded sub-position across their *entire* career in `game_lineups.csv`,
+  not the specific window of any one transfer's tenure — a player who
+  genuinely changed roles mid-career (moved from a wide role into central
+  midfield, say) has every one of their transfers weighted by whichever
+  role dominates their overall history, which may not be the role they
+  actually played during an older or shorter tenure. A small number of
+  players' most-common lineup entry is a generic legacy label
+  ("Midfield", "Attack", "Defender", not the granular sub-position
+  vocabulary) rather than a real sub-position — those fall back to the
+  broad position's weights like any other unmapped value, same as a
+  player with no `game_lineups.csv` rows at all.
 - Only transfers with ≥10 appearances in both the year before and the whole
   tenure after are included (~5,000 of ~104k candidate permanent transfers,
   once loans are excluded), which skews the training data toward

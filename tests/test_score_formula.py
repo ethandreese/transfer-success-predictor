@@ -9,8 +9,9 @@ import pandas as pd
 import pytest
 
 from scripts.build_dataset import (
-    LOAN_POSITION_WEIGHTS, MIN_LOAN_TENURE_DAYS, POSITION_WEIGHTS,
-    RESALE_WEIGHT_CURVE, compute_resale_weight, percentile_rank,
+    LOAN_POSITION_WEIGHTS, LOAN_SUB_POSITION_WEIGHTS, MIN_LOAN_TENURE_DAYS,
+    POSITION_WEIGHTS, RESALE_WEIGHT_CURVE, SUB_POSITION_WEIGHTS,
+    compute_resale_weight, percentile_rank,
 )
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
@@ -60,6 +61,56 @@ def test_attackers_weight_performance_more_than_defenders():
     attack_perf = attack["perf_level"] + attack["perf_delta"]
     defender_perf = defender["perf_level"] + defender["perf_delta"]
     assert attack_perf > defender_perf
+
+
+def test_sub_position_weights_sum_to_one():
+    """Same invariant as the broad position rows - every sub_position override must still sum to 1.0."""
+    for sub_position, weights in SUB_POSITION_WEIGHTS.items():
+        total = sum(weights.values())
+        assert total == pytest.approx(1.0, abs=1e-6), f"{sub_position} weights sum to {total}, not 1.0"
+    for sub_position, weights in LOAN_SUB_POSITION_WEIGHTS.items():
+        total = sum(weights.values())
+        assert total == pytest.approx(1.0, abs=1e-6), f"loan {sub_position} weights sum to {total}, not 1.0"
+
+
+def test_defensive_midfield_weights_attacking_output_less_than_central_midfield():
+    """
+    The motivating case for sub-position weighting (see README): a
+    Defensive Midfielder shouldn't be judged on attacking output as
+    heavily as a Central Midfielder, since goals/xG/xA/chance creation are
+    much less central to their job. Central Midfield has no override (it
+    IS the broad Midfield default), so this compares Defensive Midfield's
+    override directly against POSITION_WEIGHTS["Midfield"].
+    """
+    dm = SUB_POSITION_WEIGHTS["Defensive Midfield"]
+    cm = POSITION_WEIGHTS["Midfield"]
+    dm_attacking_bloc = dm["perf_level"] + dm["perf_delta"] + dm["attacking"]
+    cm_attacking_bloc = cm["perf_level"] + cm["perf_delta"] + cm["attacking"]
+    assert dm_attacking_bloc < cm_attacking_bloc
+    assert dm["defensive"] > cm["defensive"]
+
+
+def test_centre_back_weights_attacking_output_less_than_full_backs():
+    """Mirrors the midfield case: a Centre-Back's game has even less to do with attacking output than a full-back's, who's expected to contribute going forward."""
+    cb = SUB_POSITION_WEIGHTS["Centre-Back"]
+    rb = SUB_POSITION_WEIGHTS["Right-Back"]
+    cb_attacking_bloc = cb["perf_level"] + cb["perf_delta"] + cb["attacking"]
+    rb_attacking_bloc = rb["perf_level"] + rb["perf_delta"] + rb["attacking"]
+    assert cb_attacking_bloc < rb_attacking_bloc
+    assert cb["defensive"] > rb["defensive"]
+
+
+def test_sub_position_lookup_falls_back_to_broad_position(transfers):
+    """
+    A sub_position with no override (Central Midfield, Centre-Forward,
+    Second Striker, Goalkeeper, or missing/NaN) must use exactly its broad
+    position's weights - the whole point of lookup_weights falling back
+    rather than guessing at an unlisted sub-position's profile.
+    """
+    unoverridden = transfers[~transfers["sub_position"].isin(SUB_POSITION_WEIGHTS.keys())]
+    assert len(unoverridden) > 0
+    for position in unoverridden["position"].unique():
+        assert position in POSITION_WEIGHTS
 
 
 def test_success_score_within_bounds(transfers):
@@ -155,11 +206,15 @@ def test_success_score_matches_weighted_components(transfers):
     build_dataset.py's main() for why the FotMob components have to be
     folded in before the resale-profit renormalization runs. perf_level and
     attacking are folded together first (see fold_perf_level_into_attacking)
-    since they both measure attacking output.
+    since they both measure attacking output. Weights come from
+    SUB_POSITION_WEIGHTS when the row's actual sub_position has a distinct
+    profile there, else fall back to the broad POSITION_WEIGHTS row (see
+    lookup_weights) - percentile ranking is unaffected either way, it's
+    still grouped by the broad position alone.
     """
     sample = transfers.sample(n=min(300, len(transfers)), random_state=42)
     for _, row in sample.iterrows():
-        w = POSITION_WEIGHTS[row["position"]]
+        w = SUB_POSITION_WEIGHTS.get(row["sub_position"], POSITION_WEIGHTS[row["position"]])
         other_weight_sum = 1 - w["resale_profit"]
 
         has_attacking = bool(row["has_attacking_data"])
@@ -408,11 +463,14 @@ def test_loan_success_score_matches_weighted_components(loans):
     the single-stage renormalization for the 4 FotMob components, each
     independently droppable per its own has_*_data flag. perf_level and
     attacking are folded together first, same as the permanent-transfer
-    formula - see fold_perf_level_into_attacking.
+    formula - see fold_perf_level_into_attacking. Weights come from
+    LOAN_SUB_POSITION_WEIGHTS when the row's actual sub_position has a
+    distinct profile there, else fall back to the broad
+    LOAN_POSITION_WEIGHTS row, same pattern as the permanent-transfer test.
     """
     sample = loans.sample(n=min(200, len(loans)), random_state=42)
     for _, row in sample.iterrows():
-        w = LOAN_POSITION_WEIGHTS[row["position"]]
+        w = LOAN_SUB_POSITION_WEIGHTS.get(row["sub_position"], LOAN_POSITION_WEIGHTS[row["position"]])
 
         has_attacking = bool(row["has_attacking_data"])
         perf_level_weight = 0 if has_attacking else w["perf_level"]
