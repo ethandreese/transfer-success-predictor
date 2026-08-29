@@ -539,11 +539,15 @@ def percentile_rank(series):
 # for why they're kept separate instead of blended into one number.
 FOTMOB_ATTACKING_STATS = [
     "fotmob_goals_per_90", "fotmob_expected_goals_per_90", "fotmob_expected_assists_per_90",
-    "fotmob_chances_created_p90", "fotmob_won_contest", "fotmob_big_chance_created_p90",
+    "fotmob_chances_created_p90", "fotmob_big_chance_created_p90",
 ]
 FOTMOB_DEFENSIVE_OUTFIELD_STATS = ["fotmob_total_tackle", "fotmob_interception", "fotmob_effective_clearance", "fotmob_ball_recovery"]
 FOTMOB_DEFENSIVE_GK_STATS = ["fotmob_saves", "fotmob__save_percentage", "fotmob_goals_conceded_inv"]
-FOTMOB_POSSESSION_STATS = ["fotmob_accurate_pass"]
+# Dribbles (won_contest) are ball-carrying/retention under pressure - a
+# possession skill, not attacking threat - grouped here rather than with
+# attacking, matching how e.g. FBref categorizes take-ons under
+# "Possession" rather than "Shooting"/"Passing".
+FOTMOB_POSSESSION_STATS = ["fotmob_accurate_pass", "fotmob_won_contest"]
 
 
 def compute_fotmob_component_pcts(df):

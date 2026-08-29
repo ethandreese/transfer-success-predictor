@@ -65,20 +65,25 @@ vary by position** (see `data/score_weights.json`):
     signal from — every other non-FotMob component either doesn't apply to
     them (performance level/change) or is a financial/availability proxy
     (value growth, playing time, value for money).
-  - **attacking** — goals, expected goals (xG), expected assists (xA),
-    chances created, and dribbles per 90, all averaged together. Zero
-    weight for goalkeepers. Distinct from performance level/change above:
-    those measure *actual goal contributions already banked* (a results-
-    based, lagging signal), this measures the *underlying attacking
-    process* — a player generating high xG and chances created despite a
-    quiet finishing spell shows up well here even if perf_level doesn't
-    (yet) reflect it.
+  - **attacking** — goals, expected goals (xG), expected assists (xA), and
+    chances created per 90, all averaged together. Zero weight for
+    goalkeepers. Distinct from performance level/change above: those
+    measure *actual goal contributions already banked* (a results-based,
+    lagging signal), this measures the *underlying attacking process* — a
+    player generating high xG and chances created despite a quiet
+    finishing spell shows up well here even if perf_level doesn't (yet)
+    reflect it.
   - **defensive** — tackles, interceptions, clearances, and recoveries per
     90 for outfielders; saves per 90, save percentage, and goals conceded
     per 90 (inverted, since fewer is better) for goalkeepers — genuinely
     different stat pools, not a shared one, since neither set means
     anything for the other position.
-  - **possession** — accurate passes per 90.
+  - **possession** — accurate passes per 90 and successful dribbles per
+    90. Dribbles are grouped here rather than under attacking because
+    they're fundamentally about ball-carrying and retention under
+    pressure — a possession skill, even though a dribble can also lead
+    directly to a chance. Matches how e.g. FBref categorizes take-ons
+    under "Possession" rather than "Shooting" or "Passing".
 - **resale profit** (weight varies by tenure length, only when known —
   see below) — did the buying club later resell the player for more than
   they paid? A real, distinct signal from sporting performance: a

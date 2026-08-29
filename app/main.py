@@ -156,8 +156,7 @@ def describe_fotmob_component(component, r, position_plural):
     elif component == "attacking":
         detail = (
             f"{r['fotmob_goals_per_90']:.2f} goals/90, {r['fotmob_expected_goals_per_90']:.2f} xG/90, "
-            f"{r['fotmob_expected_assists_per_90']:.2f} xA/90, {chances_created_p90:.1f} chances created/90, "
-            f"{r['fotmob_won_contest']:.1f} dribbles/90"
+            f"{r['fotmob_expected_assists_per_90']:.2f} xA/90, {chances_created_p90:.1f} chances created/90"
         )
     elif component == "defensive" and r["position"] == "Goalkeeper":
         detail = (
@@ -170,7 +169,7 @@ def describe_fotmob_component(component, r, position_plural):
             f"{r['fotmob_effective_clearance']:.1f} clearances/90, {r['fotmob_ball_recovery']:.1f} recoveries/90"
         )
     else:  # possession
-        detail = f"{r['fotmob_accurate_pass']:.1f} accurate passes/90"
+        detail = f"{r['fotmob_accurate_pass']:.1f} accurate passes/90, {r['fotmob_won_contest']:.1f} dribbles/90"
 
     return (
         f"{detail} — averaged across {season_note} at {r['to_club_name']}, "
