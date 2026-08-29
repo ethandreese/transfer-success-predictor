@@ -131,7 +131,7 @@ def describe_resale_profit(r, eur_m):
 FOTMOB_COMPONENT_LABELS = {
     "rating": "FotMob rating",
     "attacking": "Attacking",
-    "defensive": "Defensive",
+    "defensive": "Defending",
     "possession": "Possession",
 }
 
@@ -228,27 +228,51 @@ def describe_components(r):
     Build the full "why this score" breakdown for one row of
     transfers_processed.csv: a list of {label, value, description} dicts,
     one per success-score component actually used for this transfer (4
-    always, plus one of "Performance level"/"Attacking output" - see
-    below - plus up to 3 more FotMob-derived rows - rating/defensive/
-    possession, each independently shown only when its own has_*_data flag
-    is true - and "Resale profit" when has_resale_data is true - so 5 to 10
-    rows total). Used by both /api/examples and /api/transfers/detail via
-    build_transfer_card().
+    always, plus one of "G/A per 90"/"Attacking" - see below - plus up to
+    3 more FotMob-derived rows - possession/defending/rating, each
+    independently shown only when its own has_*_data flag is true - and
+    "Resale profit" when has_resale_data is true - so 5 to 10 rows total).
+    Fixed display order: Transfer fee, Value change, Resale profit, G/A
+    per 90, G/A change, Attacking, Possession, Defending, FotMob rating,
+    Playing time - each entry above simply drops out of that order when
+    its own flag is false. Used by both /api/examples and
+    /api/transfers/detail via build_transfer_card().
 
-    "Performance level" and "Attacking output" (the FotMob "attacking"
-    bucket) are mutually exclusive, not both-or-neither: they measure the
-    same underlying thing (attacking output), so build_dataset.py folds
-    them into one weighted bucket instead of double-counting the signal
-    (see fold_perf_level_into_attacking) - whichever one was actually used
-    for this row's score is the one shown here. has_attacking_data is that
-    same switch: true means the fold happened and "Attacking output" (in
-    the FotMob block below) carries the combined number; false means
-    FotMob had nothing for this transfer and "Performance level" alone
-    carries it, same as before FotMob data existed.
+    "G/A per 90" and "Attacking" (the FotMob "attacking" bucket) are
+    mutually exclusive, not both-or-neither: they measure the same
+    underlying thing (attacking output), so build_dataset.py folds them
+    into one weighted bucket instead of double-counting the signal (see
+    fold_perf_level_into_attacking) - whichever one was actually used for
+    this row's score is the one shown here. has_attacking_data is that
+    same switch: true means the fold happened and "Attacking" (in the
+    FotMob block below) carries the combined number; false means FotMob
+    had nothing for this transfer and "G/A per 90" alone carries it, same
+    as before FotMob data existed.
     """
     position_plural = POSITION_PLURAL.get(r["position"], r["position"])
     to_league = league_display_name(r["to_domestic_competition_id"])
-    return ([] if bool(r["has_attacking_data"]) else [
+    return [
+        {
+            "label": "Transfer fee",
+            "value": round(float(r["value_for_money_pct"]), 1),
+            "description": f"{eur_m(r['transfer_fee'])} fee vs. {eur_m(r['value_before'])} market value at the time",
+        },
+        {
+            "label": "Value change",
+            "value": round(float(r["value_growth_pct"]), 1),
+            "description": (
+                f"{eur_m(r['value_before'])} → peaked at {eur_m(r['value_peak'])} (now {eur_m(r['value_after'])})"
+                if r["value_peak"] > r["value_after"] * 1.05
+                else f"{eur_m(r['value_before'])} → {eur_m(r['value_after'])} market value"
+            ),
+        },
+    ] + ([
+        {
+            "label": "Resale profit",
+            "value": round(float(r["resale_profit_pct"]), 1),
+            "description": describe_resale_profit(r, eur_m),
+        },
+    ] if bool(r["has_resale_data"]) else []) + ([] if bool(r["has_attacking_data"]) else [
         {
             "label": "G/A per 90",
             "value": round(float(r["perf_level_pct"]), 1),
@@ -272,15 +296,15 @@ def describe_components(r):
                 f"expected for a player starting that high"
             ),
         },
+    ] + [
         {
-            "label": "Value change",
-            "value": round(float(r["value_growth_pct"]), 1),
-            "description": (
-                f"{eur_m(r['value_before'])} → peaked at {eur_m(r['value_peak'])} (now {eur_m(r['value_after'])})"
-                if r["value_peak"] > r["value_after"] * 1.05
-                else f"{eur_m(r['value_before'])} → {eur_m(r['value_after'])} market value"
-            ),
-        },
+            "label": FOTMOB_COMPONENT_LABELS[component],
+            "value": round(float(r[f"{component}_pct"]), 1),
+            "description": describe_fotmob_component(component, r, position_plural),
+        }
+        for component in ("attacking", "possession", "defensive", "rating")
+        if bool(r[f"has_{component}_data"])
+    ] + [
         {
             "label": "Playing time",
             "value": round(float(r["playing_time_pct"]), 1),
@@ -291,26 +315,7 @@ def describe_components(r):
                 f"blended with raw appearance count for sustained presence)"
             ),
         },
-        {
-            "label": "Transfer fee",
-            "value": round(float(r["value_for_money_pct"]), 1),
-            "description": f"{eur_m(r['transfer_fee'])} fee vs. {eur_m(r['value_before'])} market value at the time",
-        },
-    ] + [
-        {
-            "label": FOTMOB_COMPONENT_LABELS[component],
-            "value": round(float(r[f"{component}_pct"]), 1),
-            "description": describe_fotmob_component(component, r, position_plural),
-        }
-        for component in ("rating", "attacking", "defensive", "possession")
-        if bool(r[f"has_{component}_data"])
-    ] + ([
-        {
-            "label": "Resale profit",
-            "value": round(float(r["resale_profit_pct"]), 1),
-            "description": describe_resale_profit(r, eur_m),
-        },
-    ] if bool(r["has_resale_data"]) else [])
+    ]
 
 FEATURE_LABELS = {
     "age_at_transfer": "Age at transfer",
@@ -541,20 +546,33 @@ def build_transfer_card(r):
 def describe_loan_components(r):
     """
     Build the "why this score" breakdown for one row of loans_processed.csv:
-    3 components always, plus one of "Performance level"/"Attacking
-    output" - see describe_components(), the same fold applies here - plus
-    up to 3 more FotMob-derived rows (rating/defensive/possession, each
-    independently shown only when its own has_*_data flag is true - so 4
-    to 8 rows total). Unlike describe_components(), there's no "resale
-    profit" row - a loan doesn't end in a sale of its own - and no "value
-    for money" row - most loans carry no real fee, see
-    data/loan_score_weights.json.
+    2 components always, plus one of "G/A per 90"/"Attacking" - see
+    describe_components(), the same fold applies here - plus up to 3 more
+    FotMob-derived rows (possession/defending/rating, each independently
+    shown only when its own has_*_data flag is true - so 3 to 7 rows
+    total). Fixed display order: Value change, G/A per 90, G/A change,
+    Attacking, Possession, Defending, FotMob rating, Playing time - same
+    order as describe_components() minus Transfer fee and Resale profit,
+    neither of which apply to a loan (see below). Unlike
+    describe_components(), there's no "resale profit" row - a loan doesn't
+    end in a sale of its own - and no "value for money"/"Transfer fee" row
+    - most loans carry no real fee, see data/loan_score_weights.json.
     """
     position_plural = POSITION_PLURAL.get(r["position"], r["position"])
     to_league = league_display_name(r["to_domestic_competition_id"])
-    return ([] if bool(r["has_attacking_data"]) else [
+    return [
         {
-            "label": "Performance level",
+            "label": "Value change",
+            "value": round(float(r["value_growth_pct"]), 1),
+            "description": (
+                f"{eur_m(r['value_before'])} → peaked at {eur_m(r['value_peak'])} (now {eur_m(r['value_after'])}) during the loan"
+                if r["value_peak"] > r["value_after"] * 1.05
+                else f"{eur_m(r['value_before'])} → {eur_m(r['value_after'])} market value during the loan"
+            ),
+        },
+    ] + ([] if bool(r["has_attacking_data"]) else [
+        {
+            "label": "G/A per 90",
             "value": round(float(r["perf_level_pct"]), 1),
             "description": (
                 f"{r['post_ga_p90']:.2f} goal contributions/90 while on loan at {r['to_club_name']} "
@@ -564,7 +582,7 @@ def describe_loan_components(r):
         },
     ]) + [
         {
-            "label": "Performance change",
+            "label": "G/A change",
             "value": round(float(r["perf_delta_pct"]), 1),
             "description": (
                 f"Started at {r['pre_ga_p90_vs_league']:.1f}x league average, now at "
@@ -576,15 +594,15 @@ def describe_loan_components(r):
                 f"expected for a player starting that high"
             ),
         },
+    ] + [
         {
-            "label": "Market value growth",
-            "value": round(float(r["value_growth_pct"]), 1),
-            "description": (
-                f"{eur_m(r['value_before'])} → peaked at {eur_m(r['value_peak'])} (now {eur_m(r['value_after'])}) during the loan"
-                if r["value_peak"] > r["value_after"] * 1.05
-                else f"{eur_m(r['value_before'])} → {eur_m(r['value_after'])} market value during the loan"
-            ),
-        },
+            "label": FOTMOB_COMPONENT_LABELS[component],
+            "value": round(float(r[f"{component}_pct"]), 1),
+            "description": describe_fotmob_component(component, r, position_plural, is_loan=True),
+        }
+        for component in ("attacking", "possession", "defensive", "rating")
+        if bool(r[f"has_{component}_data"])
+    ] + [
         {
             "label": "Playing time",
             "value": round(float(r["playing_time_pct"]), 1),
@@ -595,14 +613,6 @@ def describe_loan_components(r):
                 f"judged on, blended with raw appearance count)"
             ),
         },
-    ] + [
-        {
-            "label": FOTMOB_COMPONENT_LABELS[component],
-            "value": round(float(r[f"{component}_pct"]), 1),
-            "description": describe_fotmob_component(component, r, position_plural, is_loan=True),
-        }
-        for component in ("rating", "attacking", "defensive", "possession")
-        if bool(r[f"has_{component}_data"])
     ]
 
 
