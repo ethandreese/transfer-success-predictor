@@ -130,9 +130,9 @@ def describe_resale_profit(r, eur_m):
 
 FOTMOB_COMPONENT_LABELS = {
     "rating": "FotMob rating",
-    "attacking": "Attacking output",
-    "defensive": "Defensive contribution",
-    "possession": "Possession & passing",
+    "attacking": "Attacking",
+    "defensive": "Defensive",
+    "possession": "Possession",
 }
 
 
@@ -250,7 +250,7 @@ def describe_components(r):
     to_league = league_display_name(r["to_domestic_competition_id"])
     return ([] if bool(r["has_attacking_data"]) else [
         {
-            "label": "Performance level",
+            "label": "G/A per 90",
             "value": round(float(r["perf_level_pct"]), 1),
             "description": (
                 f"{r['post_ga_p90']:.2f} goal contributions/90 at {r['to_club_name']} "
@@ -260,7 +260,7 @@ def describe_components(r):
         },
     ]) + [
         {
-            "label": "Performance change",
+            "label": "G/A change",
             "value": round(float(r["perf_delta_pct"]), 1),
             "description": (
                 f"Started at {r['pre_ga_p90_vs_league']:.1f}x league average, now at "
@@ -273,7 +273,7 @@ def describe_components(r):
             ),
         },
         {
-            "label": "Market value growth",
+            "label": "Value change",
             "value": round(float(r["value_growth_pct"]), 1),
             "description": (
                 f"{eur_m(r['value_before'])} → peaked at {eur_m(r['value_peak'])} (now {eur_m(r['value_after'])})"
@@ -292,7 +292,7 @@ def describe_components(r):
             ),
         },
         {
-            "label": "Value for money",
+            "label": "Transfer fee",
             "value": round(float(r["value_for_money_pct"]), 1),
             "description": f"{eur_m(r['transfer_fee'])} fee vs. {eur_m(r['value_before'])} market value at the time",
         },
