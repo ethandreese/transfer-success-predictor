@@ -534,6 +534,69 @@ def percentile_rank(series):
     return series.rank(pct=True) * 100
 
 
+def compute_value_growth_pct(value_before, value_peak, value_after):
+    """
+    Blends two different views of market value growth, each independently
+    percentile-ranked against the whole population, rather than either
+    alone: growth *relative to the player's own pre-transfer value* (a
+    cheap breakout signing wins big here - 5m to 20m is 4x) and the
+    *absolute euro gain* (a marathon-sized fee can still win here on a
+    comparatively modest ratio - 75m to 110m is "only" 1.47x but a real
+    35m paper gain). Ratio alone systematically buries already-expensive
+    transfers: the bigger the starting value, the harder it is to move the
+    ratio at all, even when the club's asset has appreciated by tens of
+    millions and could plainly be resold at a profit. Absolute euros alone
+    has the opposite bias against cheap signings, so the two are blended.
+    Both value_peak and value_after are blended in (60/40) rather than
+    using either alone - see value_peak's own docstring for why peak
+    matters and end-of-tenure alone would misread a long, valuable career
+    as a decline.
+    """
+    ratio_peak_pct = percentile_rank(value_peak / value_before.clip(lower=1))
+    ratio_end_pct = percentile_rank(value_after / value_before.clip(lower=1))
+    ratio_combo = 0.6 * ratio_peak_pct + 0.4 * ratio_end_pct
+
+    abs_gain_peak_pct = percentile_rank(value_peak - value_before)
+    abs_gain_end_pct = percentile_rank(value_after - value_before)
+    abs_combo = 0.6 * abs_gain_peak_pct + 0.4 * abs_gain_end_pct
+
+    return 0.5 * ratio_combo + 0.5 * abs_combo
+
+
+def fold_perf_level_into_attacking(df):
+    """
+    perf_level_pct (Transfermarkt goal contributions/90, covering every
+    season back to FIRST_SEASON_YEAR) and attacking_pct (FotMob goals/xG/
+    xA/chance creation, only from each league's own FotMob start season
+    onward - see fetch_fotmob_stats.py) both measure the same underlying
+    thing: attacking output. Weighting them as two fully independent
+    components double-counts that signal for every transfer where both
+    happen to be known.
+
+    Where FotMob attacking data exists, this overwrites attacking_pct in
+    place with the average of the two, so the richer FotMob signal
+    (goals/xG/xA/chance creation) still gets folded in alongside the raw
+    Transfermarkt goals+assists number rather than being thrown away.
+    Where it doesn't (older transfers, or leagues FotMob doesn't cover
+    that far back), attacking_pct is left untouched (still NaN) and
+    perf_level keeps counting standalone - it's the only signal available,
+    and it would be wrong to drop it just because *some other* transfer
+    happens to have FotMob data.
+
+    Returns the has_attacking_data mask; callers use it to zero out
+    perf_level's own weight for these same rows and fold that weight into
+    attacking's instead (see main()/finish_loan_dataset()), so the total
+    weight budget for "attacking output" is unchanged either way - just
+    concentrated in one bucket instead of split across two overlapping
+    ones.
+    """
+    has_attacking = df["has_attacking_data"]
+    df["attacking_pct"] = np.where(
+        has_attacking, 0.5 * (df["perf_level_pct"] + df["attacking_pct"]), df["attacking_pct"],
+    )
+    return has_attacking
+
+
 # Which raw FotMob stats feed each of the four buckets
 # compute_fotmob_component_pcts() computes - see that function's docstring
 # for why they're kept separate instead of blended into one number.
@@ -815,9 +878,7 @@ def finish_loan_dataset(df, league_position_baseline, position_fallback):
     perf_delta_residual = df["post_ga_p90_vs_league"] - df["expected_post_ga_p90_vs_league"]
     df["perf_delta_pct"] = perf_delta_residual.groupby(df["position"]).rank(pct=True) * 100
 
-    growth_to_peak = df["value_peak"] / df["value_before"].clip(lower=1)
-    growth_to_end = df["value_after"] / df["value_before"].clip(lower=1)
-    df["value_growth_pct"] = 0.6 * percentile_rank(growth_to_peak) + 0.4 * percentile_rank(growth_to_end)
+    df["value_growth_pct"] = compute_value_growth_pct(df["value_before"], df["value_peak"], df["value_after"])
 
     df["pct_team_games_played"] = (df["post_apps"] / df["team_games_in_tenure"].clip(lower=1)).clip(upper=1.0)
     df["playing_time_pct"] = 0.6 * percentile_rank(df["pct_team_games_played"]) + 0.4 * percentile_rank(df["post_apps"])
@@ -837,25 +898,32 @@ def finish_loan_dataset(df, league_position_baseline, position_fallback):
         # component at all - see data/loan_score_weights.json): the 4 base
         # components plus the 4 FotMob ones, each FotMob component's weight
         # dropped and the rest renormalized independently for a loan
-        # missing that specific bucket, rather than guessed at.
+        # missing that specific bucket, rather than guessed at. perf_level
+        # and attacking are folded together first (see
+        # fold_perf_level_into_attacking) since they'd otherwise double-
+        # count the same attacking-output signal.
         w = df["position"].map(LOAN_POSITION_WEIGHTS).apply(pd.Series)
-        base_score = (
-            w["perf_level"] * df["perf_level_pct"]
+        has_attacking = fold_perf_level_into_attacking(df)
+        perf_level_weight = np.where(has_attacking, 0, w["perf_level"])
+        attacking_weight = np.where(has_attacking, w["attacking"] + w["perf_level"], w["attacking"])
+
+        known_score = (
+            perf_level_weight * df["perf_level_pct"]
             + w["perf_delta"] * df["perf_delta_pct"]
             + w["value_growth"] * df["value_growth_pct"]
             + w["playing_time"] * df["playing_time_pct"]
         )
-        fotmob_numerator = sum(
-            np.where(df[f"has_{c}_data"], w[c] * df[f"{c}_pct"].fillna(0), 0)
-            for c in FOTMOB_COMPONENTS
-        )
-        fotmob_weight_known = sum(
-            np.where(df[f"has_{c}_data"], w[c], 0)
-            for c in FOTMOB_COMPONENTS
-        )
-        missing_fotmob_weight = sum(w[c] for c in FOTMOB_COMPONENTS) - fotmob_weight_known
-        effective_weight_sum = 1 - missing_fotmob_weight  # all 8 loan weights sum to 1.0 by construction (data/loan_score_weights.json)
-        df["loan_success_score"] = ((base_score + fotmob_numerator) / effective_weight_sum).round(1)
+        known_weight = perf_level_weight + w["perf_delta"] + w["value_growth"] + w["playing_time"]
+
+        fotmob_component_weight = {"rating": w["rating"], "attacking": attacking_weight, "defensive": w["defensive"], "possession": w["possession"]}
+        for c in FOTMOB_COMPONENTS:
+            comp_weight = fotmob_component_weight[c]
+            comp_known = df[f"has_{c}_data"]
+            known_score = known_score + np.where(comp_known, comp_weight * df[f"{c}_pct"].fillna(0), 0)
+            known_weight = known_weight + np.where(comp_known, comp_weight, 0)
+
+        # all 8 loan weights sum to 1.0 by construction (data/loan_score_weights.json), so known_weight is already the effective denominator
+        df["loan_success_score"] = (known_score / known_weight).round(1)
 
     cols = [
         "player_id", "name", "transfer_date", "from_club_name", "to_club_name",
@@ -1005,22 +1073,8 @@ def main():
     perf_delta_residual = df["post_ga_p90_vs_league"] - df["expected_post_ga_p90_vs_league"]
     df["perf_delta_pct"] = perf_delta_residual.groupby(df["position"]).rank(pct=True) * 100
 
-    # Market value growth blends two signals: growth to the *peak* value
-    # reached during the tenure (60%) and growth to the value near the end
-    # of it (40%). Peak alone would ignore a real late-tenure collapse
-    # (injury, loss of form); end-value alone unfairly reads a long,
-    # valuable career as a decline, since even the best players' market
-    # value falls with age by the time they eventually leave - Heung-min
-    # Son joined Tottenham valued at ~25m, peaked at 90m mid-tenure, and
-    # was worth ~20m a decade later when he left. The peak is what
-    # actually reflects the asset the club held, even though the end
-    # value is what they'd have realized in a sale at that moment.
-    growth_to_peak = df["value_peak"] / df["value_before"].clip(lower=1)
-    growth_to_end = df["value_after"] / df["value_before"].clip(lower=1)
-    df["value_growth_pct"] = (
-        0.6 * percentile_rank(growth_to_peak)
-        + 0.4 * percentile_rank(growth_to_end)
-    )
+    # See compute_value_growth_pct for the ratio/absolute-gain blend.
+    df["value_growth_pct"] = compute_value_growth_pct(df["value_before"], df["value_peak"], df["value_after"])
 
     # Playing time blends two different signals: raw appearance count
     # rewards a long, sustained presence at the club, but says nothing
@@ -1094,37 +1148,46 @@ def main():
     w = df["position"].map(POSITION_WEIGHTS).apply(pd.Series)
     other_weight_sum = 1 - w["resale_profit"]  # e.g. 0.92 - the reference weight left for everything except resale_profit
 
-    five_component_score = (
-        w["perf_level"] * df["perf_level_pct"]
+    # perf_level and attacking both measure attacking output (see
+    # fold_perf_level_into_attacking) - fold them together first so their
+    # weights combine into one bucket instead of double-counting the same
+    # signal. perf_level_weight is 0 wherever that folding happened
+    # (its weight moved into attacking_weight instead), so it's safe to
+    # keep multiplying it by perf_level_pct unconditionally below.
+    has_attacking = fold_perf_level_into_attacking(df)
+    perf_level_weight = np.where(has_attacking, 0, w["perf_level"])
+    attacking_weight = np.where(has_attacking, w["attacking"] + w["perf_level"], w["attacking"])
+
+    known_score = (
+        perf_level_weight * df["perf_level_pct"]
         + w["perf_delta"] * df["perf_delta_pct"]
         + w["value_growth"] * df["value_growth_pct"]
         + w["playing_time"] * df["playing_time_pct"]
         + w["value_for_money"] * df["value_for_money_pct"]
     )
+    known_weight = perf_level_weight + w["perf_delta"] + w["value_growth"] + w["playing_time"] + w["value_for_money"]
+
     # Each FotMob component only contributes its weighted percentile to the
     # numerator - and its weight to the denominator - on rows where it's
     # actually known; fillna(0) on the percentile side is safe precisely
     # because the has_*_data mask already excludes it from the weight sum
     # too, so it can never silently count as "0, i.e. worst possible" for a
-    # row that's simply missing data.
-    fotmob_numerator = sum(
-        np.where(df[f"has_{c}_data"], w[c] * df[f"{c}_pct"].fillna(0), 0)
-        for c in FOTMOB_COMPONENTS
-    )
-    fotmob_weight_sum = sum(
-        np.where(df[f"has_{c}_data"], w[c], 0)
-        for c in FOTMOB_COMPONENTS
-    )
-    six_component_score = five_component_score + fotmob_numerator
-    # Rescale up to other_weight_sum: when every FotMob component is known
-    # this is a no-op (six_component_score already sums to
-    # other_weight_sum); when some/all are missing, this redistributes
-    # their share proportionally across whatever else the row does have -
-    # same renormalization idea as "without_resale" below, just one layer
-    # earlier.
-    missing_fotmob_weight = sum(w[c] for c in FOTMOB_COMPONENTS) - fotmob_weight_sum
-    six_component_weight_sum = other_weight_sum - missing_fotmob_weight
-    base_score = six_component_score / six_component_weight_sum * other_weight_sum
+    # row that's simply missing data. attacking uses attacking_weight (its
+    # own weight, plus perf_level's when folded in) rather than the flat
+    # w["attacking"] the other three components use.
+    fotmob_component_weight = {"rating": w["rating"], "attacking": attacking_weight, "defensive": w["defensive"], "possession": w["possession"]}
+    for c in FOTMOB_COMPONENTS:
+        comp_weight = fotmob_component_weight[c]
+        comp_known = df[f"has_{c}_data"]
+        known_score = known_score + np.where(comp_known, comp_weight * df[f"{c}_pct"].fillna(0), 0)
+        known_weight = known_weight + np.where(comp_known, comp_weight, 0)
+
+    # Rescale up to other_weight_sum: when everything above is known this
+    # is a no-op (known_weight already sums to other_weight_sum); when
+    # something's missing, this redistributes its share proportionally
+    # across whatever else the row does have - same renormalization idea
+    # as "without_resale" below, just one layer earlier.
+    base_score = known_score / known_weight * other_weight_sum
 
     # When resale data IS known, how much it counts scales with tenure
     # length (compute_resale_weight) rather than the flat reference weight

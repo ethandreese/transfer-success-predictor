@@ -160,6 +160,12 @@ def describe_fotmob_component(component, r, position_plural, is_loan=False):
     missing that season. parts() builds the description from only the
     sub-stats that are actually present, instead of formatting a NaN
     straight into the string ("nan xG/90").
+
+    "attacking" is also folded together with the Transfermarkt goal-
+    contributions number (see fold_perf_level_into_attacking in
+    build_dataset.py) - whenever this row is shown at all, that folding
+    happened, so post_ga_p90 is always included alongside the FotMob
+    sub-stats here, not just when it happens to be missing.
     """
     seasons = int(r["fotmob_seasons_used"])
     season_note = "1 season" if seasons == 1 else f"{seasons} seasons"
@@ -174,6 +180,7 @@ def describe_fotmob_component(component, r, position_plural, is_loan=False):
         detail = parts((r["fotmob_rating"], "{:.2f} average match rating"))
     elif component == "attacking":
         detail = parts(
+            (r["post_ga_p90"], "{:.2f} goal contributions/90"),
             (r["fotmob_goals_per_90"], "{:.2f} goals/90"),
             (r["fotmob_expected_goals_per_90"], "{:.2f} xG/90"),
             (r["fotmob_expected_assists_per_90"], "{:.2f} xA/90"),
@@ -220,16 +227,28 @@ def describe_components(r):
     """
     Build the full "why this score" breakdown for one row of
     transfers_processed.csv: a list of {label, value, description} dicts,
-    one per success-score component actually used for this transfer (5
-    always, plus up to 4 FotMob-derived rows - rating/attacking/defensive/
+    one per success-score component actually used for this transfer (4
+    always, plus one of "Performance level"/"Attacking output" - see
+    below - plus up to 3 more FotMob-derived rows - rating/defensive/
     possession, each independently shown only when its own has_*_data flag
     is true - and "Resale profit" when has_resale_data is true - so 5 to 10
     rows total). Used by both /api/examples and /api/transfers/detail via
     build_transfer_card().
+
+    "Performance level" and "Attacking output" (the FotMob "attacking"
+    bucket) are mutually exclusive, not both-or-neither: they measure the
+    same underlying thing (attacking output), so build_dataset.py folds
+    them into one weighted bucket instead of double-counting the signal
+    (see fold_perf_level_into_attacking) - whichever one was actually used
+    for this row's score is the one shown here. has_attacking_data is that
+    same switch: true means the fold happened and "Attacking output" (in
+    the FotMob block below) carries the combined number; false means
+    FotMob had nothing for this transfer and "Performance level" alone
+    carries it, same as before FotMob data existed.
     """
     position_plural = POSITION_PLURAL.get(r["position"], r["position"])
     to_league = league_display_name(r["to_domestic_competition_id"])
-    return [
+    return ([] if bool(r["has_attacking_data"]) else [
         {
             "label": "Performance level",
             "value": round(float(r["perf_level_pct"]), 1),
@@ -239,6 +258,7 @@ def describe_components(r):
                 f"ranked vs. other {position_plural}"
             ),
         },
+    ]) + [
         {
             "label": "Performance change",
             "value": round(float(r["perf_delta_pct"]), 1),
@@ -521,16 +541,18 @@ def build_transfer_card(r):
 def describe_loan_components(r):
     """
     Build the "why this score" breakdown for one row of loans_processed.csv:
-    4 components always, plus up to 4 FotMob-derived rows (rating/
-    attacking/defensive/possession, each independently shown only when its
-    own has_*_data flag is true - so 4 to 8 rows total). Unlike
-    describe_components(), there's no "resale profit" row - a loan doesn't
-    end in a sale of its own - and no "value for money" row - most loans
-    carry no real fee, see data/loan_score_weights.json.
+    3 components always, plus one of "Performance level"/"Attacking
+    output" - see describe_components(), the same fold applies here - plus
+    up to 3 more FotMob-derived rows (rating/defensive/possession, each
+    independently shown only when its own has_*_data flag is true - so 4
+    to 8 rows total). Unlike describe_components(), there's no "resale
+    profit" row - a loan doesn't end in a sale of its own - and no "value
+    for money" row - most loans carry no real fee, see
+    data/loan_score_weights.json.
     """
     position_plural = POSITION_PLURAL.get(r["position"], r["position"])
     to_league = league_display_name(r["to_domestic_competition_id"])
-    return [
+    return ([] if bool(r["has_attacking_data"]) else [
         {
             "label": "Performance level",
             "value": round(float(r["perf_level_pct"]), 1),
@@ -540,6 +562,7 @@ def describe_loan_components(r):
                 f"ranked vs. other loan spells"
             ),
         },
+    ]) + [
         {
             "label": "Performance change",
             "value": round(float(r["perf_delta_pct"]), 1),

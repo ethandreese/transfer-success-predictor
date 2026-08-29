@@ -27,18 +27,37 @@ vary by position** (see `data/score_weights.json`):
   below), ranked *within the player's position group* (comparing a
   striker's output to the whole dataset, mostly defenders and keepers,
   made every decent attacker look elite and barely separated "good" from
-  "Haaland")
+  "Haaland"). Whenever FotMob has an attacking-bucket score for the same
+  transfer (the common case — see **attacking** below), this doesn't count
+  as an *eleventh* independent signal on top of it: the two measure the
+  same underlying thing, so they're folded into one combined bucket
+  (`fold_perf_level_into_attacking` in `scripts/build_dataset.py`) instead
+  of double-counting goal-based output. Performance level only stands
+  alone, at its own weight, when FotMob has nothing for that transfer —
+  older transfers and leagues FotMob's coverage doesn't reach that far
+  back (see **Known limitations**) still get judged on it either way.
 - **performance change** — improved or declined vs. their league-relative
   level before the move, also position-ranked
-- **market value growth** — blends two signals: 60% growth to the
-  *peak* value reached at any point during the tenure, 40% growth to the
-  value near the end of it. End-value alone unfairly reads a long,
-  valuable career as a decline, since even the best players' market value
-  falls with age by the time they eventually leave — Heung-min Son joined
-  Tottenham valued at ~€16m, peaked at €90m mid-tenure, and was worth only
-  ~€20m a decade later when he left. Peak alone would ignore a real
-  late-tenure collapse (injury, loss of form), so end-value is still kept
-  as a smaller factor.
+- **market value growth** — blends two different views of growth, each
+  independently percentile-ranked against the whole dataset: growth
+  *relative to the player's own pre-transfer value* (a cheap breakout
+  signing wins big here — €5m to €20m is 4×) and the *absolute euro gain*
+  (a marathon-sized fee can still win here on a comparatively modest ratio
+  — €75m to €110m is "only" 1.47× but a real €35m paper gain). Ratio alone
+  systematically buried already-expensive transfers: Moisés Caicedo's
+  peak value at Chelsea (€75m → €110m, nearly recouping his world-record
+  €116m fee) scored a mediocre 65 on ratio alone, since the bigger the
+  starting value the harder it is to move the ratio at all — a signing
+  the club could clearly sell at close to no loss was scoring the same as
+  a middling outcome. Blending in the absolute-gain view puts it at 81.
+  Each of those two views is itself a 60/40 blend of growth to the *peak*
+  value reached during the tenure and growth to the value near the end of
+  it — end-value alone unfairly reads a long, valuable career as a
+  decline, since even the best players' market value falls with age by
+  the time they eventually leave (Heung-min Son joined Tottenham valued
+  at ~€16m, peaked at €90m mid-tenure, and was worth only ~€20m a decade
+  later when he left), while peak alone would ignore a real late-tenure
+  collapse (injury, loss of form).
 - **playing time** — blends two signals: 60% percent of the *team's actual
   games* played during the tenure (from `games.csv`/`club_games.csv` — the
   club's full match schedule across all competitions, not just games the
@@ -66,13 +85,12 @@ vary by position** (see `data/score_weights.json`):
     them (performance level/change) or is a financial/availability proxy
     (value growth, playing time, value for money).
   - **attacking** — goals, expected goals (xG), expected assists (xA), and
-    chances created per 90, all averaged together. Zero weight for
-    goalkeepers. Distinct from performance level/change above: those
-    measure *actual goal contributions already banked* (a results-based,
-    lagging signal), this measures the *underlying attacking process* — a
-    player generating high xG and chances created despite a quiet
-    finishing spell shows up well here even if perf_level doesn't (yet)
-    reflect it.
+    chances created per 90, all averaged together, *then averaged again
+    with performance level* whenever both are known for the transfer (see
+    **performance level** above) — goal contributions already banked and
+    the underlying attacking process (xG, chances created) are related
+    enough that keeping them fully independent double-counted the same
+    signal. Zero weight for goalkeepers.
   - **defensive** — tackles, interceptions, clearances, and recoveries per
     90 for outfielders; saves per 90, save percentage, and goals conceded
     per 90 (inverted, since fewer is better) for goalkeepers — genuinely

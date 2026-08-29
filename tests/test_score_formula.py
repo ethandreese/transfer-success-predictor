@@ -153,29 +153,37 @@ def test_success_score_matches_weighted_components(transfers):
     has_*_data flag) and resale_profit (layered on top at its tenure-scaled
     weight, or dropped/renormalized, when has_resale_data is false) - see
     build_dataset.py's main() for why the FotMob components have to be
-    folded in before the resale-profit renormalization runs.
+    folded in before the resale-profit renormalization runs. perf_level and
+    attacking are folded together first (see fold_perf_level_into_attacking)
+    since they both measure attacking output.
     """
     sample = transfers.sample(n=min(300, len(transfers)), random_state=42)
     for _, row in sample.iterrows():
         w = POSITION_WEIGHTS[row["position"]]
-        five = (
-            w["perf_level"] * row["perf_level_pct"]
+        other_weight_sum = 1 - w["resale_profit"]
+
+        has_attacking = bool(row["has_attacking_data"])
+        perf_level_weight = 0 if has_attacking else w["perf_level"]
+        attacking_weight = (w["attacking"] + w["perf_level"]) if has_attacking else w["attacking"]
+        # attacking_pct is already stored post-fold (the average of
+        # perf_level_pct and the raw FotMob attacking percentile) whenever
+        # has_attacking_data is true - see fold_perf_level_into_attacking.
+        component_weight = {"rating": w["rating"], "attacking": attacking_weight, "defensive": w["defensive"], "possession": w["possession"]}
+
+        known_score = (
+            perf_level_weight * row["perf_level_pct"]
             + w["perf_delta"] * row["perf_delta_pct"]
             + w["value_growth"] * row["value_growth_pct"]
             + w["playing_time"] * row["playing_time_pct"]
             + w["value_for_money"] * row["value_for_money_pct"]
         )
-        other_weight_sum = 1 - w["resale_profit"]
+        known_weight = perf_level_weight + w["perf_delta"] + w["value_growth"] + w["playing_time"] + w["value_for_money"]
+        for c in FOTMOB_COMPONENTS:
+            if row[f"has_{c}_data"]:
+                known_score += component_weight[c] * row[f"{c}_pct"]
+                known_weight += component_weight[c]
 
-        fotmob_numerator = sum(
-            w[c] * row[f"{c}_pct"] for c in FOTMOB_COMPONENTS if row[f"has_{c}_data"]
-        )
-        fotmob_weight_known = sum(
-            w[c] for c in FOTMOB_COMPONENTS if row[f"has_{c}_data"]
-        )
-        missing_fotmob_weight = sum(w[c] for c in FOTMOB_COMPONENTS) - fotmob_weight_known
-        six_weight_sum = other_weight_sum - missing_fotmob_weight
-        base = (five + fotmob_numerator) / six_weight_sum * other_weight_sum
+        base = known_score / known_weight * other_weight_sum
 
         if row["has_resale_data"]:
             rescale = (1 - row["resale_weight"]) / other_weight_sum
@@ -398,25 +406,32 @@ def test_loan_success_score_matches_weighted_components(loans):
     transfer score, there's no resale/value-for-money renormalization
     layer since loans never have those components in the first place - just
     the single-stage renormalization for the 4 FotMob components, each
-    independently droppable per its own has_*_data flag.
+    independently droppable per its own has_*_data flag. perf_level and
+    attacking are folded together first, same as the permanent-transfer
+    formula - see fold_perf_level_into_attacking.
     """
     sample = loans.sample(n=min(200, len(loans)), random_state=42)
     for _, row in sample.iterrows():
         w = LOAN_POSITION_WEIGHTS[row["position"]]
-        base = (
-            w["perf_level"] * row["perf_level_pct"]
+
+        has_attacking = bool(row["has_attacking_data"])
+        perf_level_weight = 0 if has_attacking else w["perf_level"]
+        attacking_weight = (w["attacking"] + w["perf_level"]) if has_attacking else w["attacking"]
+        component_weight = {"rating": w["rating"], "attacking": attacking_weight, "defensive": w["defensive"], "possession": w["possession"]}
+
+        known_score = (
+            perf_level_weight * row["perf_level_pct"]
             + w["perf_delta"] * row["perf_delta_pct"]
             + w["value_growth"] * row["value_growth_pct"]
             + w["playing_time"] * row["playing_time_pct"]
         )
-        fotmob_numerator = sum(
-            w[c] * row[f"{c}_pct"] for c in FOTMOB_COMPONENTS if row[f"has_{c}_data"]
-        )
-        fotmob_weight_known = sum(
-            w[c] for c in FOTMOB_COMPONENTS if row[f"has_{c}_data"]
-        )
-        missing_fotmob_weight = sum(w[c] for c in FOTMOB_COMPONENTS) - fotmob_weight_known
-        recomputed = (base + fotmob_numerator) / (1 - missing_fotmob_weight)
+        known_weight = perf_level_weight + w["perf_delta"] + w["value_growth"] + w["playing_time"]
+        for c in FOTMOB_COMPONENTS:
+            if row[f"has_{c}_data"]:
+                known_score += component_weight[c] * row[f"{c}_pct"]
+                known_weight += component_weight[c]
+
+        recomputed = known_score / known_weight
         assert recomputed == pytest.approx(row["loan_success_score"], abs=0.15), (
             f"{row['name']} ({row['position']}): recomputed {recomputed:.2f} != stored {row['loan_success_score']}"
         )
