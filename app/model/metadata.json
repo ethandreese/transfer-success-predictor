@@ -21,9 +21,9 @@
     "to_domestic_competition_id"
   ],
   "target": "success_score",
-  "test_mae": 12.71,
-  "test_r2": 0.083,
-  "baseline_mae": 13.62,
+  "test_mae": 11.91,
+  "test_r2": 0.062,
+  "baseline_mae": 12.63,
   "n_train": 2972,
   "n_test": 1867,
   "reference_values": {
