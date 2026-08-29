@@ -246,7 +246,7 @@ def load_loan_spells():
     likely data artifacts (same-day duplicate entries etc).
 
     Unlike load_transfers(), rows are NOT dropped here for having too few
-    post-loan appearances (see build_loan_dataset) - a loan spell where the
+    post-loan appearances (see prepare_loans) - a loan spell where the
     player barely featured isn't missing data, it's the actual outcome
     (benched, frozen out, injured throughout) that the Loans tab exists to
     surface, not something to filter away.
@@ -548,6 +548,7 @@ FOTMOB_DEFENSIVE_GK_STATS = ["fotmob_saves", "fotmob__save_percentage", "fotmob_
 # attacking, matching how e.g. FBref categorizes take-ons under
 # "Possession" rather than "Shooting"/"Passing".
 FOTMOB_POSSESSION_STATS = ["fotmob_accurate_pass", "fotmob_won_contest"]
+FOTMOB_COMPONENTS = ["rating", "attacking", "defensive", "possession"]
 
 
 def compute_fotmob_component_pcts(df):
@@ -612,6 +613,53 @@ def compute_fotmob_component_pcts(df):
     return rating_pct, attacking_pct, defensive_pct, possession_pct
 
 
+def attach_fotmob_components(transfers_df, loans_df):
+    """
+    Merge FotMob raw stats onto both permanent transfers and loans, then
+    rank rating/attacking/defensive/possession against the COMBINED
+    population instead of each type separately (previously each called
+    compute_fotmob_component_pcts on its own df in isolation).
+
+    This is deliberately different from value_growth/playing_time, which
+    stay ranked within their own population (see finish_loan_dataset's
+    docstring: a loan's much shorter window makes raw appearance counts
+    and value growth genuinely incomparable in scale to a permanent
+    tenure's). The FotMob components don't have that problem - they're
+    already per-90 rates (or, for rating, a plain average), so a loan
+    spell and a permanent tenure with identical on-pitch output should
+    land on the same percentile, not two different ones just because of
+    which population happened to rank them. Combining also gives smaller
+    slices (goalkeepers especially) a bigger, more stable reference
+    population than either pool alone.
+
+    Returns (transfers_df, loans_df), each with rating_pct/attacking_pct/
+    defensive_pct/possession_pct/has_*_data columns attached, row order
+    and index otherwise unchanged.
+    """
+    fotmob_stats = load_fotmob_stats()
+    transfers_df = transfers_df.merge(fotmob_stats, on=["player_id", "transfer_date"], how="left")
+    loans_df = loans_df.merge(fotmob_stats, on=["player_id", "transfer_date"], how="left")
+
+    n_transfers = len(transfers_df)
+    combined = pd.concat([transfers_df, loans_df], ignore_index=True)
+    combined["rating_pct"], combined["attacking_pct"], combined["defensive_pct"], combined["possession_pct"] = (
+        compute_fotmob_component_pcts(combined)
+    )
+    for component in FOTMOB_COMPONENTS:
+        combined[f"has_{component}_data"] = combined[f"{component}_pct"].notna()
+    combined["has_fotmob_data"] = combined[[f"has_{c}_data" for c in FOTMOB_COMPONENTS]].any(axis=1)
+
+    transfers_df = combined.iloc[:n_transfers].reset_index(drop=True)
+    loans_df = combined.iloc[n_transfers:].reset_index(drop=True)
+
+    print(f"  Permanent transfers: {transfers_df['has_fotmob_data'].sum():,} / {len(transfers_df):,} have a usable score in at least one FotMob component")
+    print(f"  Loans: {loans_df['has_fotmob_data'].sum():,} / {len(loans_df):,} have a usable score in at least one FotMob component")
+    for component in FOTMOB_COMPONENTS:
+        print(f"    {component}: {100 * combined[f'has_{component}_data'].mean():.0f}% of the combined population")
+
+    return transfers_df, loans_df
+
+
 def compute_resale_weight(tenure_years):
     """
     How much resale profit should count, as a function of tenure length -
@@ -649,30 +697,22 @@ def compute_expected_post_performance(df):
     return expected
 
 
-def build_loan_dataset(players, clubs, appearances, valuations, team_games, league_position_baseline, position_fallback):
+def prepare_loans(players, clubs, appearances, valuations, team_games):
     """
-    Loan-spell counterpart to main()'s permanent-transfer pipeline: same
-    windowed appearance/valuation/league-adjustment machinery (every
-    compute_* helper below only cares about a transfer-shaped frame -
-    transfer_idx/player_id/transfer_date/tenure_end/from_club_id/to_club_id
-    - not what kind of move it represents, so they're reused as-is on
-    load_loan_spells()'s output instead of load_transfers()'s), but with
-    two differences:
-
-      - No value_for_money or resale_profit component. Both assume a
-        permanent sale (a fee paid once and, maybe, a later resale); most
-        loans carry no real fee at all, and a loan doesn't end in a sale of
-        its own. The remaining four components are reweighted per
-        data/loan_score_weights.json, with playing_time typically the
-        largest share - whether the loan actually delivered game time is
-        usually the central question a loan gets judged on.
-      - Percentiles are ranked within the loans population only, not mixed
-        with permanent transfers - a loan's value growth or appearance
-        count over a much shorter window isn't on the same scale as a
-        permanent tenure's, so comparing a loan against permanent-transfer
-        norms would be misleading in both directions.
-
-    Writes data/loans_processed.csv.
+    First half of the loan-spell pipeline - same windowed appearance/
+    valuation machinery as main()'s permanent-transfer pipeline (every
+    compute_* helper here only cares about a transfer-shaped frame -
+    transfer_idx/player_id/transfer_date/tenure_end/from_club_id/
+    to_club_id - not what kind of move it represents, so they're reused
+    as-is on load_loan_spells()'s output instead of load_transfers()'s).
+    Stops right where main() does for permanent transfers - age/value
+    validity filtered, ready for a FotMob merge - rather than attaching
+    FotMob stats and computing loan_success_score itself, so
+    attach_fotmob_components() can rank loans against permanent transfers
+    jointly before finish_loan_dataset() computes the loan-specific
+    league-adjusted performance features and the final score. Split out
+    from what used to be one build_loan_dataset() function for exactly
+    that reason.
     """
     print("Loading loan spells...")
     loans = load_loan_spells()
@@ -728,8 +768,38 @@ def build_loan_dataset(players, clubs, appearances, valuations, team_games, leag
         & df["value_before"].gt(0)
         & df["value_after"].notna()
     )
-    df = df[valid].copy()
+    return df[valid].copy()
 
+
+def finish_loan_dataset(df, league_position_baseline, position_fallback):
+    """
+    Second half of the loan-spell pipeline: df already has FotMob
+    components attached (rating_pct/attacking_pct/defensive_pct/
+    possession_pct/has_*_data, ranked jointly with permanent transfers -
+    see attach_fotmob_components) - this computes the loan-specific
+    league-adjusted performance features and loan_success_score, and
+    writes data/loans_processed.csv. Two differences from main()'s
+    permanent-transfer formula:
+
+      - No value_for_money or resale_profit component. Both assume a
+        permanent sale (a fee paid once and, maybe, a later resale); most
+        loans carry no real fee at all, and a loan doesn't end in a sale of
+        its own. The remaining four components (plus the four FotMob ones)
+        are reweighted per data/loan_score_weights.json, with playing_time
+        typically the largest share - whether the loan actually delivered
+        game time is usually the central question a loan gets judged on.
+      - perf_level/perf_delta/value_growth/playing_time are still ranked
+        within the loans population only, not mixed with permanent
+        transfers - a loan's value growth or appearance count over a much
+        shorter window isn't on the same scale as a permanent tenure's, so
+        comparing a loan against permanent-transfer norms would be
+        misleading in both directions. This does NOT apply to the FotMob
+        components, which were already ranked against the combined
+        population before this function runs (see attach_fotmob_components
+        for why per-90 rates don't have the same scale problem).
+
+    Writes data/loans_processed.csv.
+    """
     print("Computing loan-adjusted performance features...")
     df["from_league_ga_baseline"] = lookup_league_baseline(
         df["from_domestic_competition_id"], df["position"], league_position_baseline, position_fallback,
@@ -762,13 +832,30 @@ def build_loan_dataset(players, clubs, appearances, valuations, team_games, leag
         # loan rows to find at all.
         df["loan_success_score"] = pd.Series(dtype=float)
     else:
+        # Same two-part idea as the permanent-transfer formula in main(),
+        # minus the resale-profit layering (loans never have that
+        # component at all - see data/loan_score_weights.json): the 4 base
+        # components plus the 4 FotMob ones, each FotMob component's weight
+        # dropped and the rest renormalized independently for a loan
+        # missing that specific bucket, rather than guessed at.
         w = df["position"].map(LOAN_POSITION_WEIGHTS).apply(pd.Series)
-        df["loan_success_score"] = (
+        base_score = (
             w["perf_level"] * df["perf_level_pct"]
             + w["perf_delta"] * df["perf_delta_pct"]
             + w["value_growth"] * df["value_growth_pct"]
             + w["playing_time"] * df["playing_time_pct"]
-        ).round(1)
+        )
+        fotmob_numerator = sum(
+            np.where(df[f"has_{c}_data"], w[c] * df[f"{c}_pct"].fillna(0), 0)
+            for c in FOTMOB_COMPONENTS
+        )
+        fotmob_weight_known = sum(
+            np.where(df[f"has_{c}_data"], w[c], 0)
+            for c in FOTMOB_COMPONENTS
+        )
+        missing_fotmob_weight = sum(w[c] for c in FOTMOB_COMPONENTS) - fotmob_weight_known
+        effective_weight_sum = 1 - missing_fotmob_weight  # all 8 loan weights sum to 1.0 by construction (data/loan_score_weights.json)
+        df["loan_success_score"] = ((base_score + fotmob_numerator) / effective_weight_sum).round(1)
 
     cols = [
         "player_id", "name", "transfer_date", "from_club_name", "to_club_name",
@@ -782,7 +869,10 @@ def build_loan_dataset(players, clubs, appearances, valuations, team_games, leag
         "from_league_ga_baseline", "to_league_ga_baseline",
         "pre_ga_p90_vs_league", "post_ga_p90_vs_league", "expected_post_ga_p90_vs_league",
         "tenure_days", "still_on_loan",
+        "has_fotmob_data", "has_rating_data", "has_attacking_data", "has_defensive_data", "has_possession_data",
+    ] + FOTMOB_RAW_COLS + [
         "perf_level_pct", "perf_delta_pct", "value_growth_pct", "playing_time_pct",
+        "rating_pct", "attacking_pct", "defensive_pct", "possession_pct",
         "loan_success_score",
     ]
     out = df[cols].sort_values("transfer_date")
@@ -800,8 +890,12 @@ def main():
     trains on. Also writes data/league_baselines.csv as a side effect (see
     save_league_baselines) so app/main.py can share the same league
     baselines for live-prediction explanations, and data/loans_processed.csv
-    (see build_loan_dataset) - the same idea applied to loan spells instead
-    of permanent transfers, with its own loan_success_score.
+    (see prepare_loans/finish_loan_dataset) - the same idea applied to loan
+    spells instead of permanent transfers, with its own loan_success_score.
+    Permanent transfers and loans are prepared mostly independently, but
+    meet in the middle at attach_fotmob_components(), which ranks both
+    populations' rating/attacking/defensive/possession components jointly
+    (see that function for why, unlike every other component here).
     """
     print("Loading raw CSVs...")
     transfers = load_transfers()
@@ -882,12 +976,6 @@ def main():
     )
     df = df[valid].copy()
 
-    print("Attaching FotMob defensive/technical stats...")
-    fotmob_stats = load_fotmob_stats()
-    df = df.merge(fotmob_stats, on=["player_id", "transfer_date"], how="left")
-    n_matched = df["fotmob_total_minutes"].notna().sum()  # present whenever the player was matched at all, unlike any single stat category (see compute_fotmob_component_pcts's has_fotmob_data, set after it below)
-    print(f"  {n_matched:,} / {len(df):,} transfers matched to FotMob tenure stats ({100 * n_matched / len(df):.0f}%)")
-
     print("Computing composite success scores...")
     # Goal contributions are judged against the league they were actually
     # produced in, not just the whole dataset - 0.9 G+A/90 means something
@@ -957,23 +1045,24 @@ def main():
 
     # Four FotMob-derived components (rating, attacking, defensive,
     # possession) instead of one blended composite - see
-    # compute_fotmob_component_pcts for the full reasoning. Real coverage
-    # gaps mean not every matched transfer ends up with a usable value in
-    # every bucket (e.g. matched, but missing that specific bucket's
-    # sub-stats), so each row's has_*_data flags are defined off that
-    # bucket's own _pct column directly - not off the merge/match above -
-    # so a flag is never true for a row whose weight would have nothing
-    # real to multiply. Like resale_profit below, a bucket's weight is
-    # dropped and the rest renormalized when its flag is false, rather than
-    # guessing at a neutral value for data we don't have.
-    FOTMOB_COMPONENTS = ["rating", "attacking", "defensive", "possession"]
-    df["rating_pct"], df["attacking_pct"], df["defensive_pct"], df["possession_pct"] = compute_fotmob_component_pcts(df)
-    for component in FOTMOB_COMPONENTS:
-        df[f"has_{component}_data"] = df[f"{component}_pct"].notna()
-    df["has_fotmob_data"] = df[[f"has_{c}_data" for c in FOTMOB_COMPONENTS]].any(axis=1)
-    print(f"  {df['has_fotmob_data'].sum():,} / {len(df):,} transfers have a usable score in at least one FotMob component")
-    for component in FOTMOB_COMPONENTS:
-        print(f"    {component}: {df[f'has_{component}_data'].sum():,} ({100 * df[f'has_{component}_data'].mean():.0f}%)")
+    # compute_fotmob_component_pcts for the full reasoning. Loans are
+    # prepared here (rather than at the very end, where they used to be)
+    # so attach_fotmob_components can rank permanent transfers and loans
+    # jointly - see that function for why that's correct for these four
+    # components specifically, unlike every other component in this
+    # formula. Real coverage gaps mean not every matched transfer ends up
+    # with a usable value in every bucket (e.g. matched, but missing that
+    # specific bucket's sub-stats), so each row's has_*_data flags are
+    # defined off that bucket's own _pct column directly, not off the
+    # merge/match itself - so a flag is never true for a row whose weight
+    # would have nothing real to multiply. Like resale_profit below, a
+    # bucket's weight is dropped and the rest renormalized when its flag
+    # is false, rather than guessing at a neutral value for data we don't
+    # have.
+    print("Preparing loan spells...")
+    loans_df = prepare_loans(players, clubs, appearances, valuations, team_games)
+    print("Attaching FotMob components (ranked across transfers and loans together)...")
+    df, loans_df = attach_fotmob_components(df, loans_df)
 
     # Resale profit: did the buying club later resell the player for more
     # than they paid? A real, distinct signal from sporting performance - a
@@ -1073,8 +1162,8 @@ def main():
     out.to_csv(OUT_PATH, index=False)
     print(f"Wrote {len(out):,} rows to {OUT_PATH}")
 
-    print("\nBuilding loan-spell dataset...")
-    build_loan_dataset(players, clubs, appearances, valuations, team_games, league_position_baseline, position_fallback)
+    print("\nFinishing loan-spell dataset...")
+    finish_loan_dataset(loans_df, league_position_baseline, position_fallback)
 
 
 if __name__ == "__main__":

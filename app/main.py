@@ -136,7 +136,7 @@ FOTMOB_COMPONENT_LABELS = {
 }
 
 
-def describe_fotmob_component(component, r, position_plural):
+def describe_fotmob_component(component, r, position_plural, is_loan=False):
     """
     Build one FotMob-derived breakdown row's description (rating/attacking/
     defensive/possession - see compute_fotmob_component_pcts in
@@ -144,37 +144,66 @@ def describe_fotmob_component(component, r, position_plural):
     one number). The underlying per-90 rates driving "attacking" aren't
     stored directly (only the raw season totals are), so chances-created/90
     is recomputed here the same way build_dataset.py derives it - from
-    fotmob_total_att_assist and fotmob_total_minutes.
+    fotmob_total_att_assist and fotmob_total_minutes. Shared between
+    describe_components() (permanent transfers) and
+    describe_loan_components() (loans) - is_loan only changes the wording
+    ("on loan at"/"other loan spells" vs. "at"/"other {position}"), purely
+    cosmetic: unlike every other component, rating/attacking/defensive/
+    possession are ranked against transfers and loans *combined* (see
+    attach_fotmob_components in build_dataset.py), so the number itself
+    means the same thing on both kinds of card - only the phrasing differs.
+
+    Each bucket's _pct is an average of whichever of its underlying stats
+    are actually available (see compute_fotmob_component_pcts), so a
+    component can be "known" even when one specific stat behind it isn't -
+    e.g. attacking_pct valid from goals/chances-created alone with xG/xA
+    missing that season. parts() builds the description from only the
+    sub-stats that are actually present, instead of formatting a NaN
+    straight into the string ("nan xG/90").
     """
     seasons = int(r["fotmob_seasons_used"])
     season_note = "1 season" if seasons == 1 else f"{seasons} seasons"
     minutes_per_90 = max(r["fotmob_total_minutes"] / 90, 1)
     chances_created_p90 = r["fotmob_total_att_assist"] / minutes_per_90
 
+    def parts(*pairs):
+        """pairs is (value, format-string) tuples - drop any whose value is NaN, then join what's left."""
+        return ", ".join(fmt.format(v) for v, fmt in pairs if pd.notna(v))
+
     if component == "rating":
-        detail = f"{r['fotmob_rating']:.2f} average match rating"
+        detail = parts((r["fotmob_rating"], "{:.2f} average match rating"))
     elif component == "attacking":
-        detail = (
-            f"{r['fotmob_goals_per_90']:.2f} goals/90, {r['fotmob_expected_goals_per_90']:.2f} xG/90, "
-            f"{r['fotmob_expected_assists_per_90']:.2f} xA/90, {chances_created_p90:.1f} chances created/90"
+        detail = parts(
+            (r["fotmob_goals_per_90"], "{:.2f} goals/90"),
+            (r["fotmob_expected_goals_per_90"], "{:.2f} xG/90"),
+            (r["fotmob_expected_assists_per_90"], "{:.2f} xA/90"),
+            (chances_created_p90, "{:.1f} chances created/90"),
         )
     elif component == "defensive" and r["position"] == "Goalkeeper":
-        detail = (
-            f"{r['fotmob_saves']:.1f} saves/90, {r['fotmob__save_percentage']:.0f}% save rate, "
-            f"{r['fotmob_goals_conceded']:.1f} goals conceded/90"
+        detail = parts(
+            (r["fotmob_saves"], "{:.1f} saves/90"),
+            (r["fotmob__save_percentage"], "{:.0f}% save rate"),
+            (r["fotmob_goals_conceded"], "{:.1f} goals conceded/90"),
         )
     elif component == "defensive":
-        detail = (
-            f"{r['fotmob_total_tackle']:.1f} tackles/90, {r['fotmob_interception']:.1f} interceptions/90, "
-            f"{r['fotmob_effective_clearance']:.1f} clearances/90, {r['fotmob_ball_recovery']:.1f} recoveries/90"
+        detail = parts(
+            (r["fotmob_total_tackle"], "{:.1f} tackles/90"),
+            (r["fotmob_interception"], "{:.1f} interceptions/90"),
+            (r["fotmob_effective_clearance"], "{:.1f} clearances/90"),
+            (r["fotmob_ball_recovery"], "{:.1f} recoveries/90"),
         )
     else:  # possession
-        detail = f"{r['fotmob_accurate_pass']:.1f} accurate passes/90, {r['fotmob_won_contest']:.1f} dribbles/90"
+        detail = parts(
+            (r["fotmob_accurate_pass"], "{:.1f} accurate passes/90"),
+            (r["fotmob_won_contest"], "{:.1f} dribbles/90"),
+        )
 
-    return (
-        f"{detail} — averaged across {season_note} at {r['to_club_name']}, "
-        f"ranked vs. other {position_plural}"
-    )
+    # "vs. other {position}" here (not "other loan spells"/"other transfers"
+    # like the rest of each card's rows) because these four components are
+    # ranked against transfers and loans combined - see
+    # attach_fotmob_components in build_dataset.py.
+    at_club = f"on loan at {r['to_club_name']}" if is_loan else f"at {r['to_club_name']}"
+    return f"{detail} — averaged across {season_note} {at_club}, ranked vs. other {position_plural}"
 
 
 def eur_m(v):
@@ -492,10 +521,12 @@ def build_transfer_card(r):
 def describe_loan_components(r):
     """
     Build the "why this score" breakdown for one row of loans_processed.csv:
-    4 components, always (unlike describe_components(), there's no 6th
-    "resale profit" row - a loan doesn't end in a sale of its own - and no
-    "value for money" row - most loans carry no real fee, see
-    data/loan_score_weights.json).
+    4 components always, plus up to 4 FotMob-derived rows (rating/
+    attacking/defensive/possession, each independently shown only when its
+    own has_*_data flag is true - so 4 to 8 rows total). Unlike
+    describe_components(), there's no "resale profit" row - a loan doesn't
+    end in a sale of its own - and no "value for money" row - most loans
+    carry no real fee, see data/loan_score_weights.json.
     """
     position_plural = POSITION_PLURAL.get(r["position"], r["position"])
     to_league = league_display_name(r["to_domestic_competition_id"])
@@ -541,6 +572,14 @@ def describe_loan_components(r):
                 f"judged on, blended with raw appearance count)"
             ),
         },
+    ] + [
+        {
+            "label": FOTMOB_COMPONENT_LABELS[component],
+            "value": round(float(r[f"{component}_pct"]), 1),
+            "description": describe_fotmob_component(component, r, position_plural, is_loan=True),
+        }
+        for component in ("rating", "attacking", "defensive", "possession")
+        if bool(r[f"has_{component}_data"])
     ]
 
 

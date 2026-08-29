@@ -395,21 +395,39 @@ def test_loan_success_score_matches_weighted_components(loans):
     Recompute loan_success_score from the stored per-component percentiles
     and each row's position weights, and check it matches the stored score -
     catches a formula/weights drift before it ships. Unlike the permanent
-    transfer score, there's no resale/value-for-money renormalization step
-    since loans never have those components in the first place.
+    transfer score, there's no resale/value-for-money renormalization
+    layer since loans never have those components in the first place - just
+    the single-stage renormalization for the 4 FotMob components, each
+    independently droppable per its own has_*_data flag.
     """
     sample = loans.sample(n=min(200, len(loans)), random_state=42)
     for _, row in sample.iterrows():
         w = LOAN_POSITION_WEIGHTS[row["position"]]
-        recomputed = (
+        base = (
             w["perf_level"] * row["perf_level_pct"]
             + w["perf_delta"] * row["perf_delta_pct"]
             + w["value_growth"] * row["value_growth_pct"]
             + w["playing_time"] * row["playing_time_pct"]
         )
+        fotmob_numerator = sum(
+            w[c] * row[f"{c}_pct"] for c in FOTMOB_COMPONENTS if row[f"has_{c}_data"]
+        )
+        fotmob_weight_known = sum(
+            w[c] for c in FOTMOB_COMPONENTS if row[f"has_{c}_data"]
+        )
+        missing_fotmob_weight = sum(w[c] for c in FOTMOB_COMPONENTS) - fotmob_weight_known
+        recomputed = (base + fotmob_numerator) / (1 - missing_fotmob_weight)
         assert recomputed == pytest.approx(row["loan_success_score"], abs=0.15), (
             f"{row['name']} ({row['position']}): recomputed {recomputed:.2f} != stored {row['loan_success_score']}"
         )
+
+
+@pytest.mark.parametrize("component", FOTMOB_COMPONENTS)
+def test_loan_fotmob_component_only_counted_when_its_data_known(loans, component):
+    """Same gating check as the permanent-transfer components - has_{component}_data should exactly match {component}_pct's nullness."""
+    flag = loans[f"has_{component}_data"]
+    assert loans.loc[flag, f"{component}_pct"].notna().all()
+    assert loans.loc[~flag, f"{component}_pct"].isna().all()
 
 
 def test_loan_tenure_at_least_minimum_days(loans):
@@ -423,7 +441,7 @@ def test_loan_pre_apps_meets_minimum_but_zero_post_apps_allowed(loans):
     appearances on *both* sides), a loan spell only needs the pre-loan bar
     met - a loan where the player barely or never played is a real outcome
     the Loans tab exists to surface, not missing data (see
-    build_loan_dataset's docstring). At least one such spell should exist
+    prepare_loans's docstring). At least one such spell should exist
     in the real dataset, or the distinction isn't actually doing anything.
     """
     assert (loans["post_apps"] == 0).any()

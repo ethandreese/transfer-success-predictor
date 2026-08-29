@@ -1,11 +1,12 @@
 """
 Fetch FotMob's per-season stat leaderboards (rating, tackles, passes,
 defensive actions, saves, etc.) for every league that appears as a
-destination in data/transfers_processed.csv, and stitch each transfer's
-whole tenure into one row of aggregated stats - the piece of data that
-lets build_dataset.py add a real defensive/technical performance signal
-for positions (defenders, goalkeepers) where goal contributions alone are
-a weak or meaningless signal (see data/score_weights.json).
+destination in data/transfers_processed.csv or data/loans_processed.csv,
+and stitch each tenure (permanent transfer or loan spell) into one row of
+aggregated stats - the piece of data that lets build_dataset.py add a real
+defensive/technical performance signal for positions (defenders,
+goalkeepers) where goal contributions alone are a weak or meaningless
+signal (see data/score_weights.json and data/loan_score_weights.json).
 
 This is the production version of the investigation carried out in
 scripts/pilot/ (fotmob_epl_pilot.py -> fotmob_epl_pilot_v2.py ->
@@ -111,6 +112,7 @@ CACHE_DIR = os.path.join(RAW_DIR, "fotmob_season_cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 OUT_PATH = os.path.join(RAW_DIR, "fotmob_stats_cache.csv")
 TRANSFERS_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "transfers_processed.csv")
+LOANS_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "loans_processed.csv")
 
 # Pure corporate-form tokens that carry no identifying information (German
 # "1.FC"/"VfB"/"TSG", Italian "AC"/"SSC", Spanish "CD"/"UD"/"RCD", French
@@ -357,19 +359,39 @@ def run_league(client, comp_id, transfers):
     return results_df
 
 
+def load_tenure_windows():
+    """
+    Every tenure window that needs FotMob stats: both permanent transfers
+    (data/transfers_processed.csv) and loan spells (data/loans_processed.csv),
+    unioned into one frame. run_league() only ever reads transfer_date/
+    tenure_end/from_domestic_competition_id/to_club_name/name/player_id -
+    present in both source files - so the two are safe to concatenate and
+    run through the exact same fetch/match/stitch pipeline; a loan and a
+    permanent transfer can never collide on (player_id, transfer_date) since
+    each is a distinct real-world event. Reading the *committed* transfers/
+    loans CSVs here isn't circular: their tenure/position/club columns come
+    from the base Transfermarkt pipeline and don't depend on FotMob data, so
+    this can run before build_dataset.py regenerates them with fresh FotMob
+    columns.
+    """
+    transfers = pd.read_csv(TRANSFERS_PATH, parse_dates=["transfer_date"])
+    loans = pd.read_csv(LOANS_PATH, parse_dates=["transfer_date"])
+    combined = pd.concat([transfers, loans], ignore_index=True)
+    combined["tenure_end"] = combined["transfer_date"] + pd.to_timedelta(combined["tenure_days"], unit="D")
+    return combined[combined["transfer_date"] >= f"{FIRST_SEASON_YEAR}-08-01"]
+
+
 def main():
-    """Fetch every league in LEAGUE_MAP, stitch every transfer's tenure stats, write the combined result to data/raw/fotmob_stats_cache.csv for build_dataset.py to consume."""
-    df = pd.read_csv(TRANSFERS_PATH, parse_dates=["transfer_date"])
-    df["tenure_end"] = df["transfer_date"] + pd.to_timedelta(df["tenure_days"], unit="D")
-    df = df[df["transfer_date"] >= f"{FIRST_SEASON_YEAR}-08-01"]
+    """Fetch every league in LEAGUE_MAP, stitch every permanent-transfer and loan tenure's stats, write the combined result to data/raw/fotmob_stats_cache.csv for build_dataset.py to consume."""
+    df = load_tenure_windows()
 
     all_results = []
     with httpx.Client(timeout=30) as client:
         for comp_id in LEAGUE_MAP:
-            league_transfers = df[df["to_domestic_competition_id"] == comp_id].copy()
-            if league_transfers.empty:
+            league_rows = df[df["to_domestic_competition_id"] == comp_id].copy()
+            if league_rows.empty:
                 continue
-            results_df = run_league(client, comp_id, league_transfers)
+            results_df = run_league(client, comp_id, league_rows)
             if not results_df.empty:
                 all_results.append(results_df)
 

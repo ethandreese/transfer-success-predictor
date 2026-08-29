@@ -381,7 +381,7 @@ def test_loans_list_search_is_accent_insensitive():
 
 
 def test_loan_detail_matches_list_card_shape():
-    """/api/loans/detail should return a full 4-component card (no value-for-money/resale-profit rows) matching the list row it came from."""
+    """/api/loans/detail should return a 4-8 component card (no value-for-money/resale-profit rows, but up to 4 FotMob rows) matching the list row it came from."""
     list_res = client.get("/api/loans", params={"limit": 1})
     row = list_res.json()["results"][0]
     detail_res = client.get("/api/loans/detail", params={
@@ -391,7 +391,7 @@ def test_loan_detail_matches_list_card_shape():
     detail = detail_res.json()
     assert detail["name"] == row["name"]
     assert detail["loan_success_score"] == row["loan_success_score"]
-    assert len(detail["breakdown"]) == 4
+    assert 4 <= len(detail["breakdown"]) <= 8
     for component in detail["breakdown"]:
         assert "description" in component and component["description"]
 

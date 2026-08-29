@@ -174,7 +174,19 @@ play. Unlike the permanent-transfer pipeline, a loan spell with zero
 post-loan appearances is *kept*, not filtered out — a player who was sent
 out and never played is a real (bad) outcome the Loans tab exists to
 surface, not missing data. 3,199 loan spells (of ~28k candidates) are
-scored this way - see `/loans.html`.
+scored this way - see `/loans.html`. perf_level/perf_delta/value_growth/
+playing_time are still ranked within the loans population only, not mixed
+with permanent-transfer norms - a loan's much shorter window makes raw
+appearance counts and value growth genuinely incomparable in scale to a
+permanent tenure's. The four FotMob components (rating/attacking/
+defensive/possession - see below) are the exception: they're ranked
+against transfers and loans *combined* (see `attach_fotmob_components` in
+`scripts/build_dataset.py`) - about 44% of loans end up with a usable
+score in at least one bucket (lower than permanent transfers' 82%, since a
+loan spell is usually a shorter tenure for a less-established player, so
+it clears FotMob's per-category minutes thresholds less often), but a
+given rating/tackles-per-90/etc. now means the same percentile whether
+it's shown on a loan card or a permanent-transfer one.
 
 **The rating/attacking/defensive/possession components come from FotMob,
 not Transfermarkt.** The packaged Transfermarkt dataset has no column at
@@ -234,6 +246,25 @@ it, and the other weights renormalized, the same pattern already used for
 `resale_profit` - so a transfer can show, say, attacking and possession
 but not rating and defensive, and the score still sums to the same 0-100
 scale.
+
+**These four components are ranked against transfers and loans combined,
+unlike everything else in either formula.** Every other percentile here -
+performance level, value growth, playing time, resale profit for
+transfers; the loan equivalents - is deliberately kept within its own
+population, because the underlying raw numbers genuinely aren't on the
+same scale: a loan's few months can't rack up the same raw appearance
+count or market-value swing as a multi-year permanent tenure, so mixing
+them would bias both directions. rating/attacking/defensive/possession
+don't have that problem - they're per-90 rates (or, for rating, a plain
+average), already normalized for how long the tenure was, so a loan
+spell and a permanent tenure with genuinely identical on-pitch output
+land on the same percentile rather than two different ones just because
+of which pool happened to rank them. Combining also gives thinner slices
+(goalkeepers especially) a bigger, more stable reference population than
+either pool alone. `attach_fotmob_components` in `scripts/build_dataset.py`
+does this: it merges FotMob stats onto both transfers and loans, then
+runs the percentile ranking once across the combined set before handing
+each its own slice back.
 
 **League-adjusted performance.** Goal contributions are judged against how
 hard it actually is to score in that specific league, not the whole
@@ -389,17 +420,20 @@ already be similar on it by construction, trivializing the comparison).
 
 - The base Transfermarkt dataset has no column for defense-specific output
   (tackles, clean sheets, saves) - now substantially addressed by the four
-  FotMob-derived components (see above), but not fully: they only cover
-  permanent transfers into the 23 leagues FotMob was matched against (loans
-  still have no defensive signal at all - see `data/loan_score_weights.json`),
-  only from whatever season FotMob's own coverage happens to start for that
-  specific league, and not at all for Ukraine's Premier League. About 18%
-  of scored permanent transfers still have no FotMob data in any of the
-  four buckets and fall back to value growth, playing time, and value for
-  money carrying the position almost entirely, as before - and even among
-  covered transfers, individual buckets have uneven coverage (rating 70%,
-  attacking 81%, defensive 72%, possession 72%), so it's common for a
-  transfer to show some but not all four rows.
+  FotMob-derived components for both permanent transfers and loans (see
+  above), but not fully: they only cover the 23 leagues FotMob was matched
+  against (loans into a handful of other leagues - Brazil, MLS, Saudi
+  Arabia, Argentina, and a few smaller ones, ~3.5% of loans - aren't in
+  that set at all), only from whatever season FotMob's own coverage
+  happens to start for that specific league, and not at all for Ukraine's
+  Premier League. About 18% of scored permanent transfers (56% of loans)
+  still have no FotMob data in any of the four buckets and fall back to
+  value growth, playing time, and value for money (plus perf_level/perf_delta
+  for the permanent score) carrying the position almost entirely, as
+  before - and even among covered transfers, individual buckets have
+  uneven coverage (rating 70%, attacking 81%, defensive 72%, possession
+  72% for permanent transfers), so it's common for a transfer or loan to
+  show some but not all four rows.
 - FotMob player/club matching relies on name/club text matching (no shared
   id exists between the two sites), which is inherently approximate.
   Verified well for a few high-volume leagues by hand (English club
@@ -538,7 +572,8 @@ still runs, just without loan detection - every zero-fee transfer
 `data/loans_processed.csv` comes out empty.
 
 `fetch_fotmob_stats.py` pulls FotMob's season stat leaderboards for the 23
-leagues in `LEAGUE_MAP` and stitches each transfer's tenure into
+leagues in `LEAGUE_MAP` and stitches each tenure - both permanent
+transfers and loan spells, in one pass - into
 `data/raw/fotmob_stats_cache.csv` (see "The rating/attacking/defensive/
 possession components come from FotMob..." above) - a few thousand
 requests across ~14 seasons x 23 leagues, politely rate-limited, resumable
