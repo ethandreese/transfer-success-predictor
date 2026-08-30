@@ -127,21 +127,21 @@ vary by position** (see `data/score_weights.json`):
   decent-but-unspectacular player who's later flipped for a profit is a
   good outcome for the club even if he was never a star there.
 
-Weights: attackers lean heavily on performance (21%/11%) since goal
+Weights: attackers lean heavily on performance (16%/8%) since goal
 contributions are a real, differentiating signal for them (only 5% have
 zero goal contributions in a given window). That signal gets progressively
 less reliable for midfielders (11% zero) and defenders (21% zero), and is
 essentially meaningless for goalkeepers (nearly all have exactly 0 goals +
 assists both before and after a move — no *Transfermarkt* column captures
 clean sheets, saves, or defensive actions). So performance weight shrinks
-from 32% combined (attackers) to 0% (goalkeepers), shifted into
+from 24% combined (attackers) to 0% (goalkeepers), shifted into
 attacking/defensive/possession instead, whose combined weight grows from
 18% (attackers, a minor signal on top of real goal data) up to 42%
 (goalkeepers, almost entirely defensive since shot-stopping is
 essentially the job and attacking is zeroed out entirely) as goal
 contributions become less meaningful.
 
-**value_growth (15%), value_for_money (10%), and rating (10%) are flat
+**value_growth (15%), value_for_money (10%), and rating (20%) are flat
 across every position, unlike everything else above.** value_growth and
 value_for_money are each computed as a single percentile rank across the
 *whole* dataset with no position grouping at all (unlike perf_level,
@@ -152,25 +152,33 @@ nothing about how either number is computed treats positions
 differently. rating is flat for a different reason: it's the same metric
 (FotMob's overall per-match quality score) for every player regardless
 of role, unlike attacking/defensive/possession, which are literally
-different underlying stats depending on position — and it was previously
-underweighted (2–8%) relative to how holistic a signal it actually is,
-being an outside rating service's own judgment of the player's overall
-performance rather than one specific facet of it. All three used to vary
-by position (value_growth 15/15/18/15%, value_for_money 20/22/22/25%,
-rating 2/3/4/7% for Attack/Midfield/Defender/Goalkeeper) — that spread
-was really just leftover perf_level weight parked somewhere convenient
-as goal contributions became less meaningful for a position, not a
-deliberate choice, so it's been moved into attacking/defensive/possession
-instead. value_for_money went through a second cut after that: even flat,
-20% was still a lot of weight riding on one fee-vs-performance metric, so
-it's now flat 10% instead, with the other 10% also routed into
-attacking/defensive/possession, proportionally per position, same
-mechanism as the original flattening. rating is the one exception to that
-routing: its move up to 10% comes entirely out of
-perf_level/perf_delta/playing_time instead (scaled down proportionally),
-specifically so it wouldn't dilute the role-specific tuning
-attacking/defensive/possession carry — see **Weights also vary by
-sub-position** below for that tuning.
+different underlying stats depending on position — and, being an outside
+rating service's own judgment of the player's *overall* performance
+rather than one specific facet of it, it captures a lot a stat line
+alone can't (positioning, decision-making, composure). All three used to
+vary by position (value_growth 15/15/18/15%, value_for_money
+20/22/22/25%, rating 2/3/4/7% for Attack/Midfield/Defender/Goalkeeper) —
+that spread was really just leftover perf_level weight parked somewhere
+convenient as goal contributions became less meaningful for a position,
+not a deliberate choice, so it's been moved into
+attacking/defensive/possession instead. value_for_money went through a
+second cut after that: even flat, 20% was still a lot of weight riding
+on one fee-vs-performance metric, so it's now flat 10% instead, with the
+other 10% also routed into attacking/defensive/possession,
+proportionally per position, same mechanism as the original flattening.
+rating went the opposite direction, twice — first up to a flat 10%, then
+up again to a flat 20%, on the reasoning above that a holistic per-match
+rating deserves more than a token weight. Both rating moves are the one
+exception to the attacking/defensive/possession routing: they come
+entirely out of perf_level/perf_delta/playing_time instead (scaled down
+proportionally, preserving their relative ratio to each other),
+specifically so rating's growing weight wouldn't dilute the role-specific
+tuning attacking/defensive/possession carry — see **Weights also vary by
+sub-position** below for that tuning. A side effect worth knowing: for
+positions where that funding bloc was already small (Centre-Back and
+full-back especially), perf_level/perf_delta/playing_time are now down
+to single-digit percentages each - William Saliba's Centre-Back weights,
+for example, spend just 1%/1%/3% on them combined.
 
 **Resale profit is only counted when known**, which is deliberately rare:
 only ~31% of transfers have a genuine subsequent sale for a recorded fee
@@ -380,7 +388,7 @@ perf_level/perf_delta/attacking (the same "attacking output" bloc
 `fold_perf_level_into_attacking` already folds into one number) and into
 defensive/possession for a defense-oriented role, or the other way for
 an attack-oriented one. With the Defensive Midfield weights, Caicedo's
-score becomes 63.9. Central Midfield, Centre-Forward, Second Striker,
+score becomes 64.8. Central Midfield, Centre-Forward, Second Striker,
 and Goalkeeper have no override — either that already IS the broad
 default's implicit profile, the position has no sub-split at all
 (Goalkeeper), or the sample is too thin in this dataset for a confident
