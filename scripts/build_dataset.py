@@ -631,6 +631,54 @@ def compute_value_growth_pct(value_before, value_peak, value_after):
     return 0.5 * ratio_combo + 0.5 * abs_combo
 
 
+FEE_OVERPAY_FREE_PASS_RATIO = 1.3
+
+
+def compute_fee_penalty_pct(transfer_fee, value_before):
+    """
+    How much a transfer's fee should count against value_for_money, as a
+    0-100 percentile - but NOT a plain percentile_rank(fee / value_before)
+    the way an earlier version worked, because that turns out too harsh
+    for an ordinary premium: paying 1.2-1.5x a player's pre-transfer value
+    is common (the dataset's own median fee/value ratio is 0.62x, 75th
+    percentile only 1.17x), not some rare extreme, and clubs routinely pay
+    a modest premium for plenty of transfers that still work out fine.
+
+    Below FEE_OVERPAY_FREE_PASS_RATIO (1.3x), a fee counts as a completely
+    normal premium and gets zero penalty, full stop - not "a small
+    penalty," genuinely zero. Only the ~19% of transfers that actually
+    exceed that ratio get ranked at all, and only against EACH OTHER
+    (not the whole dataset) - a transfer with a small excess over 1.3x
+    should be judged against how *other overpays* compare, not muddied by
+    the 81% of transfers that never overpaid at all.
+
+    This only works because it's NOT a monotonic transform fed into a
+    single global percentile_rank(): percentile rank only depends on
+    relative order, so scaling or clipping the ratio *before* one global
+    rank (an earlier, wrong attempt at this) leaves every above-threshold
+    transfer's rank essentially unchanged - the "free pass" population
+    still occupies the same share of "everyone ranked below me" either
+    way. Splitting into two literally different populations - a fixed 0
+    for anyone under the threshold, a real percentile rank *within only
+    the overpaid group* for anyone over it - is what actually creates a
+    ratio just over 1.3x (small excess, ranks low within the overpaid
+    group) and a ratio of 5x (huge excess, ranks high within it) landing
+    in genuinely different places, instead of both merely being "above
+    the line."
+
+    Returns a Series aligned to transfer_fee's index, 0-100, 0 = fee
+    fully justified regardless of size, 100 = the single worst overpay in
+    the dataset.
+    """
+    ratio = transfer_fee.fillna(0) / value_before.clip(lower=1)
+    has_overpay = ratio > FEE_OVERPAY_FREE_PASS_RATIO
+    excess = (ratio - FEE_OVERPAY_FREE_PASS_RATIO).clip(lower=0)
+
+    fee_penalty_pct = pd.Series(0.0, index=transfer_fee.index)
+    fee_penalty_pct.loc[has_overpay] = percentile_rank(excess.loc[has_overpay])
+    return fee_penalty_pct
+
+
 def fold_perf_level_into_attacking(df):
     """
     perf_level_pct (Transfermarkt goal contributions/90, covering every
@@ -680,6 +728,55 @@ FOTMOB_DEFENSIVE_GK_STATS = ["fotmob_saves", "fotmob__save_percentage", "fotmob_
 # "Possession" rather than "Shooting"/"Passing".
 FOTMOB_POSSESSION_STATS = ["fotmob_accurate_pass", "fotmob_won_contest"]
 FOTMOB_COMPONENTS = ["rating", "attacking", "defensive", "possession"]
+MIN_FOTMOB_LEAGUE_BASELINE_ROWS = 15
+
+
+def compute_fotmob_league_baselines(df, stats):
+    """
+    For each (destination league, position) and each raw FotMob per-90
+    stat, the minutes-weighted average across every matched tenure in the
+    combined transfers+loans FotMob sample - used to adjust for genuine
+    differences in playing style across leagues before ranking, the same
+    idea compute_league_position_baselines already applies to goal
+    contributions. Confirmed empirically: Bundesliga/Ligue 1/Denmark
+    centre-backs average measurably more tackles+interceptions+
+    clearances+recoveries per 90 than Premier League/La Liga ones (a
+    ~20-point spread in average defensive_pct) - a real style difference
+    (more transition-heavy play generates more defensive actions per
+    player), not a quality one, that was previously silently baked into
+    every FotMob-derived component.
+
+    Unlike compute_league_position_baselines (built from the *entire*
+    appearances.csv - every player, every league), this only has the
+    FotMob sample itself to work with (~5,700 transfers/loans in
+    data/raw/fotmob_stats_cache.csv) - well-covered leagues (Premier
+    League: 100+ matched centre-backs alone) get a stable baseline, thin
+    ones fall back to the position-wide average via
+    MIN_FOTMOB_LEAGUE_BASELINE_ROWS, same fallback pattern as
+    lookup_league_baseline.
+
+    Returns {stat: (baseline_series, fallback_series)} - baseline_series
+    indexed by (competition_id, position) with thin cells dropped,
+    fallback_series indexed by position alone - both feed
+    lookup_league_baseline per row, per stat.
+    """
+    baselines = {}
+    for stat in stats:
+        valid = df[stat].notna() & df["fotmob_total_minutes"].notna()
+        sub = df.loc[valid, [stat, "fotmob_total_minutes", "to_domestic_competition_id", "position"]]
+        weighted = sub[stat] * sub["fotmob_total_minutes"]
+
+        grouped = pd.DataFrame({"weighted": weighted, "minutes": sub["fotmob_total_minutes"], "n": 1}).groupby(
+            [sub["to_domestic_competition_id"], sub["position"]]
+        ).sum()
+        grouped = grouped[grouped["n"] >= MIN_FOTMOB_LEAGUE_BASELINE_ROWS]
+        baseline = grouped["weighted"] / grouped["minutes"].clip(lower=1)
+
+        pos_grouped = pd.DataFrame({"weighted": weighted, "minutes": sub["fotmob_total_minutes"]}).groupby(sub["position"]).sum()
+        fallback = pos_grouped["weighted"] / pos_grouped["minutes"].clip(lower=1)
+
+        baselines[stat] = (baseline, fallback)
+    return baselines
 
 
 def compute_fotmob_component_pcts(df):
@@ -694,10 +791,18 @@ def compute_fotmob_component_pcts(df):
     having very different games, which defeats the point of pulling this
     data in the first place.
 
-    Each is percentile-ranked *within position group*, like perf_level_pct,
-    then (for the three multi-stat buckets) averaged across whichever of
-    that bucket's raw stats are actually available for the row, so one
-    missing sub-stat doesn't zero out the whole bucket. "Defensive" uses a
+    Each raw stat is first adjusted against its (league, position)
+    baseline (see compute_fotmob_league_baselines) - a DIFFERENCE (raw
+    stat minus baseline), not a ratio like perf_level's league adjustment
+    uses, since several of these stats are negative by construction
+    (fotmob_goals_conceded_inv) or already a percentage
+    (fotmob__save_percentage), where a ratio's sign/scale gets confusing;
+    a plain "N more/fewer than the league average" offset works
+    uniformly across all of them. The adjusted value is then
+    percentile-ranked *within position group*, like perf_level_pct, then
+    (for the three multi-stat buckets) averaged across whichever of that
+    bucket's raw stats are actually available for the row, so one missing
+    sub-stat doesn't zero out the whole bucket. "Defensive" uses a
     genuinely different stat set by position - saves/save%/goals-conceded
     for goalkeepers, tackles/interceptions/clearances/recoveries for
     everyone else, since neither set means anything for the other position
@@ -728,7 +833,14 @@ def compute_fotmob_component_pcts(df):
         {"fotmob_rating"} | set(FOTMOB_ATTACKING_STATS)
         | set(FOTMOB_DEFENSIVE_OUTFIELD_STATS) | set(FOTMOB_DEFENSIVE_GK_STATS) | set(FOTMOB_POSSESSION_STATS)
     )
-    pct = {stat: df.groupby("position")[stat].rank(pct=True) * 100 for stat in all_stats}
+    league_baselines = compute_fotmob_league_baselines(df, all_stats)
+
+    pct = {}
+    for stat in all_stats:
+        baseline, fallback = league_baselines[stat]
+        stat_league_baseline = lookup_league_baseline(df["to_domestic_competition_id"], df["position"], baseline, fallback)
+        stat_vs_league = df[stat] - stat_league_baseline
+        pct[stat] = stat_vs_league.groupby(df["position"]).rank(pct=True) * 100
 
     def avg_pct(stats):
         return pd.concat([pct[s] for s in stats], axis=1).mean(axis=1, skipna=True)
@@ -1161,9 +1273,13 @@ def main():
     # Value-for-money: did performance level justify what was paid relative
     # to the player's own market value at the time, rather than relative to
     # every other transfer's fee (which makes any nine-figure fee look
-    # "expensive" even when it's a bargain for that specific player).
-    fee_to_value_pct = percentile_rank(df["transfer_fee"].fillna(0) / df["value_before"].clip(lower=1))
-    df["value_for_money_pct"] = percentile_rank(df["perf_level_pct"] - fee_to_value_pct)
+    # "expensive" even when it's a bargain for that specific player). See
+    # compute_fee_penalty_pct for why a fee's penalty isn't a plain
+    # percentile_rank(fee / value_before) - an ordinary premium (up to
+    # 1.3x pre-transfer value) gets zero penalty, only genuine overpays
+    # count, ranked against each other rather than the whole dataset.
+    fee_penalty_pct = compute_fee_penalty_pct(df["transfer_fee"], df["value_before"])
+    df["value_for_money_pct"] = percentile_rank(df["perf_level_pct"] - fee_penalty_pct)
 
     # Four FotMob-derived components (rating, attacking, defensive,
     # possession) instead of one blended composite - see

@@ -72,7 +72,22 @@ vary by position** (see `data/score_weights.json`):
   to the player's market value at the time* (comparing fees to the whole
   dataset's fee distribution made any nine-figure move look "expensive"
   even when it was a bargain for that specific player). Weighted flat
-  10% for every position (see **Weights** below).
+  10% for every position (see **Weights** below). Paying up to 1.3x a
+  player's pre-transfer value counts as a completely normal premium and
+  gets zero fee penalty — the dataset's own median fee/value ratio is
+  0.62x and the 75th percentile is only 1.17x, so a modest premium is
+  common, not some rare extreme, and clubs routinely pay one for
+  transfers that still work out fine. Only the ~19% of transfers that
+  actually exceed 1.3x get penalized at all, and only relative to *each
+  other* — not the whole dataset, which would otherwise still let a fee
+  just barely over the line land in roughly the same bad percentile as a
+  genuinely enormous overpay (see `compute_fee_penalty_pct` in
+  `scripts/build_dataset.py` for why a plain scaled/clipped ratio fed
+  into one global percentile rank doesn't actually achieve this: rank
+  only depends on relative order, so scaling or clipping the ratio
+  before ranking leaves an above-threshold transfer's rank essentially
+  unchanged — splitting into two separate populations is what actually
+  makes the difference).
 - **four FotMob-derived components** (each only when FotMob has that
   specific bucket's tenure stats — see below), kept as four separate
   scores rather than blended into one, so a player's actual profile
@@ -267,6 +282,37 @@ correct, not just plausible:
   correct on real cases like Virgil van Dijk's January 2018
   Southampton → Liverpool move (2017/18 correctly excluded, the other 9
   seasons stitched together).
+
+**Each raw FotMob stat is league-adjusted before it's ranked, the same
+idea `perf_level` already applies to goal contributions.** Playing style
+genuinely differs by league in ways that show up directly in these raw
+counts, independent of quality: centre-backs in Bundesliga/Ligue 1/
+Denmark average measurably more tackles+interceptions+clearances+
+recoveries per 90 than centre-backs in Premier League/La Liga (a ~20-point
+gap in average `defensive_pct` before this was added — a more
+transition-heavy, higher-turnover style of play generates more defensive
+actions per player, it doesn't mean the players are better). Two real Arsenal
+centre-backs made this concrete: Gabriel and William Saliba both scored
+in the 30s on `defensive_pct` despite being well-regarded starters,
+because every FotMob-derived stat was being ranked against centre-backs
+in every league combined, with no adjustment for how many raw defensive
+actions a given league's style tends to produce.
+`compute_fotmob_league_baselines` in `scripts/build_dataset.py` fixes
+this — for each (league, position) and each raw stat, it computes a
+minutes-weighted average across the FotMob sample itself (not the full
+`appearances.csv` the goal-contribution baseline uses, since these stats
+only exist for the ~5,700 transfers/loans FotMob was matched to — well-
+covered leagues like the Premier League get a stable baseline from 100+
+matched centre-backs alone, thin ones fall back to the position-wide
+average). Each row's raw stat is then compared against that baseline as
+a plain difference ("N more/fewer than the league average"), not a ratio
+like `perf_level` uses — several of these stats are negative by
+construction (`fotmob_goals_conceded_inv`) or already a percentage
+(`fotmob__save_percentage`), where a ratio's sign and scale get
+confusing, while an offset works the same way for all of them. After
+this fix, average `defensive_pct` across the top 12 leagues by matched
+centre-back count clusters tightly around 50 (49–57, one 61 outlier in a
+thin 23-player sample) instead of spanning 39–60.
 
 Matching a FotMob player onto a Transfermarkt one is also harder than it
 sounds — neither site exposes the other's player id, and club names often
