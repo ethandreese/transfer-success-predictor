@@ -255,7 +255,11 @@ def describe_components(r):
         {
             "label": "Transfer fee",
             "value": round(float(r["value_for_money_pct"]), 1),
-            "description": f"{eur_m(r['transfer_fee'])} fee vs. {eur_m(r['value_before'])} market value at the time",
+            "description": (
+                f"{eur_m(r['transfer_fee'])} fee vs. {eur_m(r['value_before'])} market value at the time, "
+                f"weighed against on-pitch performance (attacking, defending, possession, rating — "
+                f"whichever matter most for {position_plural}) relative to what the fee implied"
+            ),
         },
         {
             "label": "Value change",
