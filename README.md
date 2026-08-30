@@ -76,7 +76,11 @@ vary by position** (see `data/score_weights.json`):
   57% of the 327 games Barcelona actually played in that span, versus
   Haaland at 83% for Man City. Raw count is kept alongside it so a long,
   genuinely sustained career at the club still counts for something beyond
-  the percentage alone.
+  the percentage alone. Weighted meaningfully higher for goalkeepers
+  (17%, vs. 10-11% for outfielders) — a club fields exactly *one*
+  starting keeper, so whether a signing actually won that job is an
+  unusually clean, binary signal, unlike an outfield rotation slot where
+  a squad player can have real value without ever being first-choice.
 - **value for money** — performance level vs. what was paid *relative
   to the player's market value at the time* (comparing fees to the whole
   dataset's fee distribution made any nine-figure move look "expensive"
@@ -96,7 +100,31 @@ vary by position** (see `data/score_weights.json`):
   only depends on relative order, so scaling or clipping the ratio
   before ranking leaves an above-threshold transfer's rank essentially
   unchanged — splitting into two separate populations is what actually
-  makes the difference).
+  makes the difference). The "performance" side of this comparison isn't
+  just performance level, either — it's a weighted blend of *every*
+  on-pitch quality signal already computed for the transfer (performance
+  level, attacking, defensive, possession, rating), weighted the same
+  way the rest of the score already weights them for that specific
+  position/sub-position (see `value_for_money_performance_proxy` in
+  `scripts/build_dataset.py`). Performance-level-alone started out fine
+  for attackers but was a real problem for defense-oriented roles: goal
+  contributions are meaningless for goalkeepers (82% have exactly 0 in
+  the tenure window, all tied at the same percentile regardless of how
+  well they actually played) and barely correlated with actual defensive
+  quality even when nonzero — checked directly, goal contributions vs.
+  the defensive component correlate at just 0.01 for centre-backs, and
+  are *negative* for full-backs and defensive midfielders (-0.14 to
+  -0.18). Using it as "performance" for those rows wasn't measuring
+  performance at all; it silently collapsed value for money into "was
+  the fee reasonable" alone. Blending in attacking/defensive/possession/
+  rating, each weighted by how much that role's own score already leans
+  on it, fixed that without hardcoding a list of positions — a
+  Centre-Back's "performance" here leans on the defensive component the
+  way a winger's leans on attacking/performance level, automatically,
+  because that's how their weight profiles already differ. A component
+  missing for a given row (no FotMob data for that bucket) just drops
+  out of the blend and the rest are renormalized, same pattern used
+  everywhere else in the score.
 - **four FotMob-derived components** (each only when FotMob has that
   specific bucket's tenure stats — see below), kept as four separate
   scores rather than blended into one, so a player's actual profile
@@ -108,7 +136,7 @@ vary by position** (see `data/score_weights.json`):
     tenure. The one component goalkeepers get a real, direct quality
     signal from — every other non-FotMob component either doesn't apply to
     them (performance level/change) or is a financial/availability proxy
-    (value growth, playing time, value for money). Weighted flat 10% for
+    (value growth, playing time, value for money). Weighted flat 20% for
     every position (see **Weights** below) — it's the same metric
     regardless of role, unlike attacking/defensive/possession, which are
     literally different stats depending on position.

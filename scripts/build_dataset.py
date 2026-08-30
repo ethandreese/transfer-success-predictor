@@ -685,6 +685,69 @@ def compute_fee_penalty_pct(transfer_fee, value_before):
     return fee_penalty_pct
 
 
+VALUE_FOR_MONEY_PERFORMANCE_COMPONENTS = ["perf_level", "attacking", "defensive", "possession", "rating"]
+
+
+def value_for_money_performance_proxy(df, w):
+    """
+    The "performance" side of value_for_money's fee-vs-output comparison
+    (see main()) - not just perf_level_pct (goal contributions/90), which
+    is only a real quality signal for attack-minded roles. A weighted
+    blend of every on-pitch quality signal already computed for this row
+    (perf_level_pct, attacking_pct, defensive_pct, possession_pct,
+    rating_pct - VALUE_FOR_MONEY_PERFORMANCE_COMPONENTS), weighted by the
+    row's own position/sub-position weight profile `w` (see
+    lookup_weights) - the same weights the rest of the score already uses
+    to decide how much each signal matters for this specific role, so a
+    Centre-Back's "performance" leans on defensive_pct the way a winger's
+    leans on attacking_pct/perf_level_pct, continuously rather than an
+    all-or-nothing switch between two components.
+
+    This started as a goalkeeper-only fix (perf_level_pct is meaningless
+    for keepers: 82% have exactly 0 goal contributions, tied at the same
+    percentile regardless of how well they actually played), then a
+    defensive-vs-perf_level switch for defense-oriented roles generally
+    (checked directly: perf_level_pct barely correlates with
+    defensive_pct for Centre-Back (0.01), and is actually *negative* for
+    Right-Back (-0.18), Left-Back (-0.14), and Defensive Midfield
+    (-0.15) - goal contributions aren't just a weak proxy for defensive
+    quality there, they're roughly uncorrelated-to-inversely-related with
+    it). A hard switch between only two components still has the same
+    flavor of problem one level up, though: it throws away
+    attacking_pct/possession_pct/rating_pct entirely for a full-back
+    whose game genuinely involves all four, and flips its answer sharply
+    right at whatever weight threshold decides "dominant." Blending all
+    of them, in the same proportion the rest of the score already trusts,
+    avoids both problems at once.
+
+    A component that's unknown for this row (no FotMob data for that
+    specific bucket) drops its weight from both the numerator and the
+    denominator, same renormalization pattern used everywhere else in
+    this file, rather than guessing at a neutral value. perf_level_pct
+    is always defined (Transfermarkt goal data has no coverage gaps the
+    way FotMob does) and every non-goalkeeper position has SOME weight on
+    it, so the denominator is never zero for an outfielder; a goalkeeper
+    (weight 0 on perf_level/attacking) with no FotMob data at all for
+    that tenure is the one case that can zero out entirely, so it falls
+    back to plain perf_level_pct there, keeping value_for_money_pct
+    defined for every row the way the rest of main() expects (unlike the
+    four FotMob components themselves, value_for_money doesn't have a
+    has_*_data flag / weight-drop path of its own).
+    """
+    pct = {
+        "perf_level": df["perf_level_pct"], "attacking": df["attacking_pct"],
+        "defensive": df["defensive_pct"], "possession": df["possession_pct"], "rating": df["rating_pct"],
+    }
+    numerator = pd.Series(0.0, index=df.index)
+    denominator = pd.Series(0.0, index=df.index)
+    for c in VALUE_FOR_MONEY_PERFORMANCE_COMPONENTS:
+        known = pct[c].notna()
+        numerator = numerator + np.where(known, w[c] * pct[c].fillna(0), 0)
+        denominator = denominator + np.where(known, w[c], 0)
+    proxy = numerator / denominator.replace(0, np.nan)
+    return proxy.fillna(df["perf_level_pct"])
+
+
 def fold_perf_level_into_attacking(df):
     """
     perf_level_pct (Transfermarkt goal contributions/90, covering every
@@ -1276,17 +1339,6 @@ def main():
         + 0.4 * percentile_rank(df["post_apps"])
     )
 
-    # Value-for-money: did performance level justify what was paid relative
-    # to the player's own market value at the time, rather than relative to
-    # every other transfer's fee (which makes any nine-figure fee look
-    # "expensive" even when it's a bargain for that specific player). See
-    # compute_fee_penalty_pct for why a fee's penalty isn't a plain
-    # percentile_rank(fee / value_before) - an ordinary premium (up to
-    # 1.3x pre-transfer value) gets zero penalty, only genuine overpays
-    # count, ranked against each other rather than the whole dataset.
-    fee_penalty_pct = compute_fee_penalty_pct(df["transfer_fee"], df["value_before"])
-    df["value_for_money_pct"] = percentile_rank(df["perf_level_pct"] - fee_penalty_pct)
-
     # Four FotMob-derived components (rating, attacking, defensive,
     # possession) instead of one blended composite - see
     # compute_fotmob_component_pcts for the full reasoning. Loans are
@@ -1308,6 +1360,29 @@ def main():
     print("Attaching FotMob components (ranked across transfers and loans together)...")
     df, loans_df = attach_fotmob_components(df, loans_df)
 
+    # Weights vary by position - see data/score_weights.json for why.
+    # Looked up here (rather than down by the weighted-sum below, where
+    # this used to happen) because value_for_money_performance_proxy
+    # needs it too - which "performance" signal counts for value_for_money
+    # depends on the row's own weight profile.
+    w = lookup_weights(df, POSITION_WEIGHTS, SUB_POSITION_WEIGHTS)
+
+    # Value-for-money: did performance level justify what was paid relative
+    # to the player's own market value at the time, rather than relative to
+    # every other transfer's fee (which makes any nine-figure fee look
+    # "expensive" even when it's a bargain for that specific player). See
+    # compute_fee_penalty_pct for why a fee's penalty isn't a plain
+    # percentile_rank(fee / value_before) - an ordinary premium (up to
+    # 1.3x pre-transfer value) gets zero penalty, only genuine overpays
+    # count, ranked against each other rather than the whole dataset. See
+    # value_for_money_performance_proxy for why the "performance" side
+    # isn't always perf_level_pct - computed here, after
+    # attach_fotmob_components, because it needs defensive_pct, which
+    # doesn't exist until that call has run.
+    fee_penalty_pct = compute_fee_penalty_pct(df["transfer_fee"], df["value_before"])
+    performance_proxy = value_for_money_performance_proxy(df, w)
+    df["value_for_money_pct"] = percentile_rank(pd.Series(performance_proxy, index=df.index) - fee_penalty_pct)
+
     # Resale profit: did the buying club later resell the player for more
     # than they paid? A real, distinct signal from sporting performance - a
     # decent-but-unspectacular player who's later flipped for a profit is a
@@ -1327,15 +1402,15 @@ def main():
     df.loc[has_resale_data, "resale_profit_pct"] = percentile_rank(resale_profit_ratio[has_resale_data])
     df["has_resale_data"] = has_resale_data
 
-    # Weights vary by position - see data/score_weights.json for why. When
-    # resale_profit is unknown for a transfer, its weight is dropped and the
-    # rest are renormalized to still sum to 1, rather than filling in a
-    # fabricated "neutral" score for data we don't actually have. Same
-    # pattern now applies to each of the 4 FotMob components independently
+    # w (each row's position/sub-position weight profile) was already
+    # looked up above, before value_for_money. When resale_profit is
+    # unknown for a transfer, its weight is dropped and the rest are
+    # renormalized to still sum to 1, rather than filling in a fabricated
+    # "neutral" score for data we don't actually have. Same pattern now
+    # applies to each of the 4 FotMob components independently
     # (has_rating_data, has_attacking_data, ...): folded in first, below,
     # since they need to be settled BEFORE the resale-profit renormalization
     # runs on top of the result.
-    w = lookup_weights(df, POSITION_WEIGHTS, SUB_POSITION_WEIGHTS)
     other_weight_sum = 1 - w["resale_profit"]  # e.g. 0.92 - the reference weight left for everything except resale_profit
 
     # perf_level and attacking both measure attacking output (see
