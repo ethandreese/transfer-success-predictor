@@ -50,14 +50,23 @@ vary by position** (see `data/score_weights.json`):
   starting value the harder it is to move the ratio at all — a signing
   the club could clearly sell at close to no loss was scoring the same as
   a middling outcome. Blending in the absolute-gain view puts it at 81.
-  Each of those two views is itself a 60/40 blend of growth to the *peak*
-  value reached during the tenure and growth to the value near the end of
-  it — end-value alone unfairly reads a long, valuable career as a
-  decline, since even the best players' market value falls with age by
-  the time they eventually leave (Heung-min Son joined Tottenham valued
-  at ~€16m, peaked at €90m mid-tenure, and was worth only ~€20m a decade
-  later when he left), while peak alone would ignore a real late-tenure
-  collapse (injury, loss of form).
+  Each of those two views is itself an 80/20 blend of growth to the
+  *peak* value reached during the tenure and growth to the value near
+  the end of it, leaning heavily toward peak — end-value alone unfairly
+  reads a long, valuable career as a decline, since even the best
+  players' market value falls with age by the time they eventually leave
+  (Heung-min Son joined Tottenham valued at ~€16m, peaked at €90m
+  mid-tenure, and was worth only ~€20m a decade later when he left — his
+  value_growth score is 93, not a mediocre one, because it's judged
+  mostly on the €90m peak he reached, not the €20m he'd fallen to by the
+  time he left), while peak alone would ignore a real late-tenure
+  collapse (injury, loss of form). The heavy lean toward peak (rather
+  than an even split) is also because end-of-tenure value already has
+  its own dedicated signal elsewhere in the score - `resale_profit`, what
+  the club actually realized when they sold the player, when that's
+  known - so leaning value_growth itself more toward peak avoids doubly
+  punishing a decline off a peak that resale_profit already accounts for
+  on its own terms.
 - **playing time** — blends two signals: 60% percent of the *team's actual
   games* played during the tenure (from `games.csv`/`club_games.csv` — the
   club's full match schedule across all competitions, not just games the

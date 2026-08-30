@@ -615,18 +615,24 @@ def compute_value_growth_pct(value_before, value_peak, value_after):
     ratio at all, even when the club's asset has appreciated by tens of
     millions and could plainly be resold at a profit. Absolute euros alone
     has the opposite bias against cheap signings, so the two are blended.
-    Both value_peak and value_after are blended in (60/40) rather than
-    using either alone - see value_peak's own docstring for why peak
-    matters and end-of-tenure alone would misread a long, valuable career
-    as a decline.
+    Both value_peak and value_after are blended in (80/20, leaning heavily
+    toward peak) rather than using either alone - see value_peak's own
+    docstring for why peak matters and end-of-tenure alone would misread
+    a long, valuable career as a decline. Peak gets the large majority of
+    the weight rather than an even split: end-of-tenure value already has
+    its own dedicated signal elsewhere in the score (resale_profit - what
+    the club actually realized when they sold the player, when that's
+    known), so leaning value_growth itself more heavily on peak avoids
+    doubly punishing a player for a value decline off their peak that
+    resale_profit already accounts for on its own terms.
     """
     ratio_peak_pct = percentile_rank(value_peak / value_before.clip(lower=1))
     ratio_end_pct = percentile_rank(value_after / value_before.clip(lower=1))
-    ratio_combo = 0.6 * ratio_peak_pct + 0.4 * ratio_end_pct
+    ratio_combo = 0.8 * ratio_peak_pct + 0.2 * ratio_end_pct
 
     abs_gain_peak_pct = percentile_rank(value_peak - value_before)
     abs_gain_end_pct = percentile_rank(value_after - value_before)
-    abs_combo = 0.6 * abs_gain_peak_pct + 0.4 * abs_gain_end_pct
+    abs_combo = 0.8 * abs_gain_peak_pct + 0.2 * abs_gain_end_pct
 
     return 0.5 * ratio_combo + 0.5 * abs_combo
 
