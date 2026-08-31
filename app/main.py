@@ -1037,20 +1037,30 @@ def loan_detail(player_id: int, transfer_date: str):
 
 class NoCacheStaticFiles(StaticFiles):
     """
-    StaticFiles that always tells the browser to revalidate
-    (Cache-Control: no-cache) rather than trusting a cached copy without
+    StaticFiles that tells the browser never to cache a response at all
+    (Cache-Control: no-store) rather than trusting a cached copy without
     even asking - the default (no explicit Cache-Control, just an ETag/
     Last-Modified pair) lets browsers apply heuristic caching, so editing
     style.css or app.js during development doesn't show up until a hard
     refresh, which is exactly what happened testing the modal-width
-    change - even a brand-new tab kept serving the pre-edit CSS. no-cache
-    still lets the browser reuse the cached body via a cheap 304 when
-    nothing's actually changed (see ETag) - it's not disabling caching,
-    just the "skip asking the server" part.
+    change - even a brand-new tab kept serving the pre-edit CSS.
+
+    no-cache (revalidate-before-use, but still cacheable) was tried first
+    and wasn't reliable enough in practice - real-world browser/extension/
+    proxy behavior around conditional-GET revalidation is inconsistent
+    enough that a genuinely stale copy kept surfacing anyway (diagnosed
+    directly: document.querySelector('script[src*="app.js"]').src showed
+    no ?v= query string at all in an affected tab - a copy old enough to
+    predate cache-busting being added in the first place). no-store is the
+    unambiguous version - the browser is told not to persist the response
+    at all, so there's nothing left to serve stale. The ?v=N query-string
+    bump on every <link>/<script> tag (see app/static/*.html) stays too,
+    as a second, independent safeguard - belt and suspenders for a bug
+    class that kept recurring with just one fix in place.
     """
     async def get_response(self, path, scope):
         response = await super().get_response(path, scope)
-        response.headers["Cache-Control"] = "no-cache"
+        response.headers["Cache-Control"] = "no-store"
         return response
 
 
