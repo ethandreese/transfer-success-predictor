@@ -210,7 +210,10 @@ def describe_fotmob_component(component, r, position_plural, is_loan=False):
     # ranked against transfers and loans combined - see
     # attach_fotmob_components in build_dataset.py.
     at_club = f"on loan at {r['to_club_name']}" if is_loan else f"at {r['to_club_name']}"
-    return f"{detail} — averaged across {season_note} {at_club}, ranked vs. other {position_plural}"
+    return (
+        f"{detail} — averaged across {season_note} {at_club}, each stat first weighed "
+        f"against the league's own average for the position, then ranked vs. other {position_plural}"
+    )
 
 
 def eur_m(v):
@@ -265,7 +268,8 @@ def describe_components(r):
             "label": "Value change",
             "value": round(float(r["value_growth_pct"]), 1),
             "description": (
-                f"{eur_m(r['value_before'])} → peaked at {eur_m(r['value_peak'])} (now {eur_m(r['value_after'])})"
+                f"{eur_m(r['value_before'])} → peaked at {eur_m(r['value_peak'])} (now {eur_m(r['value_after'])}), "
+                f"weighted mostly on the peak rather than the current value"
                 if r["value_peak"] > r["value_after"] * 1.05
                 else f"{eur_m(r['value_before'])} → {eur_m(r['value_after'])} market value"
             ),
@@ -569,7 +573,8 @@ def describe_loan_components(r):
             "label": "Value change",
             "value": round(float(r["value_growth_pct"]), 1),
             "description": (
-                f"{eur_m(r['value_before'])} → peaked at {eur_m(r['value_peak'])} (now {eur_m(r['value_after'])}) during the loan"
+                f"{eur_m(r['value_before'])} → peaked at {eur_m(r['value_peak'])} (now {eur_m(r['value_after'])}) during the loan, "
+                f"weighted mostly on the peak rather than the current value"
                 if r["value_peak"] > r["value_after"] * 1.05
                 else f"{eur_m(r['value_before'])} → {eur_m(r['value_after'])} market value during the loan"
             ),
@@ -895,4 +900,23 @@ def loan_detail(player_id: int, transfer_date: str):
     return build_loan_card(match.iloc[0])
 
 
-app.mount("/", StaticFiles(directory=os.path.join(BASE_DIR, "static"), html=True), name="static")
+class NoCacheStaticFiles(StaticFiles):
+    """
+    StaticFiles that always tells the browser to revalidate
+    (Cache-Control: no-cache) rather than trusting a cached copy without
+    even asking - the default (no explicit Cache-Control, just an ETag/
+    Last-Modified pair) lets browsers apply heuristic caching, so editing
+    style.css or app.js during development doesn't show up until a hard
+    refresh, which is exactly what happened testing the modal-width
+    change - even a brand-new tab kept serving the pre-edit CSS. no-cache
+    still lets the browser reuse the cached body via a cheap 304 when
+    nothing's actually changed (see ETag) - it's not disabling caching,
+    just the "skip asking the server" part.
+    """
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/", NoCacheStaticFiles(directory=os.path.join(BASE_DIR, "static"), html=True), name="static")
