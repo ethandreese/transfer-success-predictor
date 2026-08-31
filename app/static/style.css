@@ -507,7 +507,7 @@ button.predict-btn:disabled {
 
 .modal-close {
   position: absolute;
-  top: 0.75rem;
+  top: 1.25rem;
   right: 0.9rem;
   background: none;
   border: none;
@@ -523,7 +523,11 @@ button.predict-btn:disabled {
    .modal-close position to line up with the player name - unlike the
    Settings modal's heading, the name is nested two padded levels deep
    (.modal-box, then the injected .example-card wrapper). */
-#card-modal-close { top: 2.65rem; }
+#card-modal-close {
+  top: 2.25rem;
+  right: 2.7rem;
+  font-size: 2rem;
+}
 
 /*
  * The player-detail popup (#card-modal-content, filled in by browse.js/
