@@ -497,10 +497,11 @@ percentile to the 96th without touching genuine busts like Sancho.
 
 **Model.** A gradient-boosted regressor trained on pre-transfer-only
 features (age, position, physical attributes, fee, market value, prior-year
-performance, and origin/destination club & league strength) — nothing about
-what happened after the move. Evaluated on a temporal holdout (trained on
-transfers before mid-2023, tested on transfers since): **MAE ≈ 13.6 points**
-on the 0–100 scale, R² ≈ 0.09, vs. ≈14.6 MAE for always predicting the
+performance including FotMob rating/xG/xA/passing/defensive output, and
+origin/destination club & league strength) — nothing about what happened
+after the move. Evaluated on a temporal holdout (trained on
+transfers before mid-2023, tested on transfers since): **MAE ≈ 12.34 points**
+on the 0–100 scale, R² ≈ 0.175, vs. ≈14.2 MAE for always predicting the
 average. That's a modest but real signal, and honestly weaker than scoring
 a fixed first year would give — predicting a player's *entire future stint*
 at a new club from pre-transfer stats alone is genuinely hard, since
@@ -508,6 +509,114 @@ multi-year outcomes depend heavily on injuries, tactics, and squad fit that
 no pre-transfer number can see. The app surfaces this error rate and a
 per-prediction "why this score" breakdown rather than presenting the number
 as gospel.
+
+**Height is fed in relative to its own position's average, not as a raw
+number.** Raw `height_in_cm` tested as a bigger model input than the
+`position` category itself (3.4% feature importance vs. 1.7% for all four
+position dummies combined), despite being far less informative on its
+own — it was mostly acting as a silent proxy for position/body-type (tall
+→ centre-back/striker/keeper) rather than earning its weight for the roles
+height genuinely matters for (aerial duels). Centering it on its own
+position's average (`height_vs_position` in `scripts/train_model.py`,
+e.g. "+8cm" for a striker taller than the typical striker) tested as a
+small but consistent improvement over both the raw value and dropping
+height outright — MAE 13.20 → 13.15, R² 0.086 → 0.089 on the same
+temporal holdout. A second idea tested alongside it — feeding in the
+average `success_score` of each transfer's k nearest historical
+neighbors, on the theory that "similar transfers tend to succeed/fail
+together" should be a real signal — did *not* hold up: results bounced
+non-monotonically with k (R² swung from 0.074 to 0.093 across k=5/15/30)
+and got worse, not better, once combined with the height fix, on a
+dataset this size (~3,000 training rows) too thin for that kind of
+neighbor-average feature to add signal rather than noise. Kept the
+height fix, dropped the neighbor-feature idea.
+
+**The model itself was under-regularized for a training set this small,
+and fixing that was a bigger win than any single feature.** The original
+config (`max_depth=3`, `learning_rate=0.05`, every row and every leaf
+size allowed) let individual trees fit noise in a ~3,000-row training
+set. A grid search against the same temporal holdout found a shallower,
+more constrained config — `max_depth=2`, `learning_rate=0.1`,
+`subsample=0.8` (each tree only sees a random 80% of rows - stochastic
+gradient boosting), `min_samples_leaf=10` — a real, seed-stable
+improvement (R² 0.086 → ~0.11 across 5 random seeds, checked
+specifically to rule out a lucky single run), not a one-off. Also tried
+and rejected: `HistGradientBoostingRegressor` and `RandomForestRegressor`
+as drop-in replacements (neither beat a well-tuned
+`GradientBoostingRegressor`), and a smoothed destination/origin-club
+historical-success-rate feature (target encoding), which looked
+promising in isolation but made things *worse* once combined with the
+other changes - a median of 5 transfers per club in the training data is
+too thin for even a shrinkage-smoothed per-club average to add real
+signal.
+
+**`sub_position` (e.g. Centre-Back vs. Winger, not just the 4 broad
+positions) is fed to the model as an additional category, alongside
+`position` rather than instead of it.** The score-formula side of the
+app already distinguishes these for weighting (see "Weights also vary by
+sub-position" above); the predict model didn't have access to that
+distinction at all before. Small additional gain on top of the
+regularization fix: MAE 13.00 → 12.93, R² 0.112 → 0.114. Autofilled from
+the searched player's own data (`players_lookup.csv` already carries it)
+- no new form field needed. A player missing it entirely (2 of ~8,600 in
+the lookup table) falls back to their broad position instead, the same
+"fall back to the broad category" pattern already used for sub-position
+weighting in the score formula.
+
+**The predict model's pre-transfer performance signal was, until this
+point, limited to Transfermarkt goal contributions alone (`pre_goals_p90`/
+`pre_ga_p90`) - the same rating/xG/xA/passing/defensive-actions data the
+historical score's post-transfer components already draw from was never
+available on the pre-transfer side, simply because the model predates the
+FotMob pipeline.** Filling that gap was the single biggest accuracy
+improvement found on the predict model: **MAE 12.93 → 12.34, R² 0.114 →
+0.175** on the same temporal holdout - checked directly against pure
+model-seed noise (10 seeds, R² 0.161-0.175) to confirm it's a real,
+stable gain, not a lucky run. Every individual bucket (rating, attacking,
+possession, defensive) beat the without-FotMob baseline on its own, and
+combining all of them kept helping - unlike most feature ideas tried
+elsewhere in this project, nothing here needed to be walked back.
+
+- `scripts/fetch_pretransfer_fotmob_stats.py` stitches each historical
+  transfer's *pre*-transfer year at the *old* club - the mirror image of
+  `scripts/fetch_fotmob_stats.py`'s post-transfer tenure stitching, reusing
+  its season-fetch/cache and club-matching machinery unchanged. No new
+  scraping was needed: it reads the same cached season leaderboards
+  already on disk, since 99.7% of origin leagues fall within the same
+  23-league set already covered for destinations (confirmed before
+  writing a line of this).
+- `scripts/fetch_current_fotmob_stats.py` does the equivalent for *live*
+  predictions - a snapshot of each `players_lookup.csv` player's last 365
+  days at their *current* club, autofilled into the predict form the same
+  way `recent_apps`/`recent_goals_p90`/etc. already are, no new form
+  field needed. Unlike the historical case there's no mid-season-move
+  contamination to guard against - FotMob already attributes a season to
+  whichever club a player is *currently* registered at, which is exactly
+  the club this script wants.
+- The predict model consumes these as **raw per-90 numbers**, not the
+  percentile-ranked, league-baseline-adjusted components the historical
+  score computes (`compute_fotmob_component_pcts`) - a tree ensemble can
+  learn its own splits/thresholds directly, so that machinery (built to
+  combine components onto one comparable 0-100 scale) isn't needed here.
+- ~35-45% of transfers have no pre-transfer FotMob match (an uncovered
+  origin league, or a real coverage gap - same ceilings as the
+  post-transfer side). Missing values are median-imputed (fit-on-train
+  for the holdout eval, full-dataset for the deployed model, same
+  discipline as `height_vs_position`) rather than dropping those rows,
+  alongside a `has_pre_fotmob_data` flag so the model can learn to
+  discount an imputed placeholder instead of trusting it as real form.
+- Two related bugs turned up and were fixed while wiring this in: (1) a
+  GK-only stat (e.g. saves) has no real median at all for outfield
+  positions, and the leave-one-out explanation swap was feeding that
+  `NaN` straight into the model, crashing the request - fixed by falling
+  back to the flat (non-position-conditional) reference whenever the
+  position-specific one is missing; (2) `reference_values_by_position`
+  was originally computed *after* the median-imputation step above,
+  silently diluting each position's "typical" value with a chunk of
+  imputed population-median rows rather than reflecting only the real
+  observed ones - fixed by computing it from a pre-imputation snapshot
+  instead (`median()` skips real `NaN` on its own, once nothing has
+  overwritten it yet).
 
 **Explainability.** For known historical transfers, the app shows the
 actual 5-component breakdown above, each with the concrete underlying
@@ -579,6 +688,39 @@ pts*" — correctly recognizing that €100m is a modest premium over a
 €70m valuation, not an outlier, and that paying somewhat above market
 rate for a player is if anything a mild risk factor rather than
 inherently a sign of a big, ambitious move.
+
+**A bare categorical swap ("Destination league: La Liga vs. a typical
+transfer's Premier League") reads as "moving to Spain is inherently
+better", with no hint of why — fixed for the features where that's
+actually misleading.** Checked directly: Premier League genuinely is the
+lowest-scoring major league in the historical data (48.4 average
+`success_score` vs. La Liga's 50.2, France's 51.9), but on-pitch
+components (attacking/defensive/possession/rating) are comparable across
+leagues - the gap is almost entirely `value_for_money`. Premier League
+clubs have historically paid a real, large fee premium over market value
+(mean fee/value 1.55x, 47% of paid deals exceeding the formula's 1.3x
+overpay line) vs. La Liga's 1.01x/21% - `value_for_money` is designed to
+penalize exactly that, deliberately, so this isn't a bug in the score
+(a club chronically overpaying is worse value even when the player
+performs fine) - it's the *explanation* that was misleading by omitting
+why. The "destination/origin league" explanation now appends the real
+historical average and, for the destination league specifically, the fee
+premium that drives it: *"Laliga vs. a typical transfer's Premier League
+— transfers to Laliga have historically averaged 50.3 vs. 48.4 for
+Premier League, largely reflecting fee premiums paid there (1.01x market
+value on average vs. 1.55x)"* (`league_context_note` in `app/main.py`,
+baselines computed in `scripts/train_model.py` and cached in
+`metadata.json`). A league with too few transfers to trust a stable
+average (`MIN_LEAGUE_SAMPLE = 15`) is left out of the baseline entirely
+rather than shown a noisy number - the explanation just falls back to
+the plain swing-only version for those. `fee_to_value_ratio` and
+`club_quality_ratio` got the same treatment on a smaller scale - a short
+appended clause explaining what the ratio means and, for
+`fee_to_value_ratio`, that the historical scoring only penalizes fees
+above ~1.3x market value, not any premium at all. `height_vs_position`'s
+explanation was also cleaned up - it used to read "+8cm vs. a typical
+transfer's +0cm" (technically correct but redundant, since the reference
+is 0 by construction), now reads "+8cm vs. the position average".
 
 **"Compare to similar transfers" already exists as a separate mechanism**
 (`find_comparables`, a nearest-neighbor lookup over the full feature
@@ -718,8 +860,10 @@ already be similar on it by construction, trivializing the comparison).
 ## Project layout
 
 ```
-scripts/fetch_transfer_types.py  # (optional) backfills data/raw/transfer_types_cache.csv from transfermarkt's live API
-scripts/fetch_fotmob_stats.py    # (optional) backfills data/raw/fotmob_stats_cache.csv from FotMob's public stat leaderboards
+scripts/fetch_transfer_types.py           # (optional) backfills data/raw/transfer_types_cache.csv from transfermarkt's live API
+scripts/fetch_fotmob_stats.py             # (optional) backfills data/raw/fotmob_stats_cache.csv from FotMob's public stat leaderboards
+scripts/fetch_pretransfer_fotmob_stats.py # (optional) backfills data/raw/pretransfer_fotmob_stats_cache.csv - the predict model's pre-transfer FotMob signal
+scripts/fetch_current_fotmob_stats.py     # (optional) backfills data/raw/current_fotmob_stats_cache.csv - live predictions' "current form" FotMob signal
 scripts/build_dataset.py   # raw Transfermarkt CSVs -> data/transfers_processed.csv + data/loans_processed.csv
 scripts/train_model.py     # trains the model + comparable-transfers index
 scripts/build_lookups.py   # small player/club search tables for the web app
@@ -760,10 +904,13 @@ the app:
 
 ```bash
 ./.venv/bin/python -c "import kagglehub; kagglehub.dataset_download('davidcariboo/player-scores')"
-./.venv/bin/python scripts/fetch_transfer_types.py  # optional but recommended - see below
-./.venv/bin/python scripts/fetch_fotmob_stats.py    # optional but recommended - see below
+./.venv/bin/python scripts/fetch_transfer_types.py           # optional but recommended - see below
+./.venv/bin/python scripts/fetch_fotmob_stats.py              # optional but recommended - see below
+./.venv/bin/python scripts/fetch_pretransfer_fotmob_stats.py  # optional but recommended - see below
 ./.venv/bin/python scripts/build_dataset.py
 ./.venv/bin/python scripts/build_lookups.py
+./.venv/bin/python scripts/fetch_current_fotmob_stats.py      # optional but recommended - see below
+./.venv/bin/python scripts/build_lookups.py                   # run again to merge in the current-FotMob snapshot just fetched
 ./.venv/bin/python scripts/train_model.py
 ```
 
@@ -789,6 +936,17 @@ Also optional: skip it and `build_dataset.py` still runs, just without the
 four FotMob components - each one's weight is dropped and the other
 weights renormalized for every transfer, the same as when resale data is
 unknown.
+
+`fetch_pretransfer_fotmob_stats.py` and `fetch_current_fotmob_stats.py`
+feed the *predict model* (not the historical score) - see "The predict
+model's pre-transfer performance signal..." above. Both reuse
+`fetch_fotmob_stats.py`'s season-fetch/cache and matching functions
+directly (imported, not duplicated), so if that cache is already warm
+these run in seconds, not hours - no separate scrape needed. Both are
+optional the same way: skip either and `train_model.py`/`build_lookups.py`
+still run, just with every `pre_fotmob_*` feature (or every searched
+player's `recent_fotmob_*` autofill) falling back to the median/`None` a
+missing match already degrades to.
 
 ## Testing
 

@@ -22,6 +22,34 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 WINDOW_DAYS = 365
 REFERENCE_DATE = pd.Timestamp.today().normalize()
 MIN_MARKET_VALUE = 1_000_000
+CURRENT_FOTMOB_STATS_PATH = os.path.join(DATA_DIR, "raw", "current_fotmob_stats_cache.csv")
+RECENT_FOTMOB_RAW_COLS = [
+    "recent_fotmob_rating", "recent_fotmob_total_minutes",
+    "recent_fotmob_expected_goals_per_90", "recent_fotmob_expected_assists_per_90",
+    "recent_fotmob_won_contest", "recent_fotmob_total_att_assist",
+    "recent_fotmob_total_tackle", "recent_fotmob_interception",
+    "recent_fotmob_effective_clearance", "recent_fotmob_ball_recovery",
+    "recent_fotmob_accurate_pass", "recent_fotmob_saves",
+    "recent_fotmob__save_percentage", "recent_fotmob_goals_conceded",
+]
+
+
+def load_current_fotmob_stats():
+    """
+    Load each player's current-club FotMob snapshot built by
+    scripts/fetch_current_fotmob_stats.py (optional, like the other two
+    FotMob scripts) - the live-prediction-form equivalent of
+    scripts/fetch_pretransfer_fotmob_stats.py's pre-transfer-year stats,
+    autofilled from the searched player the same way recent_apps/
+    recent_goals_p90/etc. already are (see app/main.py:build_feature_row
+    for how a "recent_fotmob_*" column here becomes a "pre_fotmob_*"
+    model feature). Degrades gracefully (empty frame) if the cache hasn't
+    been built yet.
+    """
+    if not os.path.exists(CURRENT_FOTMOB_STATS_PATH):
+        print(f"  (no current-FotMob stats cache at {CURRENT_FOTMOB_STATS_PATH} - run scripts/fetch_current_fotmob_stats.py to enable it; continuing without it)")
+        return pd.DataFrame(columns=["player_id"] + RECENT_FOTMOB_RAW_COLS)
+    return pd.read_csv(CURRENT_FOTMOB_STATS_PATH)
 
 
 def build_clubs_lookup():
@@ -103,6 +131,10 @@ def build_players_lookup():
     for c in ["recent_apps", "recent_minutes", "recent_goals", "recent_assists",
               "recent_ga_p90", "recent_goals_p90", "recent_mins_per_app"]:
         players[c] = players[c].fillna(0)
+
+    players = players.merge(load_current_fotmob_stats(), on="player_id", how="left")
+    recent_minutes_per_90 = (players["recent_fotmob_total_minutes"] / 90).clip(lower=1)
+    players["recent_fotmob_chances_created_p90"] = players["recent_fotmob_total_att_assist"] / recent_minutes_per_90
 
     players = players.sort_values("market_value_in_eur", ascending=False)
     out_path = os.path.join(DATA_DIR, "players_lookup.csv")

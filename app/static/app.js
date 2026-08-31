@@ -4,6 +4,31 @@ const state = {
   club: null,
 };
 
+/**
+ * Map a searched player's recent_fotmob_* fields (players_lookup.csv, via
+ * /api/players/search) onto PredictRequest's pre_fotmob_* fields. null
+ * (no recent FotMob match for that player/stat - an uncovered league, or
+ * a real coverage gap) passes straight through as JSON null, which
+ * build_feature_row on the backend fills in with the trained median.
+ */
+function pretransferFotmobFeatures(player) {
+  return {
+    pre_fotmob_rating: player.recent_fotmob_rating,
+    pre_fotmob_expected_goals_per_90: player.recent_fotmob_expected_goals_per_90,
+    pre_fotmob_expected_assists_per_90: player.recent_fotmob_expected_assists_per_90,
+    pre_fotmob_chances_created_p90: player.recent_fotmob_chances_created_p90,
+    pre_fotmob_accurate_pass: player.recent_fotmob_accurate_pass,
+    pre_fotmob_won_contest: player.recent_fotmob_won_contest,
+    pre_fotmob_total_tackle: player.recent_fotmob_total_tackle,
+    pre_fotmob_interception: player.recent_fotmob_interception,
+    pre_fotmob_effective_clearance: player.recent_fotmob_effective_clearance,
+    pre_fotmob_ball_recovery: player.recent_fotmob_ball_recovery,
+    pre_fotmob_saves: player.recent_fotmob_saves,
+    pre_fotmob__save_percentage: player.recent_fotmob__save_percentage,
+    pre_fotmob_goals_conceded: player.recent_fotmob_goals_conceded,
+  };
+}
+
 /** Green/amber/red for a 0-100 score, shared by every score display on the page. */
 function scoreColor(score) {
   if (score >= 66) return "var(--accent)";
@@ -190,6 +215,7 @@ document.getElementById("predict-btn").addEventListener("click", async () => {
     age_at_transfer: parseFloat(document.getElementById("age-override").value) || state.player.age_now,
     height_in_cm: state.player.height_in_cm,
     position: state.player.position,
+    sub_position: state.player.sub_position || state.player.position,
     foot: state.player.foot || "unknown",
     pre_apps: state.player.recent_apps,
     pre_minutes: state.player.recent_minutes,
@@ -202,6 +228,7 @@ document.getElementById("predict-btn").addEventListener("click", async () => {
     to_domestic_competition_id: state.club.domestic_competition_id || "unknown",
     from_total_market_value: fromClub.club_value_proxy || 1,
     to_total_market_value: state.club.club_value_proxy || 1,
+    ...pretransferFotmobFeatures(state.player),
   };
 
   try {

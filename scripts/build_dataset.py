@@ -87,6 +87,7 @@ OUT_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "transfers_proc
 LOANS_OUT_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "loans_processed.csv")
 TRANSFER_TYPES_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "raw", "transfer_types_cache.csv")
 FOTMOB_STATS_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "raw", "fotmob_stats_cache.csv")
+PRETRANSFER_FOTMOB_STATS_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "raw", "pretransfer_fotmob_stats_cache.csv")
 
 PRE_WINDOW_DAYS = 365
 MIN_APPS_PER_WINDOW = 10
@@ -174,6 +175,45 @@ def load_fotmob_stats():
     # is fetched/matched once) - de-duped defensively anyway so the merge
     # in main() can't fan out if fetch_fotmob_stats.py is ever re-run in a
     # way that appends rather than overwrites.
+    return stats.drop_duplicates(subset=["player_id", "transfer_date"])
+
+
+# Raw pre-transfer FotMob stats (see scripts/fetch_pretransfer_fotmob_stats.py)
+# - the *predict model's* pre-transfer performance signal, unlike
+# FOTMOB_RAW_COLS above which feeds the historical score's post-transfer
+# components. Not percentile-ranked or league-baseline-adjusted the way
+# the score's FotMob components are - the predict model is a tree
+# ensemble that can learn its own splits/thresholds directly from raw
+# per-90 numbers, so that machinery (built for combining components onto
+# one 0-100 scale) isn't needed here. Which of these actually earn a
+# place as a trained feature is decided empirically in train_model.py,
+# same "test before keeping" discipline as every other feature change -
+# see README.
+PRETRANSFER_FOTMOB_RAW_COLS = [
+    "pre_fotmob_rating", "pre_fotmob_total_minutes", "pre_fotmob_seasons_used", "pre_fotmob_total_matches",
+    "pre_fotmob_goals_per_90", "pre_fotmob_expected_goals_per_90", "pre_fotmob_expected_assists_per_90",
+    "pre_fotmob_won_contest", "pre_fotmob_total_att_assist",
+    "pre_fotmob_total_tackle", "pre_fotmob_interception", "pre_fotmob_effective_clearance", "pre_fotmob_ball_recovery",
+    "pre_fotmob_accurate_pass", "pre_fotmob_saves", "pre_fotmob__save_percentage", "pre_fotmob_goals_conceded",
+]
+
+
+def load_pretransfer_fotmob_stats():
+    """
+    Load the per-transfer pre-transfer-year FotMob stats built by
+    scripts/fetch_pretransfer_fotmob_stats.py - the mirror image of
+    load_fotmob_stats() above, for the year *before* the move instead of
+    the tenure after it. Same degrade-gracefully behavior when the cache
+    doesn't exist yet.
+    """
+    if not os.path.exists(PRETRANSFER_FOTMOB_STATS_PATH):
+        print(f"  (no pre-transfer FotMob stats cache at {PRETRANSFER_FOTMOB_STATS_PATH} - run scripts/fetch_pretransfer_fotmob_stats.py to enable it; continuing without it)")
+        return pd.DataFrame(columns=["player_id", "transfer_date"] + PRETRANSFER_FOTMOB_RAW_COLS)
+    stats = pd.read_csv(
+        PRETRANSFER_FOTMOB_STATS_PATH,
+        usecols=["player_id", "transfer_date"] + PRETRANSFER_FOTMOB_RAW_COLS,
+        parse_dates=["transfer_date"],
+    )
     return stats.drop_duplicates(subset=["player_id", "transfer_date"])
 
 
@@ -1360,6 +1400,17 @@ def main():
     print("Attaching FotMob components (ranked across transfers and loans together)...")
     df, loans_df = attach_fotmob_components(df, loans_df)
 
+    # Predict-model-only pre-transfer FotMob signal (see
+    # PRETRANSFER_FOTMOB_RAW_COLS) - raw per-90 numbers, not percentile-
+    # ranked, and not part of the success_score label at all (unlike the
+    # post-transfer FotMob components just attached above). chances-
+    # created is a season total on FotMob's own leaderboard, not a rate -
+    # normalized to per-90 the same way attach_fotmob_components does for
+    # the post-transfer side.
+    df = df.merge(load_pretransfer_fotmob_stats(), on=["player_id", "transfer_date"], how="left")
+    pre_minutes_per_90 = (df["pre_fotmob_total_minutes"] / 90).clip(lower=1)
+    df["pre_fotmob_chances_created_p90"] = df["pre_fotmob_total_att_assist"] / pre_minutes_per_90
+
     # Weights vary by position - see data/score_weights.json for why.
     # Looked up here (rather than down by the weighted-sum below, where
     # this used to happen) because value_for_money_performance_proxy
@@ -1481,7 +1532,7 @@ def main():
         "tenure_days", "still_at_club",
         "next_transfer_fee", "has_resale_data", "resale_weight",
         "has_fotmob_data", "has_rating_data", "has_attacking_data", "has_defensive_data", "has_possession_data",
-    ] + FOTMOB_RAW_COLS + [
+    ] + FOTMOB_RAW_COLS + PRETRANSFER_FOTMOB_RAW_COLS + ["pre_fotmob_chances_created_p90"] + [
         "perf_level_pct", "perf_delta_pct", "value_growth_pct", "playing_time_pct", "value_for_money_pct",
         "rating_pct", "attacking_pct", "defensive_pct", "possession_pct", "resale_profit_pct",
         "success_score",

@@ -327,7 +327,7 @@ def describe_components(r):
 
 FEATURE_LABELS = {
     "age_at_transfer": "Age at transfer",
-    "height_in_cm": "Height",
+    "height_vs_position": "Height vs. position average",
     "pre_apps": "Recent appearances",
     "pre_minutes": "Recent minutes played",
     "pre_goals_p90": "Recent goals per 90",
@@ -340,9 +340,30 @@ FEATURE_LABELS = {
     "log_from_club_value": "Origin club's squad value",
     "log_to_club_value": "Destination club's squad value",
     "position": "Position",
+    "sub_position": "Specific role",
     "foot": "Preferred foot",
     "from_domestic_competition_id": "Origin league",
     "to_domestic_competition_id": "Destination league",
+    "pre_fotmob_rating": "Recent FotMob rating",
+    "pre_fotmob_expected_goals_per_90": "Recent xG per 90",
+    "pre_fotmob_expected_assists_per_90": "Recent xA per 90",
+    "pre_fotmob_chances_created_p90": "Recent chances created per 90",
+    "pre_fotmob_accurate_pass": "Recent accurate passes per 90",
+    "pre_fotmob_won_contest": "Recent successful dribbles per 90",
+    "pre_fotmob_total_tackle": "Recent tackles per 90",
+    "pre_fotmob_interception": "Recent interceptions per 90",
+    "pre_fotmob_effective_clearance": "Recent clearances per 90",
+    "pre_fotmob_ball_recovery": "Recent recoveries per 90",
+    "pre_fotmob_saves": "Recent saves per 90",
+    "pre_fotmob__save_percentage": "Recent save percentage",
+    "pre_fotmob_goals_conceded": "Recent goals conceded per 90",
+    "has_pre_fotmob_data": "Recent FotMob data available",
+}
+
+PRETRANSFER_FOTMOB_PER90_FEATURES = {
+    "pre_fotmob_expected_goals_per_90", "pre_fotmob_expected_assists_per_90", "pre_fotmob_chances_created_p90",
+    "pre_fotmob_accurate_pass", "pre_fotmob_won_contest", "pre_fotmob_total_tackle", "pre_fotmob_interception",
+    "pre_fotmob_effective_clearance", "pre_fotmob_ball_recovery", "pre_fotmob_saves", "pre_fotmob_goals_conceded",
 }
 
 LOG_FEATURES = {"log_transfer_fee", "log_value_before", "log_from_club_value", "log_to_club_value"}
@@ -363,8 +384,8 @@ def format_feature_value(feat, value, context=None):
         return f"€{value / 1_000_000:.1f}m"
     if feat == "age_at_transfer":
         return f"{value:.1f} yrs"
-    if feat == "height_in_cm":
-        return f"{value:.0f} cm"
+    if feat == "height_vs_position":
+        return f"{value:+.0f} cm"
     if feat == "pre_ga_p90":
         base = f"{value:.2f} per 90"
         if context:
@@ -384,7 +405,49 @@ def format_feature_value(feat, value, context=None):
         return f"{value:.2f}×"
     if feat in ("from_domestic_competition_id", "to_domestic_competition_id"):
         return LEAGUE_NAMES.get(value, value)
+    if feat == "pre_fotmob_rating":
+        return f"{value:.2f}"
+    if feat == "pre_fotmob__save_percentage":
+        return f"{value:.0f}%"
+    if feat in PRETRANSFER_FOTMOB_PER90_FEATURES:
+        return f"{value:.2f} per 90"
+    if feat == "has_pre_fotmob_data":
+        return "available" if value else "not available"
     return str(value)
+
+
+def league_context_note(feat, actual_league, reference_league):
+    """
+    Explain WHY one league scores differently than another in a prediction
+    explanation, instead of a bare "vs. a typical transfer's Premier
+    League" swing that reads as "moving to Spain is inherently better".
+    The real driver is almost entirely value_for_money, not on-pitch
+    difficulty: Premier League clubs have historically paid a much larger
+    premium over market value than clubs in every other major league (mean
+    fee/value 1.55x vs. La Liga's 1.01x - see league_fee_ratio_baseline_to
+    in train_model.py). Returns "" (falls back to the plain swing-only
+    explanation) when either league is too thin a sample to trust - such
+    leagues are simply absent from the baseline dicts (see
+    MIN_LEAGUE_SAMPLE in train_model.py).
+    """
+    baseline = metadata[
+        "league_success_baseline_to" if feat == "to_domestic_competition_id" else "league_success_baseline_from"
+    ]
+    if actual_league not in baseline or reference_league not in baseline:
+        return ""
+    verb = "to" if feat == "to_domestic_competition_id" else "leaving"
+    note = (
+        f" — transfers {verb} {league_display_name(actual_league)} have historically averaged "
+        f"{baseline[actual_league]} vs. {baseline[reference_league]} for {league_display_name(reference_league)}"
+    )
+    if feat == "to_domestic_competition_id":
+        fee_baseline = metadata["league_fee_ratio_baseline_to"]
+        if actual_league in fee_baseline and reference_league in fee_baseline:
+            note += (
+                f", largely reflecting fee premiums paid there "
+                f"({fee_baseline[actual_league]:.2f}x market value on average vs. {fee_baseline[reference_league]:.2f}x)"
+            )
+    return note
 
 
 class PredictRequest(BaseModel):
@@ -397,6 +460,7 @@ class PredictRequest(BaseModel):
     age_at_transfer: float = Field(..., ge=15, le=42)
     height_in_cm: float = Field(..., ge=150, le=210)
     position: str
+    sub_position: str
     foot: str
     pre_apps: float = Field(..., ge=0)
     pre_minutes: float = Field(..., ge=0)
@@ -409,6 +473,28 @@ class PredictRequest(BaseModel):
     to_domestic_competition_id: str
     from_total_market_value: float = Field(..., ge=0)
     to_total_market_value: float = Field(..., ge=0)
+    # Pre-transfer FotMob per-90 stats (rating/attacking/possession/
+    # defensive - see scripts/fetch_pretransfer_fotmob_stats.py), the same
+    # signal the historical score's post-transfer components already use.
+    # Optional: ~35-45% of transfers have no FotMob match for the player's
+    # year before the move (an uncovered league, or a real coverage gap -
+    # same ceilings as the post-transfer side), autofilled from
+    # players_lookup.csv's recent_fotmob_* columns when available and left
+    # unset otherwise - build_feature_row fills a missing value with the
+    # trained median rather than requiring the frontend to know it.
+    pre_fotmob_rating: float | None = None
+    pre_fotmob_expected_goals_per_90: float | None = None
+    pre_fotmob_expected_assists_per_90: float | None = None
+    pre_fotmob_chances_created_p90: float | None = None
+    pre_fotmob_accurate_pass: float | None = None
+    pre_fotmob_won_contest: float | None = None
+    pre_fotmob_total_tackle: float | None = None
+    pre_fotmob_interception: float | None = None
+    pre_fotmob_effective_clearance: float | None = None
+    pre_fotmob_ball_recovery: float | None = None
+    pre_fotmob_saves: float | None = None
+    pre_fotmob__save_percentage: float | None = None
+    pre_fotmob_goals_conceded: float | None = None
 
 
 def build_feature_row(req: PredictRequest) -> pd.DataFrame:
@@ -420,6 +506,15 @@ def build_feature_row(req: PredictRequest) -> pd.DataFrame:
     row["log_to_club_value"] = np.log1p(row["to_total_market_value"])
     row["fee_to_value_ratio"] = row["transfer_fee"] / max(row["value_before"], 1)
     row["club_quality_ratio"] = row["to_total_market_value"] / max(row["from_total_market_value"], 1)
+    position_height_means = metadata["position_height_means"]
+    row["height_vs_position"] = row["height_in_cm"] - position_height_means.get(
+        row["position"], position_height_means["_default"]
+    )
+    pretransfer_fotmob_medians = metadata["pretransfer_fotmob_medians"]
+    row["has_pre_fotmob_data"] = int(row["pre_fotmob_rating"] is not None)
+    for feat in metadata["pretransfer_fotmob_features"]:
+        if row.get(feat) is None:
+            row[feat] = pretransfer_fotmob_medians[feat]
     return pd.DataFrame([row])[NUMERIC_FEATURES + CATEGORICAL_FEATURES]
 
 
@@ -474,7 +569,14 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, top_k: int 
         if feat == "log_transfer_fee" and is_paid_transfer:
             reference_value = expected_log_fee
             typical_label = "what's typically paid for a similarly-valued player:"
-        elif feat in position_conditional and feat in position_reference:
+        elif feat in position_conditional and feat in position_reference and pd.notna(position_reference[feat]):
+            # pd.notna guards a real gap: a GK-only stat (e.g. saves) has no
+            # meaningful median for outfield positions at all (virtually no
+            # attacker/midfielder has FotMob save data), so
+            # reference_values_by_position stores NaN there rather than a
+            # fabricated number - falls through to the flat reference below,
+            # which is always a real finite value (see train_model.py's
+            # median-imputation for pre_fotmob_* features).
             reference_value = position_reference[feat]
             typical_label = f"a typical {POSITION_PLURAL.get(position, position).rstrip('s')}'s"
         elif is_paid_transfer and feat in paid_reference:
@@ -491,16 +593,34 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, top_k: int 
         actual_display = format_feature_value(feat, actual_value, context)
         typical_display = format_feature_value(feat, reference_value, context)
         direction = "raising" if contribution >= 0 else "lowering"
+
+        # Per-feature context note - the same idea as the historical score's
+        # bespoke component descriptions (describe_components), so a
+        # prediction explanation says *why* a swing happens, not just that
+        # it does. Most features need nothing extra; a few (league,
+        # fee-to-value, club-quality, height) are opaque or misleading
+        # without it - see league_context_note for the motivating case.
+        if feat == "height_vs_position":
+            vs_clause = "vs. the position average"
+        elif feat in ("to_domestic_competition_id", "from_domestic_competition_id"):
+            vs_clause = f"vs. {typical_label} {typical_display}{league_context_note(feat, actual_value, reference_value)}"
+        elif feat == "fee_to_value_ratio":
+            vs_clause = (
+                f"vs. {typical_label} {typical_display} — paying up to ~1.3x market value counts as a "
+                f"normal premium in the historical scoring; only fees further above that actually count against a transfer"
+            )
+        elif feat == "club_quality_ratio":
+            vs_clause = f"vs. {typical_label} {typical_display} (destination squad value ÷ origin squad value)"
+        else:
+            vs_clause = f"vs. {typical_label} {typical_display}"
+
         contributions.append({
             "feature": feat,
             "label": FEATURE_LABELS.get(feat, feat),
             "contribution": contribution,
             "actual_value": actual_display,
             "typical_value": typical_display,
-            "detail": (
-                f"{actual_display} vs. {typical_label} {typical_display}, "
-                f"{direction} the score by {abs(contribution)} pts"
-            ),
+            "detail": f"{actual_display} {vs_clause}, {direction} the score by {abs(contribution)} pts",
         })
     contributions.sort(key=lambda c: abs(c["contribution"]), reverse=True)
     return contributions[:top_k]
@@ -679,12 +799,27 @@ def transfer_detail(player_id: int, transfer_date: str):
 
 @app.get("/api/players/search")
 def search_players(q: str, limit: int = 10):
-    """Accent-insensitive substring search over players_lookup.csv, for the prediction form's player autocomplete."""
+    """
+    Accent-insensitive substring search over players_lookup.csv, for the
+    prediction form's player autocomplete. recent_fotmob_* columns are
+    genuinely numeric (unlike the other columns here, which are safely
+    blanket-filled with "" for a missing string field) and feed straight
+    into PredictRequest's Optional[float] pre_fotmob_* fields - filling a
+    missing one with "" would send the frontend a string that's neither a
+    valid float nor JSON null, breaking the request. Left as real NaN,
+    then swapped to None (valid JSON null) below instead - a fabricated
+    "" or 0 would misrepresent "no data" as a real value.
+    """
     if len(q) < 2:
         return []
     mask = players_df["_name_fold"].str.contains(fold_accents(q), na=False, regex=False)
     rows = players_df[mask].head(limit).drop(columns=["_name_fold"])
-    return rows.fillna("").to_dict(orient="records")
+    fotmob_cols = [c for c in rows.columns if c.startswith("recent_fotmob")]
+    records = rows.drop(columns=fotmob_cols).fillna("").to_dict(orient="records")
+    fotmob_records = rows[fotmob_cols].astype(object).where(rows[fotmob_cols].notna(), None).to_dict(orient="records")
+    for record, fotmob_record in zip(records, fotmob_records):
+        record.update(fotmob_record)
+    return records
 
 
 @app.get("/api/clubs/search")

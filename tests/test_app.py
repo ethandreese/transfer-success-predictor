@@ -32,6 +32,7 @@ def sample_predict_payload():
         "age_at_transfer": 24.0,
         "height_in_cm": 182.0,
         "position": "Attack",
+        "sub_position": "Centre-Forward",
         "foot": "right",
         "pre_apps": 30.0,
         "pre_minutes": 2500.0,
@@ -175,7 +176,7 @@ def test_predict_fee_explanation_compares_against_value_expectation_not_flat_ave
 def test_predict_fee_explanation_for_a_free_transfer_uses_overall_reference():
     """A genuinely free transfer (fee=0) should display as "free", compared against the overall reference (which is itself mostly free transfers) rather than a nonsensical "paid" comparison."""
     payload = {
-        "age_at_transfer": 24.0, "height_in_cm": 182.0, "position": "Attack", "foot": "right",
+        "age_at_transfer": 24.0, "height_in_cm": 182.0, "position": "Attack", "sub_position": "Centre-Forward", "foot": "right",
         "pre_apps": 30.0, "pre_minutes": 2500.0, "pre_goals_p90": 0.5, "pre_ga_p90": 0.7, "pre_mins_per_app": 83.0,
         "transfer_fee": 0.0, "value_before": 60_000_000.0,
         "from_domestic_competition_id": "L1", "to_domestic_competition_id": "GB1",
@@ -195,7 +196,7 @@ def test_predict_fee_explanation_reflects_players_own_value():
     (~€73m expected), not a flat low number.
     """
     payload = {
-        "age_at_transfer": 25.0, "height_in_cm": 182.0, "position": "Attack", "foot": "right",
+        "age_at_transfer": 25.0, "height_in_cm": 182.0, "position": "Attack", "sub_position": "Centre-Forward", "foot": "right",
         "pre_apps": 30.0, "pre_minutes": 2500.0, "pre_goals_p90": 0.5, "pre_ga_p90": 0.7, "pre_mins_per_app": 83.0,
         "transfer_fee": 100_000_000.0, "value_before": 70_000_000.0,
         "from_domestic_competition_id": "ES1", "to_domestic_competition_id": "GB1",
