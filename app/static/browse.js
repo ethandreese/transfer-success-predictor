@@ -121,7 +121,7 @@ async function showCard(playerId, transferDate) {
     const ex = await res.json();
     const years = (ex.tenure_days / 365.25).toFixed(1);
     content.innerHTML = `
-      <div class="example-card" style="border:none; padding:0;">
+      <div class="example-card" style="border:none; padding:1.25rem;">
         <div class="name">${ex.name}</div>
         <div class="route">${ex.from_club} &rarr; ${ex.to_club} (${ex.transfer_date.slice(0, 7)})</div>
         <div class="score" style="color:${scoreColor(ex.success_score)}">${ex.success_score}</div>
