@@ -79,11 +79,54 @@ async function loadTable() {
     });
   }
 
-  const page = Math.floor(state.offset / settings.pageSize) + 1;
-  const pageCount = Math.max(1, Math.ceil(state.total / settings.pageSize));
-  document.getElementById("page-info").textContent = `Page ${page} of ${pageCount} (${state.total} transfers)`;
   document.getElementById("prev-page").disabled = state.offset === 0;
   document.getElementById("next-page").disabled = state.offset + settings.pageSize >= state.total;
+  renderPageInfo();
+}
+
+/** Render "Page X of Y (Z transfers)", with X as a click-to-edit trigger for jumping to an arbitrary page. */
+function renderPageInfo() {
+  const page = Math.floor(state.offset / settings.pageSize) + 1;
+  const pageCount = Math.max(1, Math.ceil(state.total / settings.pageSize));
+  document.getElementById("page-info").innerHTML =
+    `Page <span class="page-jump-trigger" id="page-jump-trigger" tabindex="0" role="button" aria-label="Jump to a specific page" title="Click to jump to a page">${page}</span> of ${pageCount} (${state.total} transfers)`;
+}
+
+/**
+ * Swap the clickable page-number span for an inline number input, focused
+ * and pre-selected so typing immediately replaces it. Enter or blur commits
+ * the jump (reloading the table); Escape reverts without reloading. The
+ * `committed` guard stops blur's commit() from double-firing after Enter or
+ * Escape already handled it - both remove the input from the DOM, which
+ * itself triggers a blur event.
+ */
+function startPageJumpEdit(trigger) {
+  const pageCount = Math.max(1, Math.ceil(state.total / settings.pageSize));
+  const input = document.createElement("input");
+  input.type = "number";
+  input.min = "1";
+  input.max = String(pageCount);
+  input.value = trigger.textContent;
+  input.className = "page-jump-input";
+  trigger.replaceWith(input);
+  input.focus();
+  input.select();
+
+  let committed = false;
+  const commit = () => {
+    if (committed) return;
+    committed = true;
+    const page = parseInt(input.value, 10);
+    if (Number.isFinite(page)) {
+      state.offset = (Math.min(Math.max(page, 1), pageCount) - 1) * settings.pageSize;
+    }
+    loadTable();
+  };
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); commit(); }
+    else if (e.key === "Escape") { committed = true; renderPageInfo(); }
+  });
+  input.addEventListener("blur", commit);
 }
 
 /** Jump back to page 1 and reload - called whenever a filter/search/sort control changes, so a new query starts from the top. */
@@ -189,6 +232,15 @@ document.getElementById("prev-page").addEventListener("click", () => {
 document.getElementById("next-page").addEventListener("click", () => {
   state.offset += settings.pageSize;
   loadTable();
+});
+document.getElementById("page-info").addEventListener("click", (e) => {
+  if (e.target.id === "page-jump-trigger") startPageJumpEdit(e.target);
+});
+document.getElementById("page-info").addEventListener("keydown", (e) => {
+  if (e.target.id === "page-jump-trigger" && (e.key === "Enter" || e.key === " ")) {
+    e.preventDefault();
+    startPageJumpEdit(e.target);
+  }
 });
 
 // A settings change (currency, page size, ...) doesn't change the

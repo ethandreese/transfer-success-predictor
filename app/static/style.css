@@ -468,6 +468,41 @@ button.predict-btn:disabled {
 .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
 .pagination button:not(:disabled):hover { background: var(--border); }
 
+/* The current page number inside "Page X of Y" - click (or Enter/Space
+   when focused) to swap it for an inline input and jump to any page.
+   Styled as a small pill/button (not just an underline) so it visually
+   reads as an interactive control alongside the Prev/Next buttons, not
+   as plain text. */
+.page-jump-trigger {
+  display: inline-block;
+  cursor: pointer;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.05rem 0.5rem;
+  margin: 0 0.1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.page-jump-trigger:hover,
+.page-jump-trigger:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.page-jump-input {
+  width: 3rem;
+  padding: 0.05rem 0.3rem;
+  background: var(--panel-2);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: inherit;
+  font-family: inherit;
+  text-align: center;
+}
+
 .compare-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
