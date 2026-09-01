@@ -625,8 +625,8 @@ features (age, position, physical attributes, fee, market value, prior-year
 performance including FotMob rating/xG/xA/passing/defensive output, and
 origin/destination club & league strength) — nothing about what happened
 after the move. Evaluated on a temporal holdout (trained on
-transfers before mid-2023, tested on transfers since): **MAE ≈ 12.70 points**
-on the 0–100 scale, R² ≈ 0.162, vs. ≈14.5 MAE for always predicting the
+transfers before mid-2023, tested on transfers since): **MAE ≈ 12.66 points**
+on the 0–100 scale, R² ≈ 0.167, vs. ≈14.5 MAE for always predicting the
 average. That's a modest but real signal, and honestly weaker than scoring
 a fixed first year would give — predicting a player's *entire future stint*
 at a new club from pre-transfer stats alone is genuinely hard, since
@@ -994,7 +994,21 @@ already be similar on it by construction, trivializing the comparison).
   real, modest gain. It still can't distinguish *why* games beyond the
   normal allowance were missed (injury, loss of form, being dropped) -
   only that missing meaningfully more than ~10/season starts counting
-  against the score again, same as before.
+  against the score again, same as before. Loans needed one extra guard
+  permanent transfers don't: some loans have no reliable
+  `team_games_in_tenure` at all (a genuine data gap - the parent club's
+  games during the loan window are missing from `games.csv` - not a real
+  "team barely played"; permanent transfers can't hit this since they
+  already require >= 10 real appearances in both windows). Forgiving
+  against a near-zero denominator would otherwise read "missed only 1
+  game" as almost fully forgiven and reward the data gap - checked
+  directly, this inflated some 0-appearance loans from the bottom of the
+  distribution to the ~55th percentile before the guard was added.
+  `compute_playing_time_pct` now requires at least 15 team games per
+  tenure-year (comfortably inside the gap between genuinely short loans
+  with real data, which annualize to 18-67 games/year, and the broken
+  rows, which annualize to under 16) before trusting the denominator at
+  all; rows below that skip forgiveness entirely.
 - Predicting a *new* hypothetical transfer is meaningfully less reliable
   than the historical scores shown for known transfers, since the model
   only sees pre-transfer information by construction.

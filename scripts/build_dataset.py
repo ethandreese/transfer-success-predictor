@@ -1056,6 +1056,7 @@ def compute_value_for_money_weight(tenure_years):
 
 
 PLAYING_TIME_FORGIVENESS_GAMES_PER_SEASON = 10
+PLAYING_TIME_MIN_GAMES_PER_YEAR = 15
 
 
 def compute_playing_time_pct(post_apps, team_games_in_tenure, tenure_days):
@@ -1086,12 +1087,36 @@ def compute_playing_time_pct(post_apps, team_games_in_tenure, tenure_days):
     smoothly, with no tie cluster: checked directly, share of transfers at
     ~100% effective games played barely moves (0.9% -> 1.3%) versus the
     hard-clip version's 40.6%.
+
+    Only loans can have an unreliable team_games_in_tenure at all (permanent
+    transfers require >= 10 real appearances in both windows, which rules it
+    out; loans deliberately don't - see load_loan_spells): a genuine data
+    gap (the parent club's games during the loan window are missing or
+    incomplete in games.csv), not a real "team barely played." A tenure of
+    many months should see dozens of team games; checked directly, genuinely
+    short loans with real data still annualize to a normal season's pace
+    (18-67 games/year, n=41 tenures <=120 days), while long tenures
+    (>300 days) stuck with a suspiciously low absolute team_games_in_tenure
+    annualize to nowhere near that (0.5-15.6 games/year, n=206) - a clean
+    gap between the two with no overlap. Without a floor, a near-zero
+    team_games_in_tenure gets clipped up to a small positive denominator,
+    and "missed" only 1-2 games against a multi-game allowance reads as
+    nearly fully forgiven - rewarding the data gap instead of representing
+    it honestly (checked directly: this inflated some 0-appearance,
+    zero-real-data loans from the bottom of the distribution to the ~55th
+    percentile). has_games_data requires at least
+    PLAYING_TIME_MIN_GAMES_PER_YEAR (15, comfortably inside the observed
+    gap) team games per tenure-year to trust the denominator at all; rows
+    below that route around forgiveness entirely, back to the same raw
+    (unforgiven) ratio as before this function existed.
     """
-    team_games = team_games_in_tenure.clip(lower=1)
     tenure_years = (tenure_days / 365.25).clip(lower=1 / 365.25)
+    has_games_data = team_games_in_tenure >= (PLAYING_TIME_MIN_GAMES_PER_YEAR * tenure_years)
+    team_games = team_games_in_tenure.clip(lower=1)
     games_missed = (team_games - post_apps).clip(lower=0)
     allowance = PLAYING_TIME_FORGIVENESS_GAMES_PER_SEASON * tenure_years
     forgiven_games = allowance * (1 - np.exp(-games_missed / allowance))
+    forgiven_games = forgiven_games.where(has_games_data, 0)
     effective_apps = (post_apps + forgiven_games).clip(upper=team_games)
     pct_for_scoring = (effective_apps / team_games).clip(upper=1.0)
     return 0.6 * percentile_rank(pct_for_scoring) + 0.4 * percentile_rank(post_apps)
