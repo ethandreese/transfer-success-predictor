@@ -308,12 +308,45 @@ def load_or_fetch_season(client, comp_id, league_id, season_label):
 def find_fotmob_id(transfer_row, season_tables, seasons_newest_first, comp_id):
     """
     Resolve the FotMob player id for one transfer by name+destination-club
-    match, checked newest-season-first (a later season is more likely to
-    show a clean, unambiguous club attribution than a same-league
-    mid-season join season - see module docstring point 1).
+    match.
+
+    Two passes, not one interleaved pass - this used to try exact-then-
+    fuzzy *per season*, newest-first, returning on the first hit. That let
+    a fuzzy false positive in an early (newest) season pre-empt a correct
+    exact match sitting in an older season, whenever the player had zero
+    presence in that newest season at all - confirmed on a real case:
+    Marc-Andre ter Stegen had no FotMob data for the newest season checked
+    (genuinely absent that season), so the old logic fell to a fuzzy
+    name-only guess there and matched him to Andreas Christensen - a
+    different Barcelona player entirely (ratio 0.600, exactly the old
+    cutoff) - while his real, exact-match season (with real saves/rating/
+    goals-conceded data) sat unchecked further down the list. Trying exact
+    match across *every* season first fixes this: a real identity match
+    from any season always outranks a fuzzy guess from a more recent one.
+
+    Pass 2 (fuzzy) only runs when the exact name never appears in *any*
+    season at all - not merely when a season's exact match exists but
+    fails the club check. That distinction matters: if the exact name is
+    found but attributed to a different club that season (e.g. already
+    transferred on by the time FotMob's coverage picks up), we know
+    exactly who this is, and a season where they don't play for this club
+    is real information, not grounds to guess a different, merely
+    similar-named player who does. Skipping that guard was producing its
+    own false positives - e.g. Mamadou Sakho's real, correctly-rejected
+    entries (wrong club by then) still got treated as a "close match"
+    candidate pool alongside Mohamed Salah, and Salah's incidental
+    Liverpool link won the club check despite the names bearing no real
+    resemblance to each other.
+
+    Checked directly against the full dataset after this fix: 72 transfers
+    changed identity (all confirmed corrections, several by cross-checking
+    the newly-resolved fotmob_name against the real player), zero cases
+    where a previously-correct match broke.
     """
     norm_name = normalize_club(transfer_row["name"])
     club_norm = normalize_club(transfer_row["to_club_name"])
+    name_appears_exactly = False
+
     for season in seasons_newest_first:
         table = season_tables.get(season)
         if table is None or table.empty:
@@ -322,8 +355,23 @@ def find_fotmob_id(transfer_row, season_tables, seasons_newest_first, comp_id):
         table["norm_name"] = table["fotmob_name"].map(normalize_club)
         candidates = table[table["norm_name"] == norm_name]
         if candidates.empty:
-            close = difflib.get_close_matches(norm_name, table["norm_name"].tolist(), n=3, cutoff=0.6)
-            candidates = table[table["norm_name"].isin(close)]
+            continue
+        name_appears_exactly = True
+        club_hits = candidates[candidates["fotmob_team"].map(lambda t: club_names_match(club_norm, normalize_club(t), comp_id))]
+        if len(club_hits) >= 1:
+            return club_hits.iloc[0]["fotmob_id"]
+
+    if name_appears_exactly:
+        return None
+
+    for season in seasons_newest_first:
+        table = season_tables.get(season)
+        if table is None or table.empty:
+            continue
+        table = table.copy()
+        table["norm_name"] = table["fotmob_name"].map(normalize_club)
+        close = difflib.get_close_matches(norm_name, table["norm_name"].tolist(), n=3, cutoff=0.6)
+        candidates = table[table["norm_name"].isin(close)]
         if candidates.empty:
             continue
         club_hits = candidates[candidates["fotmob_team"].map(lambda t: club_names_match(club_norm, normalize_club(t), comp_id))]

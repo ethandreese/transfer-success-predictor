@@ -545,8 +545,8 @@ features (age, position, physical attributes, fee, market value, prior-year
 performance including FotMob rating/xG/xA/passing/defensive output, and
 origin/destination club & league strength) — nothing about what happened
 after the move. Evaluated on a temporal holdout (trained on
-transfers before mid-2023, tested on transfers since): **MAE ≈ 12.38 points**
-on the 0–100 scale, R² ≈ 0.169, vs. ≈14.2 MAE for always predicting the
+transfers before mid-2023, tested on transfers since): **MAE ≈ 12.33 points**
+on the 0–100 scale, R² ≈ 0.174, vs. ≈14.2 MAE for always predicting the
 average. That's a modest but real signal, and honestly weaker than scoring
 a fixed first year would give — predicting a player's *entire future stint*
 at a new club from pre-transfer stats alone is genuinely hard, since
@@ -827,12 +827,27 @@ already be similar on it by construction, trivializing the comparison).
   the other 20 leagues rely on a generic matcher only, so their match rate
   is somewhat weaker and less scrutinized (e.g. Ligue 1 and Denmark were
   both under 80% before their specific fixes landed; some other
-  unreviewed league likely has a similar gap sitting in it right now). A
-  wrong match would show a real player's tenure with a different real
-  player's stats rather than failing loudly, which is a meaningfully worse
-  failure mode than simply missing data - the fuzzy-match fallback
-  requires a destination-club match before accepting a non-exact name, as
-  a partial guard against that.
+  unreviewed league likely has a similar gap sitting in it right now).
+  **The exact failure mode this warns about - a real player's tenure
+  showing a different real player's stats - was confirmed and fixed**:
+  Marc-André ter Stegen's card was missing goalkeeping stats entirely
+  despite a decade at Barcelona, traced to `find_fotmob_id()` resolving
+  him to Andreas Christensen (a different Barcelona player, fuzzy-name
+  ratio exactly 0.600) whenever his most-recent season had zero FotMob
+  presence and the code fell to a same-club fuzzy guess before ever
+  trying an exact match from an older season. Fixed by searching for an
+  exact identity match across *every* season first, and only fuzzy-
+  matching when that exact name never appears anywhere at all - checked
+  directly against the full dataset, this changed 72 transfers'
+  resolved identity, zero of them regressions (several previously-`None`
+  results turned out to be a *second* related bug: an exact name match
+  that failed the destination-club check - e.g. a player who'd already
+  transferred on by the time FotMob's coverage starts - was still being
+  fed into that season's fuzzy fallback as a "close" candidate, letting
+  an unrelated same-club player with a vaguely similar name win by
+  coincidence; ter Stegen/Christensen was exactly this shape). Ter
+  Stegen's tenure went from 5 stitched seasons (Christensen's, 4,497
+  minutes) to his own real 10 (25,623 minutes) once fixed.
 - Sub-position weighting (see above) uses each player's single most-common
   fielded sub-position across their *entire* career in `game_lineups.csv`,
   not the specific window of any one transfer's tenure — a player who
