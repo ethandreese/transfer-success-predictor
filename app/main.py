@@ -270,6 +270,16 @@ def describe_components(r):
     """
     position_plural = POSITION_PLURAL.get(r["position"], r["position"])
     to_league = league_display_name(r["to_domestic_competition_id"])
+    # Goal-contribution signals (G/A per 90, G/A change, the FotMob
+    # "Attacking" bucket) are meaningless for a goalkeeper - virtually none
+    # ever register a goal contribution, and their weight in the score is
+    # already 0% for exactly that reason (see README's "Weights" section) -
+    # so none of the three are worth a row here. "Defending" is relabeled
+    # "Goalkeeping" for the same position, since describe_fotmob_component
+    # already swaps in shot-stopping stats (saves, save %, goals conceded)
+    # for that bucket rather than tackles/interceptions.
+    is_goalkeeper = r["position"] == "Goalkeeper"
+    fotmob_components = ("possession", "defensive", "rating") if is_goalkeeper else ("attacking", "possession", "defensive", "rating")
     return [
         {
             "label": "Transfer fee",
@@ -296,7 +306,7 @@ def describe_components(r):
             "value": round(float(r["resale_profit_pct"]), 1),
             "description": describe_resale_profit(r, eur_m),
         },
-    ] if bool(r["has_resale_data"]) else []) + ([] if bool(r["has_attacking_data"]) else [
+    ] if bool(r["has_resale_data"]) else []) + ([] if is_goalkeeper or bool(r["has_attacking_data"]) else [
         {
             "label": "G/A per 90",
             "value": round(float(r["perf_level_pct"]), 1),
@@ -306,7 +316,7 @@ def describe_components(r):
                 f"ranked vs. other {position_plural}"
             ),
         },
-    ]) + [
+    ]) + ([] if is_goalkeeper else [
         {
             "label": "G/A change",
             "value": round(float(r["perf_delta_pct"]), 1),
@@ -320,13 +330,13 @@ def describe_components(r):
                 f"expected for a player starting that high"
             ),
         },
-    ] + [
+    ]) + [
         {
-            "label": FOTMOB_COMPONENT_LABELS[component],
+            "label": "Goalkeeping" if (component == "defensive" and is_goalkeeper) else FOTMOB_COMPONENT_LABELS[component],
             "value": round(float(r[f"{component}_pct"]), 1),
             **describe_fotmob_component(component, r, position_plural),
         }
-        for component in ("attacking", "possession", "defensive", "rating")
+        for component in fotmob_components
         if bool(r[f"has_{component}_data"])
     ] + [
         {
@@ -704,6 +714,10 @@ def describe_loan_components(r):
     """
     position_plural = POSITION_PLURAL.get(r["position"], r["position"])
     to_league = league_display_name(r["to_domestic_competition_id"])
+    # See describe_components() for why these three drop out, and
+    # "Defending" relabels to "Goalkeeping", for a goalkeeper.
+    is_goalkeeper = r["position"] == "Goalkeeper"
+    fotmob_components = ("possession", "defensive", "rating") if is_goalkeeper else ("attacking", "possession", "defensive", "rating")
     return [
         {
             "label": "Value change",
@@ -715,7 +729,7 @@ def describe_loan_components(r):
                 else f"{eur_m(r['value_before'])} → {eur_m(r['value_after'])} market value during the loan"
             ),
         },
-    ] + ([] if bool(r["has_attacking_data"]) else [
+    ] + ([] if is_goalkeeper or bool(r["has_attacking_data"]) else [
         {
             "label": "G/A per 90",
             "value": round(float(r["perf_level_pct"]), 1),
@@ -725,7 +739,7 @@ def describe_loan_components(r):
                 f"ranked vs. other loan spells"
             ),
         },
-    ]) + [
+    ]) + ([] if is_goalkeeper else [
         {
             "label": "G/A change",
             "value": round(float(r["perf_delta_pct"]), 1),
@@ -739,13 +753,13 @@ def describe_loan_components(r):
                 f"expected for a player starting that high"
             ),
         },
-    ] + [
+    ]) + [
         {
-            "label": FOTMOB_COMPONENT_LABELS[component],
+            "label": "Goalkeeping" if (component == "defensive" and is_goalkeeper) else FOTMOB_COMPONENT_LABELS[component],
             "value": round(float(r[f"{component}_pct"]), 1),
             **describe_fotmob_component(component, r, position_plural, is_loan=True),
         }
-        for component in ("attacking", "possession", "defensive", "rating")
+        for component in fotmob_components
         if bool(r[f"has_{component}_data"])
     ] + [
         {
