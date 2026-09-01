@@ -18,6 +18,12 @@
     "min": 0.02,
     "decay_years": 2.0
   },
+  "value_for_money_weight_curve": {
+    "_comment": "value_for_money_weight(tenure_years), same formula and reasoning as resale_weight_curve: whether the fee looked reasonable at signing time is close to the whole story for a short spell, and fades toward irrelevant for a long, clearly-successful career already fully judged by every tenure-long performance component elsewhere in the score - a long career doesn't get there by being conditioned on 'and they were good', the same way resale_profit isn't; that's already what the rest of the score measures. Decays slower than resale (3-year vs. 2-year half-life-ish decay_years) since 'was the fee worth it' plausibly stays a live question a little longer than 'how the eventual resale went'. A few months' tenure -> ~14% weight; ~2 years -> ~8.7%; 6 years -> ~3.8%. Replaces the flat 0.10 reference value below at runtime (see build_dataset.py) - the flat number is kept only for documentation/renormalization-when-missing purposes, same pattern as resale_profit.",
+    "max": 0.15,
+    "min": 0.02,
+    "decay_years": 3.0
+  },
   "Attack":     {"perf_level": 0.16, "perf_delta": 0.08, "value_growth": 0.10, "playing_time": 0.10, "value_for_money": 0.10, "rating": 0.20, "attacking": 0.11, "defensive": 0.02, "possession": 0.05, "resale_profit": 0.08},
   "Midfield":   {"perf_level": 0.12, "perf_delta": 0.06, "value_growth": 0.10, "playing_time": 0.10, "value_for_money": 0.10, "rating": 0.20, "attacking": 0.10, "defensive": 0.05, "possession": 0.09, "resale_profit": 0.08},
   "Defender":   {"perf_level": 0.04, "perf_delta": 0.02, "value_growth": 0.10, "playing_time": 0.11, "value_for_money": 0.10, "rating": 0.20, "attacking": 0.04, "defensive": 0.23, "possession": 0.08, "resale_profit": 0.08},

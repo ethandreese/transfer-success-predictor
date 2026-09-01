@@ -51,7 +51,22 @@ vary by position** (see `data/score_weights.json`):
   €116m fee) scored a mediocre 65 on ratio alone, since the bigger the
   starting value the harder it is to move the ratio at all — a signing
   the club could clearly sell at close to no loss was scoring the same as
-  a middling outcome. Blending in the absolute-gain view puts it at 81.
+  a middling outcome. Blended 80/20 toward the absolute-gain view (not an
+  even split), this puts Caicedo at 90.5. That 80/20 weighting - not
+  50/50 - came out of checking a transfer the packaged dataset can't
+  actually score (Cristiano Ronaldo's 2009 Man Utd → Real Madrid move
+  predates the appearances data the pipeline depends on, so this was a
+  by-hand check using his real, publicly known numbers): his real
+  €60m → €120m growth is a huge, near-maxed absolute gain (99th
+  percentile) but only a 2.0x ratio (75th percentile, since the dataset's
+  ratio distribution is dominated by cheap breakout signings going
+  4-10x+) - an even 50/50 blend let the ratio half drag an
+  already-elite, already-expensive player down to 87 despite the
+  absolute side being essentially maxed out, purely because ratio math
+  structurally can't reward someone who was already highly valued to
+  begin with. 80/20 reflects that a fixed euro amount of value created is
+  closer to the real signal of interest than a ratio that's mostly a
+  function of how cheap the starting point happened to be.
   Each of those two views is itself an 80/20 blend of growth to the
   *peak* value reached during the tenure and growth to the value near
   the end of it, leaning heavily toward peak — end-value alone unfairly
@@ -127,6 +142,30 @@ vary by position** (see `data/score_weights.json`):
   missing for a given row (no FotMob data for that bucket) just drops
   out of the blend and the rest are renormalized, same pattern used
   everywhere else in the score.
+
+  **Value for money's weight itself now scales with tenure length**, the
+  same mechanism and reasoning as `resale_profit` below (see
+  `compute_value_for_money_weight` in `scripts/build_dataset.py`): whether
+  the fee looked reasonable at signing time is close to the whole story
+  for a short spell, and fades toward irrelevant for a long, clearly
+  successful career - every other tenure-long component in the score
+  (performance level, rating, playing time, ...) has already thoroughly
+  answered "did the club get their money's worth" by the time a signing
+  has spent a decade at the club, independent of what the specific fee
+  premium was at the time. Marc-André ter Stegen (12.2-year Barcelona
+  tenure, still there) is the clearest real case: value for money now
+  counts for just 2% of his score, down from a flat 10%. Uses tenure
+  length alone as the signal, not an explicit "were they good" gate -
+  same choice `resale_profit` already makes, for the same reason: "doing
+  really well" is already what performance/rating/playing_time measure
+  over that same tenure, so gating on performance again here would be
+  redundant and would require picking an arbitrary "how good is good
+  enough" threshold the rest of the score deliberately avoids. Decays
+  slower than `resale_profit` (3-year vs. 2-year `decay_years`) since
+  "was the fee worth it" plausibly stays a live question a little longer
+  than "how the eventual resale went": a few months' tenure → ~14%
+  weight, ~2 years → ~8.7%, 6 years → ~3.8% (see
+  `value_for_money_weight_curve` in `data/score_weights.json`).
 - **four FotMob-derived components** (each only when FotMob has that
   specific bucket's tenure stats — see below), kept as four separate
   scores rather than blended into one, so a player's actual profile
@@ -181,7 +220,11 @@ essentially the job and attacking is zeroed out entirely) as goal
 contributions become less meaningful.
 
 **value_growth (15%), value_for_money (10%), and rating (20%) are flat
-across every position, unlike everything else above.** value_growth and
+across every position, unlike everything else above.** (value_for_money's
+10% here is still its flat-by-*position* reference value only - see
+above for how its actual weight now separately varies by *tenure length*,
+the same way resale_profit's flat 8% reference value already does.)
+value_growth and
 value_for_money are each computed as a single percentile rank across the
 *whole* dataset with no position grouping at all (unlike perf_level,
 defensive, etc., which are ranked within position) — there's no

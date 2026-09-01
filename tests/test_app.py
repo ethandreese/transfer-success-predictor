@@ -88,22 +88,6 @@ def test_resale_profit_description_matches_actual_profit_or_loss():
     assert "profitable" not in resale["description"].lower()
 
 
-def test_resale_profit_mentions_tenure_based_weight():
-    """
-    Dembélé's Barcelona spell (6 years) should explain that the loss barely
-    counts given the long tenure - the whole point of weighting resale
-    profit by tenure length.
-    """
-    res = client.get("/api/examples")
-    dembele = next(
-        ex for ex in res.json()
-        if ex["name"] == "Ousmane Dembélé" and ex["to_club"] == "Barcelona"
-    )
-    resale = next(c for c in dembele["breakdown"] if c["label"] == "Resale profit")
-    assert "tenure" in resale["description"].lower()
-    assert "%" in resale["description"]
-
-
 def test_sub_million_fee_does_not_round_to_free():
     """
     A €300k resale fee must not display as '€0m' (rounds to zero at 0

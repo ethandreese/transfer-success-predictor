@@ -111,21 +111,9 @@ def resale_outcome_phrase(fee_paid, fee_received):
 
 
 def describe_resale_profit(r, eur_m):
-    """Build the 'Resale profit' breakdown row's description: the fee paid/received, the outcome (profit/loss), and how much it counts given the tenure-scaled weight (see compute_resale_weight in build_dataset.py)."""
-    tenure_years = r["tenure_days"] / 365.25
-    weight_pct = r["resale_weight"] * 100
+    """Build the 'Resale profit' breakdown row's description: the fee paid/received and the outcome (profit/loss)."""
     outcome = resale_outcome_phrase(r["transfer_fee"], r["next_transfer_fee"])
-    weight_note = (
-        f"counts for only {weight_pct:.0f}% of the score here, since after a {tenure_years:.1f}-year tenure "
-        f"the club already got most of its value from having them play, regardless of the sale price"
-        if tenure_years > 3
-        else f"counts for {weight_pct:.0f}% of the score here, weighted higher since it was a short "
-        f"({tenure_years:.1f}-year) tenure"
-    )
-    return (
-        f"Bought for {eur_m(r['transfer_fee'])}, later resold for {eur_m(r['next_transfer_fee'])}, "
-        f"{outcome}. This {weight_note}."
-    )
+    return f"Bought for {eur_m(r['transfer_fee'])}, later resold for {eur_m(r['next_transfer_fee'])}, {outcome}."
 
 
 FOTMOB_COMPONENT_LABELS = {
@@ -286,16 +274,14 @@ def describe_components(r):
             "value": round(float(r["value_for_money_pct"]), 1),
             "description": (
                 f"{eur_m(r['transfer_fee'])} fee vs. {eur_m(r['value_before'])} market value at the time, "
-                f"weighed against on-pitch performance "
-                f"relative to what the fee implied"
+                f"weighed against on-pitch performance relative to what the fee implied"
             ),
         },
         {
             "label": "Value change",
             "value": round(float(r["value_growth_pct"]), 1),
             "description": (
-                f"{eur_m(r['value_before'])} → peaked at {eur_m(r['value_peak'])} (now {eur_m(r['value_after'])}), "
-                f"weighted mostly on the peak rather than the current value"
+                f"{eur_m(r['value_before'])} → peaked at {eur_m(r['value_peak'])} (now {eur_m(r['value_after'])})"
                 if r["value_peak"] > r["value_after"] * 1.05
                 else f"{eur_m(r['value_before'])} → {eur_m(r['value_after'])} market value"
             ),
@@ -723,8 +709,7 @@ def describe_loan_components(r):
             "label": "Value change",
             "value": round(float(r["value_growth_pct"]), 1),
             "description": (
-                f"{eur_m(r['value_before'])} → peaked at {eur_m(r['value_peak'])} (now {eur_m(r['value_after'])}) during the loan, "
-                f"weighted mostly on the peak rather than the current value"
+                f"{eur_m(r['value_before'])} → peaked at {eur_m(r['value_peak'])} (now {eur_m(r['value_after'])}) during the loan"
                 if r["value_peak"] > r["value_after"] * 1.05
                 else f"{eur_m(r['value_before'])} → {eur_m(r['value_after'])} market value during the loan"
             ),

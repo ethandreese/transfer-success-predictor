@@ -44,10 +44,11 @@ SCORE_WEIGHTS_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "scor
 with open(SCORE_WEIGHTS_PATH) as f:
     _score_weights_raw = json.load(f)
 RESALE_WEIGHT_CURVE = _score_weights_raw["resale_weight_curve"]
+VALUE_FOR_MONEY_WEIGHT_CURVE = _score_weights_raw["value_for_money_weight_curve"]
 SUB_POSITION_WEIGHTS = _score_weights_raw["_sub_positions"]
 POSITION_WEIGHTS = {
     k: v for k, v in _score_weights_raw.items()
-    if not k.startswith("_") and k != "resale_weight_curve"
+    if not k.startswith("_") and k not in ("resale_weight_curve", "value_for_money_weight_curve")
 }
 
 LOAN_SCORE_WEIGHTS_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "loan_score_weights.json")
@@ -654,7 +655,21 @@ def compute_value_growth_pct(value_before, value_peak, value_after):
     transfers: the bigger the starting value, the harder it is to move the
     ratio at all, even when the club's asset has appreciated by tens of
     millions and could plainly be resold at a profit. Absolute euros alone
-    has the opposite bias against cheap signings, so the two are blended.
+    has the opposite bias against cheap signings, so the two are blended -
+    weighted 80/20 toward absolute gain, not evenly. An even 50/50 split
+    still let the ratio half drag down an already-elite, already-expensive
+    player's score even when their absolute gain was maxed out: checked
+    directly on a real case (Cristiano Ronaldo's 2009 Man Utd -> Real
+    Madrid move, priced in using his actual real-world market-value
+    history since this transfer predates the packaged appearances data),
+    a real +60m absolute gain (99th percentile) landed at only a 2.0x
+    ratio (75th percentile, since the dataset's ratio distribution is
+    dominated by cheap breakout signings going 4-10x+) - a 50/50 blend
+    scored that 87.4 despite the absolute side being essentially maxed,
+    purely because ratio math structurally can't reward an already-high
+    starting value. 80/20 reflects that a fixed euro amount of value
+    created is closer to the actual signal of interest than a ratio that's
+    mostly a function of how cheap the starting point happened to be.
     Both value_peak and value_after are blended in (80/20, leaning heavily
     toward peak) rather than using either alone - see value_peak's own
     docstring for why peak matters and end-of-tenure alone would misread
@@ -674,7 +689,7 @@ def compute_value_growth_pct(value_before, value_peak, value_after):
     abs_gain_end_pct = percentile_rank(value_after - value_before)
     abs_combo = 0.8 * abs_gain_peak_pct + 0.2 * abs_gain_end_pct
 
-    return 0.5 * ratio_combo + 0.5 * abs_combo
+    return 0.2 * ratio_combo + 0.8 * abs_combo
 
 
 FEE_OVERPAY_FREE_PASS_RATIO = 1.3
@@ -1021,6 +1036,22 @@ def compute_resale_weight(tenure_years):
     club already extracted years of on-pitch value from the player.
     """
     c = RESALE_WEIGHT_CURVE
+    return c["min"] + (c["max"] - c["min"]) * np.exp(-tenure_years / c["decay_years"])
+
+
+def compute_value_for_money_weight(tenure_years):
+    """
+    How much the fee-vs-performance question should count, as a function
+    of tenure length - see data/score_weights.json's
+    value_for_money_weight_curve. Same idea and shape as
+    compute_resale_weight: whether the fee looked reasonable at signing
+    time is close to the whole story for a short spell, and fades toward
+    irrelevant for a long, clearly-successful career - every other
+    tenure-long component in the score (perf_level, rating, playing_time,
+    ...) has already thoroughly answered "did the club get their money's
+    worth" by then, independent of what the specific fee premium was.
+    """
+    c = VALUE_FOR_MONEY_WEIGHT_CURVE
     return c["min"] + (c["max"] - c["min"]) * np.exp(-tenure_years / c["decay_years"])
 
 
@@ -1454,15 +1485,20 @@ def main():
     df["has_resale_data"] = has_resale_data
 
     # w (each row's position/sub-position weight profile) was already
-    # looked up above, before value_for_money. When resale_profit is
-    # unknown for a transfer, its weight is dropped and the rest are
-    # renormalized to still sum to 1, rather than filling in a fabricated
-    # "neutral" score for data we don't actually have. Same pattern now
-    # applies to each of the 4 FotMob components independently
-    # (has_rating_data, has_attacking_data, ...): folded in first, below,
-    # since they need to be settled BEFORE the resale-profit renormalization
-    # runs on top of the result.
-    other_weight_sum = 1 - w["resale_profit"]  # e.g. 0.92 - the reference weight left for everything except resale_profit
+    # looked up above, before value_for_money. resale_profit AND
+    # value_for_money are both excluded from the fixed pool below and
+    # carved back in afterward at their own tenure-scaled weight, not
+    # their flat reference value - see compute_resale_weight and
+    # compute_value_for_money_weight. When resale_profit is unknown for a
+    # transfer, its weight is dropped and the rest are renormalized to
+    # still sum to 1, rather than filling in a fabricated "neutral" score
+    # for data we don't actually have (value_for_money has no such gap -
+    # the fee is always known - so it's carved out unconditionally).
+    # Same pattern now applies to each of the 4 FotMob components
+    # independently (has_rating_data, has_attacking_data, ...): folded in
+    # first, below, since they need to be settled BEFORE the resale/
+    # value-for-money renormalization runs on top of the result.
+    other_weight_sum = 1 - w["resale_profit"] - w["value_for_money"]  # e.g. 0.82 - the reference weight left for everything except resale_profit and value_for_money
 
     # perf_level and attacking both measure attacking output (see
     # fold_perf_level_into_attacking) - fold them together first so their
@@ -1479,9 +1515,8 @@ def main():
         + w["perf_delta"] * df["perf_delta_pct"]
         + w["value_growth"] * df["value_growth_pct"]
         + w["playing_time"] * df["playing_time_pct"]
-        + w["value_for_money"] * df["value_for_money_pct"]
     )
-    known_weight = perf_level_weight + w["perf_delta"] + w["value_growth"] + w["playing_time"] + w["value_for_money"]
+    known_weight = perf_level_weight + w["perf_delta"] + w["value_growth"] + w["playing_time"]
 
     # Each FotMob component only contributes its weighted percentile to the
     # numerator - and its weight to the denominator - on rows where it's
@@ -1502,8 +1537,20 @@ def main():
     # is a no-op (known_weight already sums to other_weight_sum); when
     # something's missing, this redistributes its share proportionally
     # across whatever else the row does have - same renormalization idea
-    # as "without_resale" below, just one layer earlier.
+    # as the resale/value-for-money carve-out below, just one layer
+    # earlier. avg_of_others un-scales it back to a plain 0-100 weighted
+    # average of everything except resale_profit and value_for_money.
     base_score = known_score / known_weight * other_weight_sum
+    avg_of_others = base_score / other_weight_sum
+
+    # value_for_money's weight scales with tenure length (compute_value_
+    # for_money_weight), same mechanism and reasoning as resale_profit
+    # just below: whether the fee looked reasonable matters a lot for a
+    # short spell, and fades toward irrelevant for a long, clearly-
+    # successful career already fully judged by every other tenure-long
+    # component above. Unlike resale_profit this is never missing - the
+    # fee is always known - so it's blended in unconditionally.
+    df["value_for_money_weight"] = compute_value_for_money_weight(df["tenure_days"] / 365.25)
 
     # When resale data IS known, how much it counts scales with tenure
     # length (compute_resale_weight) rather than the flat reference weight
@@ -1511,9 +1558,16 @@ def main():
     # career barely at all, since the club already extracted years of
     # value regardless of the eventual sale price.
     df["resale_weight"] = compute_resale_weight(df["tenure_days"] / 365.25)
-    rescale = (1 - df["resale_weight"]) / other_weight_sum
-    with_resale = base_score * rescale + df["resale_weight"] * df["resale_profit_pct"]
-    without_resale = base_score / other_weight_sum
+
+    with_resale = (
+        avg_of_others * (1 - df["value_for_money_weight"] - df["resale_weight"])
+        + df["value_for_money_weight"] * df["value_for_money_pct"]
+        + df["resale_weight"] * df["resale_profit_pct"]
+    )
+    without_resale = (
+        avg_of_others * (1 - df["value_for_money_weight"])
+        + df["value_for_money_weight"] * df["value_for_money_pct"]
+    )
     df["success_score"] = np.where(has_resale_data, with_resale, without_resale).round(1)
 
     cols = [
@@ -1530,7 +1584,7 @@ def main():
         "from_league_ga_baseline", "to_league_ga_baseline",
         "pre_ga_p90_vs_league", "post_ga_p90_vs_league", "expected_post_ga_p90_vs_league",
         "tenure_days", "still_at_club",
-        "next_transfer_fee", "has_resale_data", "resale_weight",
+        "next_transfer_fee", "has_resale_data", "resale_weight", "value_for_money_weight",
         "has_fotmob_data", "has_rating_data", "has_attacking_data", "has_defensive_data", "has_possession_data",
     ] + FOTMOB_RAW_COLS + PRETRANSFER_FOTMOB_RAW_COLS + ["pre_fotmob_chances_created_p90"] + [
         "perf_level_pct", "perf_delta_pct", "value_growth_pct", "playing_time_pct", "value_for_money_pct",

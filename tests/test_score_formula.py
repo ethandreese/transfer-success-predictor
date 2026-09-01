@@ -11,7 +11,8 @@ import pytest
 from scripts.build_dataset import (
     LOAN_POSITION_WEIGHTS, LOAN_SUB_POSITION_WEIGHTS, MIN_LOAN_TENURE_DAYS,
     POSITION_WEIGHTS, RESALE_WEIGHT_CURVE, SUB_POSITION_WEIGHTS,
-    compute_resale_weight, percentile_rank,
+    VALUE_FOR_MONEY_WEIGHT_CURVE, compute_resale_weight,
+    compute_value_for_money_weight, percentile_rank,
 )
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
@@ -204,18 +205,22 @@ def test_success_score_matches_weighted_components(transfers):
     has_*_data flag) and resale_profit (layered on top at its tenure-scaled
     weight, or dropped/renormalized, when has_resale_data is false) - see
     build_dataset.py's main() for why the FotMob components have to be
-    folded in before the resale-profit renormalization runs. perf_level and
-    attacking are folded together first (see fold_perf_level_into_attacking)
-    since they both measure attacking output. Weights come from
-    SUB_POSITION_WEIGHTS when the row's actual sub_position has a distinct
-    profile there, else fall back to the broad POSITION_WEIGHTS row (see
-    lookup_weights) - percentile ranking is unaffected either way, it's
-    still grouped by the broad position alone.
+    folded in before the resale/value-for-money renormalization runs.
+    value_for_money is layered on top the same way as resale_profit, at
+    its own tenure-scaled weight rather than its flat reference value, but
+    unlike resale_profit it's never missing (the fee is always known), so
+    it's blended in unconditionally rather than being dropped/renormalized.
+    perf_level and attacking are folded together first (see
+    fold_perf_level_into_attacking) since they both measure attacking
+    output. Weights come from SUB_POSITION_WEIGHTS when the row's actual
+    sub_position has a distinct profile there, else fall back to the broad
+    POSITION_WEIGHTS row (see lookup_weights) - percentile ranking is
+    unaffected either way, it's still grouped by the broad position alone.
     """
     sample = transfers.sample(n=min(300, len(transfers)), random_state=42)
     for _, row in sample.iterrows():
         w = SUB_POSITION_WEIGHTS.get(row["sub_position"], POSITION_WEIGHTS[row["position"]])
-        other_weight_sum = 1 - w["resale_profit"]
+        other_weight_sum = 1 - w["resale_profit"] - w["value_for_money"]
 
         has_attacking = bool(row["has_attacking_data"])
         perf_level_weight = 0 if has_attacking else w["perf_level"]
@@ -230,21 +235,25 @@ def test_success_score_matches_weighted_components(transfers):
             + w["perf_delta"] * row["perf_delta_pct"]
             + w["value_growth"] * row["value_growth_pct"]
             + w["playing_time"] * row["playing_time_pct"]
-            + w["value_for_money"] * row["value_for_money_pct"]
         )
-        known_weight = perf_level_weight + w["perf_delta"] + w["value_growth"] + w["playing_time"] + w["value_for_money"]
+        known_weight = perf_level_weight + w["perf_delta"] + w["value_growth"] + w["playing_time"]
         for c in FOTMOB_COMPONENTS:
             if row[f"has_{c}_data"]:
                 known_score += component_weight[c] * row[f"{c}_pct"]
                 known_weight += component_weight[c]
 
         base = known_score / known_weight * other_weight_sum
+        avg_of_others = base / other_weight_sum
+        vfm_weight = row["value_for_money_weight"]
 
         if row["has_resale_data"]:
-            rescale = (1 - row["resale_weight"]) / other_weight_sum
-            recomputed = base * rescale + row["resale_weight"] * row["resale_profit_pct"]
+            recomputed = (
+                avg_of_others * (1 - vfm_weight - row["resale_weight"])
+                + vfm_weight * row["value_for_money_pct"]
+                + row["resale_weight"] * row["resale_profit_pct"]
+            )
         else:
-            recomputed = base / other_weight_sum
+            recomputed = avg_of_others * (1 - vfm_weight) + vfm_weight * row["value_for_money_pct"]
         assert recomputed == pytest.approx(row["success_score"], abs=0.15), (
             f"{row['name']} ({row['position']}): recomputed {recomputed:.2f} "
             f"!= stored {row['success_score']}"
@@ -387,6 +396,22 @@ def test_resale_weight_column_matches_curve(transfers):
     resale = transfers[transfers["has_resale_data"]]
     expected = compute_resale_weight(resale["tenure_days"] / 365.25)
     assert (resale["resale_weight"] - expected).abs().max() < 1e-9
+
+
+def test_value_for_money_weight_decays_with_tenure_length():
+    """compute_value_for_money_weight should decrease monotonically with tenure, bounded by the curve's configured min/max - same shape as resale_profit, and for the same reason."""
+    short = compute_value_for_money_weight(0.25)  # ~3 months
+    medium = compute_value_for_money_weight(2.0)  # ~2 years
+    long = compute_value_for_money_weight(10.0)   # ~a decade
+    assert short > medium > long
+    assert short == pytest.approx(VALUE_FOR_MONEY_WEIGHT_CURVE["max"], abs=0.03)
+    assert long == pytest.approx(VALUE_FOR_MONEY_WEIGHT_CURVE["min"], abs=0.01)
+
+
+def test_value_for_money_weight_column_matches_curve(transfers):
+    """The stored value_for_money_weight column should exactly match compute_value_for_money_weight() applied to each row's own tenure_days - unlike resale_weight this is never missing, since the fee is always known."""
+    expected = compute_value_for_money_weight(transfers["tenure_days"] / 365.25)
+    assert (transfers["value_for_money_weight"] - expected).abs().max() < 1e-9
 
 
 def test_long_tenure_resale_loss_barely_dents_the_score():
