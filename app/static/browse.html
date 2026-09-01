@@ -4,7 +4,16 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Browse Transfers - Transfer Success Predictor</title>
-  <link rel="stylesheet" href="/style.css?v=17" />
+  <meta name="description" content="Browse, filter, and search ~5,000 real scored football transfers (2013-2026)." />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Browse Transfers - Transfer Success Predictor" />
+  <meta property="og:description" content="Browse, filter, and search ~5,000 real scored football transfers (2013-2026)." />
+  <meta property="og:url" content="https://transfer-success-predictor.onrender.com/browse.html" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Browse Transfers - Transfer Success Predictor" />
+  <meta name="twitter:description" content="Browse, filter, and search ~5,000 real scored football transfers." />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="stylesheet" href="/style.css?v=18" />
 </head>
 <body>
   <header>
@@ -15,6 +24,7 @@
       <a href="/browse.html" class="active">Browse all transfers</a>
       <a href="/loans.html">Browse loans</a>
       <a href="/compare.html">Compare two transfers</a>
+      <a href="/about.html">About</a>
     </nav>
   </header>
 
@@ -42,6 +52,7 @@
             <option value="transfer_date:asc">Date (oldest first)</option>
             <option value="transfer_fee:desc">Fee (highest first)</option>
             <option value="age_at_transfer:asc">Age (youngest first)</option>
+            <option value="to_club_name:asc" id="club-sort-option" hidden>Club (A-Z)</option>
           </select>
         </div>
       </div>
@@ -82,7 +93,7 @@
     </div>
   </div>
 
-  <script src="/settings.js?v=17"></script>
-  <script src="/browse.js?v=17"></script>
+  <script src="/settings.js?v=18"></script>
+  <script src="/browse.js?v=18"></script>
 </body>
 </html>

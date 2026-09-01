@@ -891,7 +891,7 @@ def compare(req: CompareRequest):
 
 
 TRANSFER_SORT_FIELDS = {
-    "success_score", "transfer_date", "age_at_transfer", "transfer_fee", "tenure_days",
+    "success_score", "transfer_date", "age_at_transfer", "transfer_fee", "tenure_days", "to_club_name",
 }
 
 
@@ -959,7 +959,7 @@ def list_transfers(
     return {"total": total, "limit": limit, "offset": offset, "results": results}
 
 
-LOAN_SORT_FIELDS = {"loan_success_score", "transfer_date", "age_at_transfer", "tenure_days"}
+LOAN_SORT_FIELDS = {"loan_success_score", "transfer_date", "age_at_transfer", "tenure_days", "to_club_name"}
 
 
 @app.get("/api/loans/filters")

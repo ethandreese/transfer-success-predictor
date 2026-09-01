@@ -92,6 +92,23 @@ function resetAndLoad() {
   loadTable();
 }
 
+/**
+ * "Sort by club" only makes sense once a specific league is picked - sorted
+ * across every league at once, clubs would just interleave alphabetically
+ * with no useful grouping. Shows/hides that option based on whether
+ * league-select currently has a value, and falls back to the default sort
+ * if a league is cleared while club-sort is active.
+ */
+function updateClubSortAvailability() {
+  const hasLeague = !!document.getElementById("league-select").value;
+  const clubOption = document.getElementById("club-sort-option");
+  clubOption.hidden = !hasLeague;
+  const sortSelect = document.getElementById("sort-select");
+  if (!hasLeague && sortSelect.value.startsWith("to_club_name")) {
+    sortSelect.value = "success_score:desc";
+  }
+}
+
 /** Render one transfer's score-component breakdown (label + bar + hover tooltip) as HTML, from the `breakdown` array the API returns. Descriptions run through convertMoneyInText since the backend always formats euro amounts in its prose. */
 function renderBreakdown(breakdown) {
   return breakdown.map(b => `
@@ -157,7 +174,10 @@ document.getElementById("search-input").addEventListener("input", () => {
   window.__searchDebounce = setTimeout(resetAndLoad, 300);
 });
 document.getElementById("position-select").addEventListener("change", resetAndLoad);
-document.getElementById("league-select").addEventListener("change", resetAndLoad);
+document.getElementById("league-select").addEventListener("change", () => {
+  updateClubSortAvailability();
+  resetAndLoad();
+});
 document.getElementById("sort-select").addEventListener("change", resetAndLoad);
 document.getElementById("prev-page").addEventListener("click", () => {
   state.offset = Math.max(0, state.offset - settings.pageSize);
