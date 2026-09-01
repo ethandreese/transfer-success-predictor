@@ -407,6 +407,33 @@ it, and the other weights renormalized, the same pattern already used for
 but not rating and defensive, and the score still sums to the same 0-100
 scale.
 
+**Norway and Sweden were silently getting the wrong season's stats
+entirely, not just missing data.** Auditing match rates per league (the
+same exercise that explained Greece/Russia above) turned up something
+different for these two: unlike every other league in `LEAGUE_MAP`,
+FotMob identifies an Eliteserien/Allsvenskan season by a single calendar
+year ("2020") rather than the split-year format ("2020/2021") every other
+league here uses, matching their Mar-Nov calendar-year football season
+instead of the rest of Europe's Aug-May one. Passing our usual
+"YYYY/YYYY+1" label as the season parameter for these two didn't error -
+FotMob's API silently fell back to its *current* season instead - so
+every cached "season" from 2013/2014 through 2026/2027 for Norway was
+returning the exact identical 21-player Rosenborg roster, confirmed
+directly by diffing the cached files. A transfer that matched under this
+bug wasn't just missing data, it was worse - scored against whichever
+season happened to be current when the cache was built, not its actual
+tenure. Fixed in `fotmob_season_param()` (`scripts/fetch_fotmob_stats.py`)
+by converting to Nordic single-year identifiers for just these two
+leagues; re-fetching from scratch showed real coverage only starts 2017
+(calendar year) for both, not 2013 as the corrupted data had implied.
+Rebuilding `transfers_processed.csv`/`loans_processed.csv` and retraining
+on the corrected labels changed 703 of 5,062 permanent-transfer scores -
+almost all a sub-0.2-point ripple from renormalized percentile ranks
+across the whole population, but the dozen actual Norway/Sweden rows
+moved by real amounts in both directions (e.g. Pontus Jansson's Malmö
+score +15.9, Lasse Berg Johnsen's -4.9) - a genuine correction, not a
+one-directional "more data is better" bump.
+
 **These four components are ranked against transfers and loans combined,
 unlike everything else in either formula.** Every other percentile here -
 performance level, value growth, playing time, resale profit for
@@ -518,8 +545,8 @@ features (age, position, physical attributes, fee, market value, prior-year
 performance including FotMob rating/xG/xA/passing/defensive output, and
 origin/destination club & league strength) — nothing about what happened
 after the move. Evaluated on a temporal holdout (trained on
-transfers before mid-2023, tested on transfers since): **MAE ≈ 12.34 points**
-on the 0–100 scale, R² ≈ 0.175, vs. ≈14.2 MAE for always predicting the
+transfers before mid-2023, tested on transfers since): **MAE ≈ 12.38 points**
+on the 0–100 scale, R² ≈ 0.169, vs. ≈14.2 MAE for always predicting the
 average. That's a modest but real signal, and honestly weaker than scoring
 a fixed first year would give — predicting a player's *entire future stint*
 at a new club from pre-transfer stats alone is genuinely hard, since

@@ -36,9 +36,9 @@
     "to_domestic_competition_id"
   ],
   "target": "success_score",
-  "test_mae": 12.34,
-  "test_r2": 0.175,
-  "baseline_mae": 14.19,
+  "test_mae": 12.38,
+  "test_r2": 0.169,
+  "baseline_mae": 14.17,
   "n_train": 2972,
   "n_test": 1867,
   "reference_values": {
@@ -229,7 +229,7 @@
     "L1": 51.0,
     "NL1": 53.4,
     "PO1": 51.7,
-    "RU1": 48.8,
+    "RU1": 48.7,
     "SC1": 53.1,
     "TR1": 49.8,
     "UKR1": 46.5
@@ -242,7 +242,7 @@
     "GB1": 52.4,
     "GR1": 47.5,
     "IT1": 49.6,
-    "L1": 53.0,
+    "L1": 52.9,
     "NL1": 51.4,
     "PO1": 49.5,
     "RU1": 47.5,

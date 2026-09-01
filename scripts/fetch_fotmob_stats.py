@@ -136,6 +136,45 @@ NORDIC_SLAVIC_TRANSLATION = str.maketrans({
     "ł": "l", "Ł": "L", "đ": "d", "Đ": "D", "ð": "d", "Ð": "D", "þ": "th", "ß": "ss",
 })
 
+# Leagues whose FotMob season identifier is a single calendar year (their
+# whole season plays out within one calendar year, roughly Mar-Nov - unlike
+# every other league here's Aug-May season, which straddles two calendar
+# years the same way our "YYYY/YYYY+1" labels do), not the split-year
+# format every other league in LEAGUE_MAP uses. Verified live against
+# https://www.fotmob.com/api/data/leagues?id=<id> - allAvailableSeasons -
+# for every league in LEAGUE_MAP; only these two came back single-year
+# ("2026","2025",...) rather than split-year ("2026/2027","2025/2026",...).
+# Passing our usual "YYYY/YYYY+1" label as the season param for these two
+# doesn't error - FotMob silently falls back to its *current* season -
+# which was returning the identical roster for every requested season
+# (checked directly: every cached NO1 season file held the same 21-player
+# Rosenborg roster). A real, silent contamination bug, not just a missed
+# match: a matched transfer was being scored against whatever season
+# happened to be current at fetch time, not its actual tenure.
+SINGLE_YEAR_SEASON_LEAGUES = {"NO1", "SE1"}
+
+
+def fotmob_season_param(comp_id, season_label):
+    """
+    Convert our internal split-year season label ("2019/2020") into the
+    season identifier FotMob's API actually expects for this league - a
+    no-op for every league except SINGLE_YEAR_SEASON_LEAGUES. For Norway/
+    Sweden, whose one real season is a calendar year, use the label's
+    second year: a Mar-Nov Nordic season "Y" overlaps our "Y-1/Y" label's
+    Mar-Jul portion (5 months) more than our "Y/Y+1" label's Aug-Nov
+    portion (4 months), so "Y-1/Y" -> FotMob season "Y" is the closer
+    single-season approximation of a window that inherently straddles two
+    calendar years either way. This only affects which season's stats a
+    transfer's tenure gets stitched from at the edges (Aug-Nov joins get
+    attributed one calendar year later than their exact join date) - a
+    real but minor imprecision, and a large improvement over the previous
+    silent-contamination bug.
+    """
+    if comp_id in SINGLE_YEAR_SEASON_LEAGUES:
+        return season_label.split("/")[1]
+    return season_label
+
+
 # A small number of clubs whose FotMob name and Transfermarkt short name
 # share no substring, common significant word, or high fuzzy ratio at all -
 # an acronym (PSG, "Man City"), an old/nickname form ("Stade Rennais" ->
@@ -239,7 +278,7 @@ def load_or_fetch_season(client, comp_id, league_id, season_label):
             cached = json.load(f)
         return pd.DataFrame(cached) if cached is not None else None
 
-    categories = fetch_league_stat_categories(client, league_id, season_label)
+    categories = fetch_league_stat_categories(client, league_id, fotmob_season_param(comp_id, season_label))
     if categories is None:
         with open(cache_path, "w") as f:
             json.dump(None, f)
