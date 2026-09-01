@@ -178,9 +178,10 @@ vary by position** (see `data/score_weights.json`):
     signal from — every other non-FotMob component either doesn't apply to
     them (performance level/change) or is a financial/availability proxy
     (value growth, playing time, value for money). Weighted flat 20% for
-    every position (see **Weights** below) — it's the same metric
-    regardless of role, unlike attacking/defensive/possession, which are
-    literally different stats depending on position.
+    every position except the four outfield defensive sub-positions (see
+    **Weights also vary by sub-position** below, where it's 30%) — it's
+    the same metric regardless of role, unlike attacking/defensive/
+    possession, which are literally different stats depending on position.
   - **attacking** — goals, expected goals (xG), expected assists (xA), and
     chances created per 90, all averaged together, *then averaged again
     with performance level* whenever both are known for the transfer (see
@@ -501,9 +502,9 @@ by the four broad positions above.** A Defensive Midfielder and an
 Attacking Midfielder both get the broad "Midfield" weights above by
 default, which weight attacking output far too heavily for a player
 whose job is mostly disruption and progression, not goals — Moisés
-Caicedo (Brighton → Chelsea, a genuine defensive-midfield profile: 74th
-percentile on defending, 68th on possession, but only 27th on attacking
-output) scored a 45.1 under the broad Midfield weights despite that
+Caicedo (Brighton → Chelsea, a genuine defensive-midfield profile: 69th
+percentile on defending, 65th on possession, but only 29th on attacking
+output) scored a 62.1 under the broad Midfield weights despite that
 being a clearly strong defensive-midfield tenure. `data/score_weights.json`'s
 `_sub_positions` (and `data/loan_score_weights.json`'s equivalent) give
 a handful of sub-positions their own weight row instead — Defensive
@@ -513,7 +514,7 @@ perf_level/perf_delta/attacking (the same "attacking output" bloc
 `fold_perf_level_into_attacking` already folds into one number) and into
 defensive/possession for a defense-oriented role, or the other way for
 an attack-oriented one. With the Defensive Midfield weights, Caicedo's
-score becomes 64.8. Central Midfield, Centre-Forward, Second Striker,
+score becomes 72.1. Central Midfield, Centre-Forward, Second Striker,
 and Goalkeeper have no override — either that already IS the broad
 default's implicit profile, the position has no sub-split at all
 (Goalkeeper), or the sample is too thin in this dataset for a confident
@@ -524,6 +525,30 @@ this** — a Centre-Back is still ranked against every Defender, not just
 other Centre-Backs, so the comparison population stays large and stable;
 only the weights applied to an already-computed percentile differ by
 sub-position.
+
+**The four outfield defensive sub-positions (Defensive Midfield,
+Centre-Back, Left-Back, Right-Back) weight `rating` at 30% instead of
+the usual flat 20%, funded entirely from `defensive`** (23/29/26/26% down
+to 13/19/16/16%, plus the broad Defender fallback row 23%→13%). Checked
+directly against the real dataset: `rating` correlates with
+`success_score` far more strongly than the `defensive` bucket does for
+every one of these roles (0.84–0.86 vs. 0.50–0.58) — a gap that doesn't
+exist for attacking positions (`attacking` correlates as well as or
+better than `rating` there, 0.79–0.91) or goalkeepers (saves/goals-
+conceded correlates nearly as well as `rating`, 0.73 vs. 0.80). So this
+is specifically an outfield-defender pattern, not a general "rating is
+undervalued everywhere" one: raw tackle/interception/clearance/recovery
+counting rewards a high-volume, ball-winning style and says little about
+the positioning and game intelligence that let a genuinely elite
+defender avoid needing to make those actions as often in the first
+place — something a holistic per-match rating captures far better.
+Motivated by checking real elite ball-playing defensive
+midfielders/centre-backs (Declan Rice, Rodri) whose FotMob rating sits
+consistently far ahead of their raw defensive-stat percentile: Rice's
+Arsenal move moved from 77.5 to 82.1, Rodri's Man City move from 78.0 to
+81.4. Not a one-directional bump, though - Rodri's earlier, less-heralded
+Atlético move barely moved at all (81.4 → 81.3), since that specific
+transfer's rating percentile isn't actually ahead of its defensive one.
 
 **The sub-position used for this is not the one in the packaged
 `players.csv`.** That column is a single, undated label — whatever
@@ -588,8 +613,8 @@ features (age, position, physical attributes, fee, market value, prior-year
 performance including FotMob rating/xG/xA/passing/defensive output, and
 origin/destination club & league strength) — nothing about what happened
 after the move. Evaluated on a temporal holdout (trained on
-transfers before mid-2023, tested on transfers since): **MAE ≈ 12.33 points**
-on the 0–100 scale, R² ≈ 0.174, vs. ≈14.2 MAE for always predicting the
+transfers before mid-2023, tested on transfers since): **MAE ≈ 12.67 points**
+on the 0–100 scale, R² ≈ 0.178, vs. ≈14.6 MAE for always predicting the
 average. That's a modest but real signal, and honestly weaker than scoring
 a fixed first year would give — predicting a player's *entire future stint*
 at a new club from pre-transfer stats alone is genuinely hard, since
