@@ -375,17 +375,33 @@ different short names even within one league (Bundesliga transfers use
 both "Dortmund" and "Bor. Dortmund" for the same club).
 
 FotMob's coverage has two real ceilings, not effort problems: nothing
-before a league-specific season (varies a lot — the Premier League and
-Norway's Eliteserien have opposite ends of that range, 2016/2017 vs.
-2013/2014), and Ukraine's Premier League specifically, where FotMob's own
-league page exposes only 5 basic stat categories (goals, assists,
-goals+assists, yellow/red cards) — nothing that overlaps what any of these
-four components actually need, so it's a genuine, permanent 0% for that
-one league. Overall, 82% of scored transfers end up with a usable score in
-*at least one* of the four buckets — coverage varies by bucket (rating
-70%, attacking 81%, defensive 72%, possession 72%; rating specifically
-seems to need more minutes/matches than the others to qualify on FotMob's
-side). Each bucket's weight is dropped independently for a row missing
+before a league-specific season, and Ukraine's Premier League
+specifically, where FotMob's own league page exposes only 5 basic stat
+categories (goals, assists, goals+assists, yellow/red cards) — nothing
+that overlaps what any of these four components actually need, so it's a
+genuine, permanent 0% for that one league.
+
+**The season-start ceiling varies far more than "a range" suggests.**
+Measured directly from `data/raw/fotmob_season_cache/`: the big five
+(Premier League, Serie A, Bundesliga, Ligue 1, LaLiga) start 2016/2017,
+Norway's Eliteserien and Sweden's Allsvenskan go back to 2013/2014, but
+several destination leagues with real transfer volume in this dataset
+start much later — Russia's Premier League only from 2019/2020, Greece's
+Super League 1 not until 2021/2022 — and the newest-added leagues
+(Serbia, Romania) don't start until 2025/2026, though those two barely
+register as transfer destinations in this dataset. This isn't a
+matching-algorithm weakness for the leagues it does hit hard: checked
+directly for Greece, the name/club matcher succeeds on 86% of transfers
+that actually fall within a covered season (217 of 253) — right in line
+with every other league — but 92 of Greece's 345 candidate transfers/
+loans (27%) predate FotMob's Greek coverage entirely, dragging the
+league's *overall* FotMob match rate down to 62% even though the matcher
+itself isn't the problem. Russia shows the same pattern at a smaller
+scale (74% overall, coverage only from 2019/2020). Overall, 82% of scored
+transfers end up with a usable score in *at least one* of the four
+buckets — coverage varies by bucket (rating 70%, attacking 81%, defensive
+72%, possession 72%; rating specifically seems to need more minutes/
+matches than the others to qualify on FotMob's side). Each bucket's weight is dropped independently for a row missing
 it, and the other weights renormalized, the same pattern already used for
 `resale_profit` - so a transfer can show, say, attacking and possession
 but not rating and defensive, and the score still sums to the same 0-100
@@ -763,8 +779,11 @@ already be similar on it by construction, trivializing the comparison).
   against (loans into a handful of other leagues - Brazil, MLS, Saudi
   Arabia, Argentina, and a few smaller ones, ~3.5% of loans - aren't in
   that set at all), only from whatever season FotMob's own coverage
-  happens to start for that specific league, and not at all for Ukraine's
-  Premier League. About 18% of scored permanent transfers (56% of loans)
+  happens to start for that specific league (2013/2014 for the earliest
+  leagues, but not until 2019/2020 for Russia or 2021/2022 for Greece -
+  see "FotMob's coverage has two real ceilings" above for the full
+  per-league picture), and not at all for Ukraine's Premier League. About
+  18% of scored permanent transfers (56% of loans)
   still have no FotMob data in any of the four buckets and fall back to
   value growth, playing time, and value for money (plus perf_level/perf_delta
   for the permanent score) carrying the position almost entirely, as
