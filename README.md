@@ -550,6 +550,18 @@ Arsenal move moved from 77.5 to 82.1, Rodri's Man City move from 78.0 to
 Atlético move barely moved at all (81.4 → 81.3), since that specific
 transfer's rating percentile isn't actually ahead of its defensive one.
 
+**`data/loan_score_weights.json` got the same fix, checked the same way.**
+Rating correlates with `loan_success_score` more strongly than `defensive`
+for all four outfield defensive sub-positions in the loan dataset too
+(0.67–0.77 vs. 0.29–0.52 — noisier than the permanent-transfer numbers
+since loan-specific FotMob coverage is thinner, but the same gap), so
+`rating` moved 20%→30% there as well, funded from `defensive` (17/24/22/22%
+down to 7/14/12/12%, plus the broad Defender fallback row 15%→5%). Central,
+Attacking, Left, and Right Midfield were checked in both datasets and did
+*not* show the pattern — `rating`'s edge over `attacking` was small and
+`rating` already carried more weight than `attacking`, so those rows were
+left alone.
+
 **The sub-position used for this is not the one in the packaged
 `players.csv`.** That column is a single, undated label — whatever
 Transfermarkt currently lists for a player, the same value regardless of
