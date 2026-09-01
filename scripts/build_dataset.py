@@ -1055,6 +1055,48 @@ def compute_value_for_money_weight(tenure_years):
     return c["min"] + (c["max"] - c["min"]) * np.exp(-tenure_years / c["decay_years"])
 
 
+PLAYING_TIME_FORGIVENESS_GAMES_PER_SEASON = 10
+
+
+def compute_playing_time_pct(post_apps, team_games_in_tenure, tenure_days):
+    """
+    playing_time_pct, with a "normal rotation" forgiveness applied on top of
+    the raw appearance count before ranking. Checked directly against the
+    real dataset first: even players who are unambiguously key (top-10% on
+    rating_pct or perf_level_pct, so clearly not dropped for form) miss a
+    median of ~12 team games a season across every competition their club
+    played - squad rotation, cup rotation, minor knocks. Missing a handful
+    of games a season isn't a real availability problem, but the raw
+    pct_team_games_played ratio (still stored separately, unchanged, for the
+    "X% of team's games played" text in app/main.py) treats every missed
+    game the same regardless of cause, so it was quietly penalizing normal
+    rest right alongside genuine unavailability.
+
+    forgiven_games saturates toward PLAYING_TIME_FORGIVENESS_GAMES_PER_SEASON
+    (10) per season via 1 - exp(-missed/allowance) rather than a hard
+    min(missed, allowance) clip - a hard clip was tried first and rejected:
+    it fully forgives anyone missing <= the allowance, and since that's most
+    of the dataset, ~41% of transfers landed on an identical, tied 100%
+    effective-games-played value. Percentile ranking a huge tie cluster like
+    that actively hurt the players with the *best* availability (someone
+    missing 2 games/season got diluted into the same bucket as someone who
+    used the full 10-game allowance) - the opposite of the intent. The
+    saturating curve never fully closes the gap between "missed 2" and
+    "missed 9" - it only shrinks the *cost* of missing a normal amount,
+    smoothly, with no tie cluster: checked directly, share of transfers at
+    ~100% effective games played barely moves (0.9% -> 1.3%) versus the
+    hard-clip version's 40.6%.
+    """
+    team_games = team_games_in_tenure.clip(lower=1)
+    tenure_years = (tenure_days / 365.25).clip(lower=1 / 365.25)
+    games_missed = (team_games - post_apps).clip(lower=0)
+    allowance = PLAYING_TIME_FORGIVENESS_GAMES_PER_SEASON * tenure_years
+    forgiven_games = allowance * (1 - np.exp(-games_missed / allowance))
+    effective_apps = (post_apps + forgiven_games).clip(upper=team_games)
+    pct_for_scoring = (effective_apps / team_games).clip(upper=1.0)
+    return 0.6 * percentile_rank(pct_for_scoring) + 0.4 * percentile_rank(post_apps)
+
+
 def compute_expected_post_performance(df):
     """
     Fit post_ga_p90_vs_league ~ pre_ga_p90_vs_league per position (simple
@@ -1201,7 +1243,7 @@ def finish_loan_dataset(df, league_position_baseline, position_fallback):
     df["value_growth_pct"] = compute_value_growth_pct(df["value_before"], df["value_peak"], df["value_after"])
 
     df["pct_team_games_played"] = (df["post_apps"] / df["team_games_in_tenure"].clip(lower=1)).clip(upper=1.0)
-    df["playing_time_pct"] = 0.6 * percentile_rank(df["pct_team_games_played"]) + 0.4 * percentile_rank(df["post_apps"])
+    df["playing_time_pct"] = compute_playing_time_pct(df["post_apps"], df["team_games_in_tenure"], df["tenure_days"])
 
     if df.empty:
         # .map(...).apply(pd.Series) can't infer the perf_level/perf_delta/
@@ -1403,12 +1445,12 @@ def main():
     # to one who made 120 out of 140 (a nailed-on starter for a shorter
     # spell) on raw count alone. Percent of the team's actual games played
     # surfaces that difference (injuries, rotation, loss of form) directly,
-    # so the two are blended rather than using either alone.
+    # so the two are blended rather than using either alone. pct_team_games_
+    # played itself stays a raw, un-forgiven ratio (it's shown to the user
+    # directly) - see compute_playing_time_pct for why playing_time_pct, the
+    # score component, forgives a normal amount of missed games first.
     df["pct_team_games_played"] = (df["post_apps"] / df["team_games_in_tenure"].clip(lower=1)).clip(upper=1.0)
-    df["playing_time_pct"] = (
-        0.6 * percentile_rank(df["pct_team_games_played"])
-        + 0.4 * percentile_rank(df["post_apps"])
-    )
+    df["playing_time_pct"] = compute_playing_time_pct(df["post_apps"], df["team_games_in_tenure"], df["tenure_days"])
 
     # Four FotMob-derived components (rating, attacking, defensive,
     # possession) instead of one blended composite - see

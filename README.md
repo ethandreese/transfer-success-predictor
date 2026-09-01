@@ -625,8 +625,8 @@ features (age, position, physical attributes, fee, market value, prior-year
 performance including FotMob rating/xG/xA/passing/defensive output, and
 origin/destination club & league strength) — nothing about what happened
 after the move. Evaluated on a temporal holdout (trained on
-transfers before mid-2023, tested on transfers since): **MAE ≈ 12.67 points**
-on the 0–100 scale, R² ≈ 0.178, vs. ≈14.6 MAE for always predicting the
+transfers before mid-2023, tested on transfers since): **MAE ≈ 12.70 points**
+on the 0–100 scale, R² ≈ 0.162, vs. ≈14.5 MAE for always predicting the
 average. That's a modest but real signal, and honestly weaker than scoring
 a fixed first year would give — predicting a player's *entire future stint*
 at a new club from pre-transfer stats alone is genuinely hard, since
@@ -970,9 +970,31 @@ already be similar on it by construction, trivializing the comparison).
   worth knowing. The "games the team played" denominator counts all
   competitions combined (league, domestic cup, continental) rather than
   just league games, on the view that squad rotation happens across all of
-  them - but that also means a player who's rested for cup games (not
-  unavailable, just rotated) looks identical to one who's actually
-  injured; the data doesn't distinguish the two.
+  them - but that also means the raw data has no way to tell "rested for a
+  cup game" apart from "actually unavailable"; `pct_team_games_played`
+  itself (shown to the user as "X% of team's games played") stays that raw,
+  undifferentiated ratio. The *score* no longer takes that ratio at face
+  value, though: `playing_time_pct` first forgives a normal amount of
+  missed games (`compute_playing_time_pct` in `scripts/build_dataset.py`,
+  saturating toward 10 games/season) before ranking, checked directly
+  against the dataset first - even clearly-elite players (top-10% on rating
+  or goal contributions) miss a median of ~12 team games a season across
+  all competitions, so treating every missed game as equally costly was
+  punishing normal rest right alongside real unavailability. A hard
+  "forgive up to N, then nothing" cutoff was tried first and rejected: it
+  fully forgives most of the dataset, so ~41% of transfers landed on an
+  identical tied 100% value, and percentile-ranking that tie cluster
+  actively hurt the players with the *best* availability (someone missing 2
+  games/season got diluted into the same bucket as someone who used the
+  full allowance) - the opposite of the intent. The saturating version
+  avoids that (share at ~100% barely moves, 0.9% -> 1.3%): N'Golo Kanté's
+  2015-16 Leicester title season (missed ~2 games/season) and Declan Rice's
+  Arsenal move (missed ~4/season) are now close to unaffected, while
+  players who were being penalized for genuinely normal rotation see a
+  real, modest gain. It still can't distinguish *why* games beyond the
+  normal allowance were missed (injury, loss of form, being dropped) -
+  only that missing meaningfully more than ~10/season starts counting
+  against the score again, same as before.
 - Predicting a *new* hypothetical transfer is meaningfully less reliable
   than the historical scores shown for known transfers, since the model
   only sees pre-transfer information by construction.
