@@ -1,5 +1,7 @@
 # Transfer Success Predictor ⚽
 
+[![Tests](https://github.com/ethandreese/transfer-success-predictor/actions/workflows/tests.yml/badge.svg)](https://github.com/ethandreese/transfer-success-predictor/actions/workflows/tests.yml)
+
 Predicts how a football (soccer) transfer is likely to go, trained on real
 historical transfer data rather than hand-picked examples like Haaland→City
 or Dembélé→Barça.
