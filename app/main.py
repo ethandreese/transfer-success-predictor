@@ -634,7 +634,7 @@ def find_comparables(feature_row: pd.DataFrame, k: int = 5):
     historical transfers" and, via their success_score spread, as the
     predicted score_range in /api/predict.
     """
-    x = feature_row[comparables["features"]].values
+    x = feature_row[comparables["features"]]
     x_scaled = comparables["scaler"].transform(x)
     dist, idx = comparables["index"].kneighbors(x_scaled, n_neighbors=k)
     rows = comparables["meta"].iloc[idx[0]]
