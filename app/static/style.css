@@ -555,6 +555,42 @@ button.predict-btn:disabled {
 
 #card-modal-content .breakdown-bar-track { height: 8px; border-radius: 4px; }
 
+.wake-banner {
+  position: fixed;
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  width: max-content;
+  max-width: min(80vw, 19rem);
+  padding: 0.5rem 0.85rem;
+  border-radius: 14px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 0.8rem;
+  line-height: 1.35;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.wake-banner-spinner {
+  width: 0.8rem;
+  height: 0.8rem;
+  margin-top: 0.15rem;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent-mid);
+  animation: wake-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes wake-spin {
+  to { transform: rotate(360deg); }
+}
+
 .settings-btn {
   position: fixed;
   top: 1rem;

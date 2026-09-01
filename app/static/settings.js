@@ -9,6 +9,55 @@
 // Fixed, approximate conversion rates (checked August 2026) - not a live
 // feed. Good enough for "roughly how big is this fee in dollars", not for
 // anything financial.
+// Cold-start indicator: Render's free tier spins the server down after 15
+// min idle, so the first request after a quiet spell can take 30-60s
+// instead of the usual sub-second response - without this, that shows up as
+// a page silently stuck on "Loading..." with no sign anything is happening.
+// Wraps window.fetch globally rather than hooking each page's own fetch
+// calls, so every page gets it for free - including compare.html, which
+// has no fetch at all until the user searches for a player.
+(function () {
+  let pendingSlow = 0;
+  let banner = null;
+
+  function showBanner() {
+    if (banner) return;
+    banner = document.createElement("div");
+    banner.className = "wake-banner";
+    banner.innerHTML =
+      '<span class="wake-banner-spinner"></span>' +
+      "<span>Server is waking up — can take up to a minute.</span>";
+    document.body.appendChild(banner);
+  }
+
+  function hideBanner() {
+    if (!banner) return;
+    banner.remove();
+    banner = null;
+  }
+
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = function (...args) {
+    let countedSlow = false;
+    // A normal warm request finishes in well under this, so a real request
+    // never flashes the banner - only a genuine cold start does.
+    const timer = setTimeout(() => {
+      countedSlow = true;
+      pendingSlow++;
+      showBanner();
+    }, 2500);
+
+    const settle = () => {
+      clearTimeout(timer);
+      if (countedSlow && --pendingSlow <= 0) hideBanner();
+    };
+
+    const result = originalFetch(...args);
+    result.then(settle, settle);
+    return result;
+  };
+})();
+
 const EXCHANGE_RATES = { EUR: 1, USD: 1.16, GBP: 0.86 };
 const CURRENCY_SYMBOLS = { EUR: "€", USD: "$", GBP: "£" };
 const DEFAULT_SETTINGS = { currency: "EUR", theme: "dark", pageSize: 25 };
