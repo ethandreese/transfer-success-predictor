@@ -26,7 +26,7 @@
     banner.className = "wake-banner";
     banner.innerHTML =
       '<span class="wake-banner-spinner"></span>' +
-      "<span>Server is waking up — can take up to a minute.</span>";
+      "<span>Server is waking up, can take up to a minute.</span>";
     document.body.appendChild(banner);
   }
 

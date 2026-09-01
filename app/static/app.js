@@ -42,7 +42,10 @@ function renderBreakdown(breakdown) {
     <div class="breakdown-row">
       <span class="tooltip-wrap breakdown-label">
         ${b.label}
-        <span class="tooltip-box">${convertMoneyInText(b.description)}</span>
+        <span class="tooltip-box">
+          ${convertMoneyInText(b.description)}
+          ${b.stats ? `<ul class="tooltip-stats">${b.stats.map(s => `<li>${convertMoneyInText(s)}</li>`).join("")}</ul>` : ""}
+        </span>
       </span>
       <div class="breakdown-bar-track">
         <div class="breakdown-bar-fill" style="width:${b.value}%; background:${scoreColor(b.value)}"></div>

@@ -116,15 +116,15 @@ def describe_resale_profit(r, eur_m):
     weight_pct = r["resale_weight"] * 100
     outcome = resale_outcome_phrase(r["transfer_fee"], r["next_transfer_fee"])
     weight_note = (
-        f"counts for only {weight_pct:.0f}% of the score here — after a {tenure_years:.1f}-year tenure "
+        f"counts for only {weight_pct:.0f}% of the score here, since after a {tenure_years:.1f}-year tenure "
         f"the club already got most of its value from having them play, regardless of the sale price"
         if tenure_years > 3
         else f"counts for {weight_pct:.0f}% of the score here, weighted higher since it was a short "
         f"({tenure_years:.1f}-year) tenure"
     )
     return (
-        f"Bought for {eur_m(r['transfer_fee'])}, later resold for {eur_m(r['next_transfer_fee'])} "
-        f"— {outcome}. This {weight_note}."
+        f"Bought for {eur_m(r['transfer_fee'])}, later resold for {eur_m(r['next_transfer_fee'])}, "
+        f"{outcome}. This {weight_note}."
     )
 
 
@@ -166,6 +166,14 @@ def describe_fotmob_component(component, r, position_plural, is_loan=False):
     build_dataset.py) - whenever this row is shown at all, that folding
     happened, so post_ga_p90 is always included alongside the FotMob
     sub-stats here, not just when it happens to be missing.
+
+    Returns {"description": ..., "stats": [...] or None} rather than a
+    single string - two or more sub-stats read as a comma-separated wall of
+    numbers as one sentence, so those render as a bulleted list in the
+    frontend tooltip instead (see renderBreakdown() in app.js/compare.js/
+    browse.js/loans.js), with "description" holding just the setup line.
+    A single sub-stat (rating) has nothing to bullet, so it stays one plain
+    sentence and "stats" is None - the frontend's cue to skip the list.
     """
     seasons = int(r["fotmob_seasons_used"])
     season_note = "1 season" if seasons == 1 else f"{seasons} seasons"
@@ -173,8 +181,8 @@ def describe_fotmob_component(component, r, position_plural, is_loan=False):
     chances_created_p90 = r["fotmob_total_att_assist"] / minutes_per_90
 
     def parts(*pairs):
-        """pairs is (value, format-string) tuples - drop any whose value is NaN, then join what's left."""
-        return ", ".join(fmt.format(v) for v, fmt in pairs if pd.notna(v))
+        """pairs is (value, format-string) tuples - drop any whose value is NaN, keep the rest as a list of formatted strings."""
+        return [fmt.format(v) for v, fmt in pairs if pd.notna(v)]
 
     if component == "rating":
         detail = parts((r["fotmob_rating"], "{:.2f} average match rating"))
@@ -210,10 +218,18 @@ def describe_fotmob_component(component, r, position_plural, is_loan=False):
     # ranked against transfers and loans combined - see
     # attach_fotmob_components in build_dataset.py.
     at_club = f"on loan at {r['to_club_name']}" if is_loan else f"at {r['to_club_name']}"
-    return (
-        f"{detail} — averaged across {season_note} {at_club}, each stat first weighed "
-        f"against the league's own average for the position, then ranked vs. other {position_plural}"
-    )
+    if len(detail) > 1:
+        return {
+            "description": f"Over {season_note} {at_club} (ranked vs. other {position_plural}, league-adjusted):",
+            "stats": detail,
+        }
+    return {
+        "description": (
+            f"{detail[0]}, averaged across {season_note} {at_club}, "
+            f"ranked vs. other {position_plural} after adjusting for the league's own average"
+        ),
+        "stats": None,
+    }
 
 
 def eur_m(v):
@@ -260,7 +276,7 @@ def describe_components(r):
             "value": round(float(r["value_for_money_pct"]), 1),
             "description": (
                 f"{eur_m(r['transfer_fee'])} fee vs. {eur_m(r['value_before'])} market value at the time, "
-                f"weighed against on-pitch performance (attacking, defending, possession, rating — "
+                f"weighed against on-pitch performance (attacking, defending, possession, rating, "
                 f"whichever matter most for {position_plural}) relative to what the fee implied"
             ),
         },
@@ -296,11 +312,11 @@ def describe_components(r):
             "value": round(float(r["perf_delta_pct"]), 1),
             "description": (
                 f"Started at {r['pre_ga_p90_vs_league']:.1f}x league average, now at "
-                f"{r['post_ga_p90_vs_league']:.1f}x — beat the ~{r['expected_post_ga_p90_vs_league']:.1f}x "
+                f"{r['post_ga_p90_vs_league']:.1f}x, beating the ~{r['expected_post_ga_p90_vs_league']:.1f}x "
                 f"expected for a player starting that high (some pullback from a peak is normal)"
                 if r["post_ga_p90_vs_league"] >= r["expected_post_ga_p90_vs_league"] else
                 f"Started at {r['pre_ga_p90_vs_league']:.1f}x league average, now at "
-                f"{r['post_ga_p90_vs_league']:.1f}x — below the ~{r['expected_post_ga_p90_vs_league']:.1f}x "
+                f"{r['post_ga_p90_vs_league']:.1f}x, below the ~{r['expected_post_ga_p90_vs_league']:.1f}x "
                 f"expected for a player starting that high"
             ),
         },
@@ -308,7 +324,7 @@ def describe_components(r):
         {
             "label": FOTMOB_COMPONENT_LABELS[component],
             "value": round(float(r[f"{component}_pct"]), 1),
-            "description": describe_fotmob_component(component, r, position_plural),
+            **describe_fotmob_component(component, r, position_plural),
         }
         for component in ("attacking", "possession", "defensive", "rating")
         if bool(r[f"has_{component}_data"])
@@ -437,7 +453,7 @@ def league_context_note(feat, actual_league, reference_league):
         return ""
     verb = "to" if feat == "to_domestic_competition_id" else "leaving"
     note = (
-        f" — transfers {verb} {league_display_name(actual_league)} have historically averaged "
+        f": transfers {verb} {league_display_name(actual_league)} have historically averaged "
         f"{baseline[actual_league]} vs. {baseline[reference_league]} for {league_display_name(reference_league)}"
     )
     if feat == "to_domestic_competition_id":
@@ -606,7 +622,7 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, top_k: int 
             vs_clause = f"vs. {typical_label} {typical_display}{league_context_note(feat, actual_value, reference_value)}"
         elif feat == "fee_to_value_ratio":
             vs_clause = (
-                f"vs. {typical_label} {typical_display} — paying up to ~1.3x market value counts as a "
+                f"vs. {typical_label} {typical_display}: paying up to ~1.3x market value counts as a "
                 f"normal premium in the historical scoring; only fees further above that actually count against a transfer"
             )
         elif feat == "club_quality_ratio":
@@ -715,11 +731,11 @@ def describe_loan_components(r):
             "value": round(float(r["perf_delta_pct"]), 1),
             "description": (
                 f"Started at {r['pre_ga_p90_vs_league']:.1f}x league average, now at "
-                f"{r['post_ga_p90_vs_league']:.1f}x on loan — beat the ~{r['expected_post_ga_p90_vs_league']:.1f}x "
+                f"{r['post_ga_p90_vs_league']:.1f}x on loan, beating the ~{r['expected_post_ga_p90_vs_league']:.1f}x "
                 f"expected for a player starting that high (some pullback from a peak is normal)"
                 if r["post_ga_p90_vs_league"] >= r["expected_post_ga_p90_vs_league"] else
                 f"Started at {r['pre_ga_p90_vs_league']:.1f}x league average, now at "
-                f"{r['post_ga_p90_vs_league']:.1f}x on loan — below the ~{r['expected_post_ga_p90_vs_league']:.1f}x "
+                f"{r['post_ga_p90_vs_league']:.1f}x on loan, below the ~{r['expected_post_ga_p90_vs_league']:.1f}x "
                 f"expected for a player starting that high"
             ),
         },
@@ -727,7 +743,7 @@ def describe_loan_components(r):
         {
             "label": FOTMOB_COMPONENT_LABELS[component],
             "value": round(float(r[f"{component}_pct"]), 1),
-            "description": describe_fotmob_component(component, r, position_plural, is_loan=True),
+            **describe_fotmob_component(component, r, position_plural, is_loan=True),
         }
         for component in ("attacking", "possession", "defensive", "rating")
         if bool(r[f"has_{component}_data"])

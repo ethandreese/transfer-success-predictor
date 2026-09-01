@@ -178,7 +178,7 @@ function renderCompareResult(data) {
   const delta = data.delta;
   const deltaEl = document.getElementById("compare-delta");
   if (Math.abs(delta) < 3) {
-    deltaEl.textContent = "These two scenarios score within a few points of each other — roughly a toss-up given the model's error margin.";
+    deltaEl.textContent = "These two scenarios score within a few points of each other, roughly a toss-up given the model's error margin.";
   } else if (delta > 0) {
     deltaEl.textContent = `Option A scores ${delta.toFixed(1)} points higher than Option B.`;
   } else {

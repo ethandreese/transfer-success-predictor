@@ -13,7 +13,7 @@
   <meta name="twitter:title" content="About - Transfer Success Predictor" />
   <meta name="twitter:description" content="How the Transfer Success Predictor's scoring model works, in plain language." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="stylesheet" href="/style.css?v=18" />
+  <link rel="stylesheet" href="/style.css?v=19" />
 </head>
 <body>
   <header>
@@ -37,14 +37,14 @@
       </p>
       <p>
         <strong>Historical scores</strong> (Browse and Loans pages) grade a transfer that
-        already happened, using data from the player's entire time at the club &mdash;
+        already happened, using data from the player's entire time at the club:
         performance, market value change, playing time, and more. These are backward-looking
         reports, not predictions.
       </p>
       <p>
         <strong>Predictions</strong> (the homepage and Compare page) estimate how a
         <em>hypothetical</em> transfer might go, using only information available before the
-        move &mdash; age, recent form, fee, market value, and the clubs involved. Nothing
+        move: age, recent form, fee, market value, and the clubs involved. Nothing
         about what actually happened afterward is used, since a real prediction can't see
         the future either.
       </p>
@@ -56,7 +56,7 @@
         A historical transfer's score blends several ingredients: how well the player
         performed relative to their league's average, how their performance changed from
         before the move, how much their market value grew, how much they actually played,
-        whether the fee looked reasonable in hindsight, and &mdash; where available &mdash;
+        whether the fee looked reasonable in hindsight, and, where available,
         detailed FotMob stats (attacking output, defending, possession, overall rating).
         The exact weighting shifts by position: a striker's score leans heavily on goal
         involvement, a centre-back's leans on defending, and a goalkeeper's is judged almost
@@ -65,7 +65,7 @@
       </p>
       <p>
         Every score comes with a "why this score" breakdown showing the real underlying
-        numbers &mdash; click any card on the Browse or Loans page, or run a prediction, to
+        numbers. Click any card on the Browse or Loans page, or run a prediction, to
         see it.
       </p>
     </section>
@@ -74,7 +74,7 @@
       <h2>How honest is the prediction model?</h2>
       <p>
         Predicting how a brand-new transfer will play out over years, from nothing but
-        pre-transfer stats, is hard &mdash; injuries, tactics, and squad fit matter
+        pre-transfer stats, is hard: injuries, tactics, and squad fit matter
         as much as the numbers a model can see. The homepage states the model's real,
         measured error rate on every prediction rather than presenting a single number as
         gospel, and shows a likely range based on similar historical transfers instead of a
@@ -92,13 +92,13 @@
         this skews toward established first-team players rather than fringe squad moves.
       </p>
       <p>
-        The full technical writeup &mdash; every scoring decision, known limitation, and bug
-        found along the way &mdash; is in the
+        The full technical writeup (every scoring decision, known limitation, and bug
+        found along the way) is in the
         <a href="https://github.com/ethandreese/transfer-success-predictor#readme" target="_blank" rel="noopener">project README</a>.
       </p>
     </section>
   </main>
 
-  <script src="/settings.js?v=18"></script>
+  <script src="/settings.js?v=19"></script>
 </body>
 </html>

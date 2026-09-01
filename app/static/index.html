@@ -13,7 +13,7 @@
   <meta name="twitter:title" content="Transfer Success Predictor" />
   <meta name="twitter:description" content="Predict how a football transfer is likely to go, trained on ~5,000 real historical transfers." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="stylesheet" href="/style.css?v=18" />
+  <link rel="stylesheet" href="/style.css?v=19" />
 </head>
 <body>
   <header>
@@ -22,7 +22,7 @@
       Predicts how a football transfer is likely to go, trained on ~5,000 real permanent
       transfers (2013&ndash;2026) using pre-transfer performance, age, fee, and destination
       club strength. Success score blends performance level and change, market-value growth,
-      playing time, and value for money &mdash; measured over the player's <em>entire</em>
+      playing time, and value for money, measured over the player's <em>entire</em>
       tenure at the new club, not just year one. Loan spells are scored separately
       (see <a href="/loans.html">Browse loans</a>) since they aren't a permanent-transfer
       decision.
@@ -86,7 +86,7 @@
         <p class="disclaimer">
           The model's typical error on unseen (2023+) transfers is about
           <span id="mae-value">-</span> points on this 0&ndash;100 scale (R&sup2;
-          <span id="r2-value">-</span>) &mdash; predicting a player's *entire* tenure at a new
+          <span id="r2-value">-</span>). Predicting a player's *entire* tenure at a new
           club from pre-transfer stats alone is genuinely hard, since injuries, tactics,
           and squad fit over multiple years matter as much as the numbers here. Treat
           this as a rough signal, not a certainty.
@@ -95,7 +95,7 @@
     </section>
   </main>
 
-  <script src="/settings.js?v=18"></script>
-  <script src="/app.js?v=18"></script>
+  <script src="/settings.js?v=19"></script>
+  <script src="/app.js?v=19"></script>
 </body>
 </html>

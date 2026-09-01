@@ -201,6 +201,28 @@ h2 {
   opacity: 1;
 }
 
+/* A component with multiple sub-stats (e.g. Attacking: goals, xG, xA, chances
+   created) lists them here instead of running them into the description as
+   one comma-separated sentence - see describe_fotmob_component() in
+   app/main.py. */
+.tooltip-stats {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+}
+
+.tooltip-stats li {
+  padding-left: 0.7rem;
+  position: relative;
+}
+
+.tooltip-stats li::before {
+  content: "\2013";
+  position: absolute;
+  left: 0;
+  color: var(--muted);
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
