@@ -113,21 +113,28 @@ def load_transfer_types():
     """
     if not os.path.exists(TRANSFER_TYPES_PATH):
         print(f"  (no transfer-type cache at {TRANSFER_TYPES_PATH} - run scripts/fetch_transfer_types.py to enable loan detection; continuing without it)")
-        return pd.DataFrame(columns=["player_id", "transfer_date", "from_club_id", "to_club_id", "transfer_type", "fee_raw"])
-    types = pd.read_csv(
-        TRANSFER_TYPES_PATH,
-        usecols=["player_id", "transfer_date", "from_club_id", "to_club_id", "transfer_type", "fee_raw"],
-    )
-    # Parsed separately (not via read_csv's parse_dates) because the live API
-    # occasionally returns the sentinel "0000-00-00" for a transfer's date -
-    # a known artifact the upstream dcaribou pipeline filters out too - and
-    # even one such value makes parse_dates silently leave the whole column
-    # as strings instead of raising. errors="coerce" turns just those rows
-    # into NaT, which can never join onto anything (transfers.csv itself has
-    # no such placeholder), so they're dropped here rather than causing a
-    # dtype mismatch downstream.
-    types["transfer_date"] = pd.to_datetime(types["transfer_date"], errors="coerce")
-    types = types.dropna(subset=["transfer_date"])
+        types = pd.DataFrame(columns=["player_id", "transfer_date", "from_club_id", "to_club_id", "transfer_type", "fee_raw"])
+    else:
+        types = pd.read_csv(
+            TRANSFER_TYPES_PATH,
+            usecols=["player_id", "transfer_date", "from_club_id", "to_club_id", "transfer_type", "fee_raw"],
+        )
+        # Parsed separately (not via read_csv's parse_dates) because the live
+        # API occasionally returns the sentinel "0000-00-00" for a transfer's
+        # date - a known artifact the upstream dcaribou pipeline filters out
+        # too - and even one such value makes parse_dates silently leave the
+        # whole column as strings instead of raising. errors="coerce" turns
+        # just those rows into NaT, which can never join onto anything
+        # (transfers.csv itself has no such placeholder), so they're dropped
+        # here rather than causing a dtype mismatch downstream.
+        types["transfer_date"] = pd.to_datetime(types["transfer_date"], errors="coerce")
+        types = types.dropna(subset=["transfer_date"])
+
+    # data/manual_transfers.csv rows (see _load_manual_transfer_types) carry
+    # their own transfer_type when it's known, same shape as this cache -
+    # concatenated in here rather than at each call site so load_transfers()
+    # and load_loan_spells() don't need to know manual rows exist at all.
+    types = pd.concat([types, _load_manual_transfer_types()], ignore_index=True)
     # A resumed fetch run could in principle append a player's rows twice;
     # de-dupe defensively on the natural key so the join below can't fan out.
     return types.drop_duplicates(subset=["player_id", "transfer_date", "from_club_id", "to_club_id"])
@@ -218,10 +225,119 @@ def load_pretransfer_fotmob_stats():
     return stats.drop_duplicates(subset=["player_id", "transfer_date"])
 
 
+MANUAL_TRANSFERS_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "manual_transfers.csv")
+
+
+def _load_manual_transfers():
+    """
+    A handful of real transfers that are simply absent from transfers.csv -
+    not a parsing gap on our end, checked directly against Transfermarkt
+    itself (both the player's own transfer-history table and the
+    destination club's season-arrivals page agree on the fee), just missing
+    from this packaged dataset. Eden Hazard's 2019 Chelsea -> Real Madrid
+    move (a ~120m euro transfer, about as high-profile as this dataset
+    gets) was the first one found, by a user noticing he wasn't on the
+    site at all; checking further (cross-referencing every player's
+    appearances.csv club-change history against transfers.csv) turned up
+    thousands of similar gaps, spread across effectively every league, not
+    concentrated in already-known-weak coverage. That population is too
+    noisy to backfill automatically, though - some of it is real gaps like
+    Hazard's, but some is appearances.csv itself misattributing games to a
+    club a player never played for (checked directly: Bukayo Saka's and
+    Curtis Jones's appearances.csv histories include games for clubs
+    they've never played for), which no amount of transfers.csv patching
+    would fix. So this stays a manually-verified list rather than a blind
+    automated pipeline: the top 100 candidates by market value were checked
+    one at a time against transfermarkt's own live transferHistory API
+    (https://www.transfermarkt.co.uk/ceapi/transferHistory/list/{player_id} -
+    the same endpoint scripts/fetch_transfer_types.py already uses, and the
+    only reliable way found to tell a real permanent transfer apart from a
+    loan or an internal reserve-team promotion - see below), 16 came back
+    genuinely missing and real, 84 were either already correctly in
+    transfers.csv under a club_id the appearances.csv heuristic didn't
+    check, not a real transfer to begin with (a handful of the "gaps" were
+    actually the appearances.csv-misattribution problem above, e.g. Bukayo
+    Saka's and Curtis Jones's histories including games for clubs they've
+    never played for), or an internal reserve/youth-team promotion rather
+    than a market move (e.g. Robin Le Normand's apparent Real Sociedad
+    arrival was really a promotion from Real Sociedad B). A first pass at
+    this used a self-hosted copy of github.com/felipeall/transfermarkt-api
+    instead, which was faster but is missing raw fee text - it can't tell
+    "loan transfer"/"End of loan" apart from "free transfer", and would
+    have added several of Patrick Bamford's loan spells (Chelsea's academy
+    graduate, loaned repeatedly before his real permanent departure) to
+    this table as if they were permanent moves before that was caught and
+    the whole batch was re-verified through the ceapi endpoint instead,
+    which classifies fee text properly (see classify_fee in
+    fetch_transfer_types.py, reused here). market_value_in_eur is left
+    blank for every row here deliberately rather than guessed at -
+    nearest_valuation in main() already pulls the real market value from
+    player_valuations.csv independently of this table.
+
+    That same batch's LOAN legs (the site has a Loans tab too, backed by
+    load_loan_spells()/finish_loan_dataset() - a permanent-transfer-only
+    backfill would keep missing those) surfaced separately: 12 distinct
+    loan-start legs, verified the same way and added with transfer_type
+    set to "loan" here (see _load_manual_transfer_types) so
+    load_transfer_types() picks them up and load_loan_spells() - not
+    load_transfers() - claims them. fee_raw is set to the literal string
+    "loan transfer" for these (never "end of loan") since
+    load_loan_spells()'s is_loan_start check keys off that text, not just
+    transfer_type, to tell a loan's start leg apart from its close-out.
+    Most (9 of 14, mostly Patrick Bamford's and Iuri Medeiros's loan
+    spells) still don't score even once added - not a bug, but
+    prepare_loans()'s existing pre_apps >= 10 bar correctly declining to
+    score a loan for a player who didn't have an established first-team
+    baseline before it, which is often *why* a young or fringe player gets
+    loaned out in the first place.
+    """
+    if not os.path.exists(MANUAL_TRANSFERS_PATH):
+        return pd.DataFrame(columns=[
+            "player_id", "transfer_date", "from_club_id", "to_club_id",
+            "from_club_name", "to_club_name", "transfer_fee",
+            "market_value_in_eur", "player_name", "transfer_type", "fee_raw",
+        ])
+    df = pd.read_csv(
+        MANUAL_TRANSFERS_PATH,
+        usecols=[
+            "player_id", "transfer_date", "from_club_id", "to_club_id",
+            "from_club_name", "to_club_name", "transfer_fee",
+            "market_value_in_eur", "player_name", "transfer_type", "fee_raw",
+        ],
+        parse_dates=["transfer_date"],
+    )
+    df["transfer_type"] = df["transfer_type"].fillna("")
+    df["fee_raw"] = df["fee_raw"].fillna("")
+    return df
+
+
+def _load_manual_transfer_types():
+    """
+    load_transfer_types()'s cache only knows about transfers.csv's own
+    rows - a manual_transfers.csv row (see _load_manual_transfers) has no
+    entry there, so without this it would default to "unknown", which
+    load_transfers()'s `!= "loan"` filter treats as a permanent transfer
+    regardless of what it actually was. Extended to also cover the site's
+    Loans tab (data/loan_score_weights.json's population): a manual row
+    can set its own `transfer_type` column directly (paid/free/loan) - a
+    "loan" row also needs `fee_raw` set to real loan-shaped text (e.g.
+    "loan transfer", never containing "end of loan") so
+    load_loan_spells()'s is_loan_start check (which also relies on
+    fee_raw, not just transfer_type) recognizes it as the loan's start leg
+    rather than its close-out. Rows with no transfer_type set are left out
+    entirely here, so the normal empty-cache "unknown" fallback in
+    load_transfers()/load_loan_spells() applies to them unchanged.
+    """
+    manual = _load_manual_transfers()
+    manual = manual[manual["transfer_type"] != ""]
+    return manual[["player_id", "transfer_date", "from_club_id", "to_club_id", "transfer_type", "fee_raw"]]
+
+
 def _load_raw_candidate_transfers():
     """
     Shared first step for load_transfers() and load_loan_spells(): read
-    transfers.csv, filter to the date range, and drop no-op moves
+    transfers.csv (plus data/manual_transfers.csv - see
+    _load_manual_transfers), filter to the date range, and drop no-op moves
     (from_club == to_club). Does not yet know about transfer_type or
     tenure_end - both loaders need those computed differently (see each
     function's docstring).
@@ -235,6 +351,10 @@ def _load_raw_candidate_transfers():
         ],
         parse_dates=["transfer_date"],
     )
+    manual_cols = ["player_id", "transfer_date", "from_club_id", "to_club_id",
+                   "from_club_name", "to_club_name", "transfer_fee",
+                   "market_value_in_eur", "player_name"]
+    df = pd.concat([df, _load_manual_transfers()[manual_cols]], ignore_index=True)
     df = df.dropna(subset=["transfer_date", "from_club_id", "to_club_id"])
     df = df[(df["transfer_date"] >= MIN_DATE) & (df["transfer_date"] <= MAX_DATE)]
     df = df[df["from_club_id"] != df["to_club_id"]]
@@ -1217,6 +1337,14 @@ def prepare_loans(players, clubs, appearances, valuations, team_games):
         df["age_at_transfer"].between(15, 42)
         & df["value_before"].gt(0)
         & df["value_after"].notna()
+        # players.csv uses the literal string "Missing" (not NaT/NaN) for a
+        # position it never recorded (~1% of all players) - lookup_weights
+        # does a plain dict lookup with no fallback, so a "Missing" row
+        # would KeyError there instead of just being silently unscoreable
+        # like any other real data gap. Never surfaced before the
+        # appearances.csv-vs-transfers.csv backfill (data/manual_transfers.csv)
+        # widened the candidate pool enough to actually include one.
+        & df["position"].isin(POSITION_WEIGHTS)
     )
     return df[valid].copy()
 
@@ -1428,6 +1556,14 @@ def main():
         df["age_at_transfer"].between(15, 42)
         & df["value_before"].gt(0)
         & df["value_after"].notna()
+        # players.csv uses the literal string "Missing" (not NaT/NaN) for a
+        # position it never recorded (~1% of all players) - lookup_weights
+        # does a plain dict lookup with no fallback, so a "Missing" row
+        # would KeyError there instead of just being silently unscoreable
+        # like any other real data gap. Never surfaced before the
+        # appearances.csv-vs-transfers.csv backfill (data/manual_transfers.csv)
+        # widened the candidate pool enough to actually include one.
+        & df["position"].isin(POSITION_WEIGHTS)
     )
     df = df[valid].copy()
 

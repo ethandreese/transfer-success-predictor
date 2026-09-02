@@ -625,8 +625,8 @@ features (age, position, physical attributes, fee, market value, prior-year
 performance including FotMob rating/xG/xA/passing/defensive output, and
 origin/destination club & league strength) — nothing about what happened
 after the move. Evaluated on a temporal holdout (trained on
-transfers before mid-2023, tested on transfers since): **MAE ≈ 12.66 points**
-on the 0–100 scale, R² ≈ 0.167, vs. ≈14.5 MAE for always predicting the
+transfers before mid-2023, tested on transfers since): **MAE ≈ 12.76 points**
+on the 0–100 scale, R² ≈ 0.158, vs. ≈14.5 MAE for always predicting the
 average. That's a modest but real signal, and honestly weaker than scoring
 a fixed first year would give — predicting a player's *entire future stint*
 at a new club from pre-transfer stats alone is genuinely hard, since
@@ -947,6 +947,97 @@ already be similar on it by construction, trivializing the comparison).
   covered separately (see `/loans.html`, ~3,200 of ~28k candidate loan
   spells) with a looser bar — only the pre-loan side needs ≥10
   appearances, not the loan itself.
+- The packaged `transfers.csv` itself has real gaps - a user noticed Eden
+  Hazard wasn't on the site at all despite his ~120m euro 2019 Chelsea ->
+  Real Madrid move being about as high-profile as this dataset gets.
+  Checked directly: he has zero rows in `transfers.csv` (by player_id and
+  by name), but the move is fully real - confirmed against Transfermarkt's
+  own club-level season pages and cross-checked with a screenshot of his
+  player-level transfer history. Checking further (every player's
+  `appearances.csv` club-change history against `transfers.csv`) turned up
+  thousands of similar gaps, spread across effectively every league -
+  too many, and too mixed with unrelated data-quality noise (some
+  `appearances.csv` club-history entries are themselves wrong, e.g. Bukayo
+  Saka's and Curtis Jones's include games for clubs they've never played
+  for), to backfill automatically with confidence. `data/manual_transfers.csv`
+  is a small, hand-verified supplement instead (each row checked against
+  Transfermarkt directly before being added, merged into the pipeline in
+  `_load_raw_candidate_transfers` so it flows through every downstream
+  step - appearance windows, FotMob matching, scoring - exactly like a
+  real `transfers.csv` row) - started with Hazard and Roberto Firmino's
+  2015 Hoffenheim -> Liverpool move, then extended to the 100 highest
+  market-value gaps from that appearances.csv-vs-transfers.csv check.
+  Verifying 100 candidates by hand doesn't scale, so each one was checked
+  through transfermarkt's own live `transferHistory` API instead (see the
+  loan-detection bullet below) - which turned out to matter twice over:
+  first, a lot of the "gaps" weren't real at all - 41 were already
+  correctly in `transfers.csv` under a `to_club_id` the appearances.csv
+  heuristic hadn't checked, and a further 40 had no matching real transfer
+  in transfermarkt's own history for that player at all (some of the
+  appearances.csv-misattribution problem above, e.g. Bukayo Saka's and
+  Curtis Jones's histories including games for clubs they've never played
+  for; some an internal reserve-team promotion mistaken for a market move,
+  e.g. Robin Le Normand's apparent Real Sociedad arrival was really a
+  promotion from Real Sociedad B). Second, a first pass used a self-hosted
+  copy of a different tool (github.com/felipeall/transfermarkt-api) that's
+  faster but can't distinguish "loan transfer" from "free transfer" in its
+  fee field - it would have added several of Patrick Bamford's loan spells
+  (loaned repeatedly by Chelsea before his real permanent departure) as if
+  they were permanent transfers, caught before anything was written by
+  re-running the whole batch through transfermarkt's transferHistory API
+  directly instead, which classifies fee text properly. Of 100 candidates,
+  16 came back genuinely real and missing; of those, only 2 (Emiliano
+  Sala's 2015 Bordeaux -> Nantes move, Ryan Mason's 2016 Spurs -> Hull
+  City move) actually show a score today, each needing its own real
+  subsequent departure added too so `tenure_end` doesn't default to
+  "today" for a player whose Transfermarkt market-value history has since
+  gone stale (same fix as Hazard/Firmino needed). The other 14 are correct
+  but score-less for now: most of those players' careers continued into a
+  club or league this dataset's `clubs.csv` doesn't cover at all (lower
+  divisions, leagues outside the tracked set), which a manual_transfers.csv
+  row alone can't fix - a real, separate coverage gap, not a bug in this
+  mechanism. The same batch's LOAN legs (the site has a Loans tab too,
+  which a permanent-only backfill would keep missing) were checked
+  separately - 12 distinct missing loan-start legs, verified the same way
+  and added with an explicit `transfer_type: loan` in
+  `manual_transfers.csv` so `load_loan_spells()` (not `load_transfers()`)
+  claims them. Only Emiliano Sala's early-career loan to Caen and Davide
+  Astori's loan to Roma actually score - the other 9 (mostly Patrick
+  Bamford's and Iuri Medeiros's loan spells, both loaned around
+  repeatedly as young/fringe players) correctly don't clear
+  `prepare_loans()`'s existing `pre_apps >= 10` bar, since not having an
+  established first-team baseline yet is often exactly *why* a player
+  gets loaned out in the first place - not a bug in the backfill.
+  Having proven the method out on those two batches, the remaining ~6,300
+  candidate players (~12,450 transitions) were run the same way as one
+  long batch job (resumable, checkpointed to CSV, ~0.3s between requests
+  out of courtesy to transfermarkt's servers - about an hour end to end):
+  9,575 came back genuinely real and missing (1,967 paid, 4,251 free,
+  2,668 loans, 689 unknown-fee), 2,875 correctly didn't (1,768 to a club
+  outside `clubs.csv`'s tracked set, 662 loan-end legs, 297 with no real
+  match, 91 already correct, 54 more internal-promotion cases, 3 exact
+  duplicates). Hit two more real bugs at this scale, both caught before
+  anything shipped: a malformed transfermarkt date ("2004-00-01", month
+  0 - a variant beyond the already-handled "0000-00-00" sentinel) crashed
+  the batch job outright, and a small number of `players.csv` rows use
+  the literal string "Missing" (not null) for an unrecorded position,
+  which `lookup_weights` had no fallback for - never surfaced before this
+  backfill widened the candidate pool enough to actually include one of
+  the ~1% of players it affects (both are `except`-guarded/filtered now).
+  Once merged in and rebuilt: **6,467 permanent transfers now score (up
+  from 5,066) and 3,868 loans (up from 3,201) - net +1,401 permanent and
+  +667 loans actually visible on the site**, a substantially better
+  yield than the 100-candidate batch's ~12-15% predicted, most likely
+  because that batch's market-value-first ordering skewed toward players
+  whose careers later continued into untracked leagues, which the full,
+  unordered population doesn't share to the same degree. Spot-checked
+  extensively before integrating: the 25 highest-value transfers found
+  this way are all famous, correctly-priced, real moves (Gareth Bale's
+  world-record ~101m euro move to Real Madrid among them), and a search
+  for the two failure patterns already found in the smaller batches
+  (reserve-team promotions via known naming conventions - Castilla,
+  Atlètic, Primavera, etc. - and duplicate candidates) turned up zero
+  further cases at the full scale.
 - Loan detection depends on a one-time batch fetch from transfermarkt's
   live, unofficial `transferHistory` API (`scripts/fetch_transfer_types.py`)
   — an undocumented endpoint, not a published third-party API, so it isn't
