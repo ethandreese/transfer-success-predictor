@@ -589,7 +589,7 @@ appearances at their single most-common position). A player with no
 hard it actually is to score in that specific league, not the whole
 dataset. For each (league, position) pair we compute the average goal
 contributions/90 across *all* appearances in that league (not just our
-~5,000 filtered transfers — this uses the full ~1.9M-appearance dataset, so
+~8,300 filtered transfers — this uses the full ~1.9M-appearance dataset, so
 even leagues with few transfers in our sample get a stable baseline). A
 player's raw output is then expressed as a multiple of that baseline (e.g.
 "2.2x the league average") before being percentile-ranked. Concretely:
@@ -864,11 +864,11 @@ already be similar on it by construction, trivializing the comparison).
   the 5 most similar real transfers, since a single point estimate
   overstates how confident a R²≈0.10 model can be), a "why this score"
   breakdown, and the nearest historical comparables.
-- **`/browse.html`** — every scored transfer (~5,000), filterable by
+- **`/browse.html`** — every scored transfer (~8,300), filterable by
   position and destination league, searchable by player/club name, sortable
   by score/date/fee/age, paginated. Click any row to open that transfer's
   full card (score + breakdown) in a modal.
-- **`/loans.html`** — every scored loan spell (~3,200), same browse/filter/
+- **`/loans.html`** — every scored loan spell (~4,300), same browse/filter/
   search/click-to-view-card experience as `/browse.html`, but scored on the
   loan-specific formula above (no fee/resale rows in the breakdown, and
   duration shown in months rather than years).
@@ -948,10 +948,10 @@ already be similar on it by construction, trivializing the comparison).
   broad position's weights like any other unmapped value, same as a
   player with no `game_lineups.csv` rows at all.
 - Only transfers with ≥10 appearances in both the year before and the whole
-  tenure after are included (~5,000 of ~104k candidate permanent transfers,
+  tenure after are included (~8,300 of ~112k candidate permanent transfers,
   once loans are excluded), which skews the training data toward
   established first-team players rather than fringe moves. Loans are
-  covered separately (see `/loans.html`, ~3,200 of ~28k candidate loan
+  covered separately (see `/loans.html`, ~4,300 of ~30k candidate loan
   spells) with a looser bar — only the pre-loan side needs ≥10
   appearances, not the loan itself.
 - The packaged `transfers.csv` itself has real gaps - a user noticed Eden
