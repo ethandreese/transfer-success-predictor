@@ -1068,6 +1068,32 @@ already be similar on it by construction, trivializing the comparison).
   pseudo-clubs in transfers.csv itself but aren't actually present as rows
   in `clubs.csv`, which the first version of this departure-fetch script
   wrongly treated as a skip reason before that was caught and relaxed.
+- The same "`tenure_end` defaults to today" mechanism above had a loan-
+  specific twin: `load_loan_spells()` computes a loan's `tenure_end` the
+  same shift-to-the-next-transfer way `load_transfers()` does, but every
+  loan-start row this backfill added was missing its own closing leg (the
+  "End of loan" return, or occasionally a loan-to-permanent conversion or
+  an early recall elsewhere) - `backfill_full.py`/the departure-fetch
+  script both deliberately skipped writing those as unneeded for
+  permanent-transfer scoring, not realizing loans needed them for a
+  different reason. Without it, a loan's tenure window ran past the real
+  loan end and on to whatever the player's *next* known transfer happened
+  to be, silently inflating both `tenure_days` and the "team's games
+  played during tenure" denominator - caught when a one-season loan
+  (Gareth Bale's 2020/21 spell at Tottenham) showed 32 of 101 team games
+  played (32%) instead of the real ~32 of 52 (62%), because his missing
+  2021 return to Real Madrid let the window run on for another 10 months
+  until his 2022 free transfer to LAFC. Fetched every affected player's
+  real closing leg the same way (`transferHistory` API, one request per
+  player): of 2,682 backfilled loan-start rows (1,936 unique players),
+  2,679 needed and got a closing leg added (the other 3 already had one on
+  record); across the full loan dataset this moved the median tenure from
+  something noticeably loan-atypical back down to 271 days (~9 months, a
+  normal single season) and the median percent of team games played to
+  61%. Loans passing the appearance filter grew from 3,971 to 4,306 as a
+  side effect - a tighter, correctly-bounded window changed which spells
+  clear `MIN_APPS_PER_WINDOW`/valuation-staleness checks in both
+  directions, not just Bale's.
 - Loan detection depends on a one-time batch fetch from transfermarkt's
   live, unofficial `transferHistory` API (`scripts/fetch_transfer_types.py`)
   — an undocumented endpoint, not a published third-party API, so it isn't

@@ -290,6 +290,26 @@ def _load_manual_transfers():
     score a loan for a player who didn't have an established first-team
     baseline before it, which is often *why* a young or fringe player gets
     loaned out in the first place.
+
+    The much larger later loan batch (2,682 backfilled loan-start legs)
+    initially had the "fee_raw never contains 'end of loan'" property
+    above too, since backfill_full.py deliberately skipped writing a
+    loan's close-out leg as unneeded for permanent-transfer scoring. That
+    was wrong for loans specifically: load_loan_spells() computes
+    tenure_end the same shift-to-next-transfer way load_transfers() does,
+    so a missing close-out let a loan's window run on to whatever the
+    player's next known transfer happened to be, sometimes a year or more
+    later (caught via Gareth Bale's 2020/21 Tottenham loan showing 32/101
+    team games played instead of the real 32/52). Fixed by fetching each
+    affected player's real close-out leg and adding it here too - THESE
+    rows are the one deliberate exception to the "never 'end of loan'"
+    rule above, with fee_raw set to the real "End of loan" text specifically
+    so is_loan_start correctly excludes them from being treated as a
+    second loan-start. 2,679 of 2,682 needed one (3 already had a real
+    close-out on record); resolved the same way for the ~2% of loan-starts
+    that turned out to convert into a permanent deal instead (transfer_type
+    left blank so they flow through load_transfers() normally) or end in
+    retirement.
     """
     if not os.path.exists(MANUAL_TRANSFERS_PATH):
         return pd.DataFrame(columns=[
