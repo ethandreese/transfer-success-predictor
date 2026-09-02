@@ -264,11 +264,11 @@ to single-digit percentages each - William Saliba's Centre-Back weights,
 for example, spend just 1%/1%/3% on them combined.
 
 **Resale profit is only counted when known**, which is deliberately rare:
-only ~31% of transfers have a genuine subsequent sale for a recorded fee
-(up from ~17% once loans were pulled out of the transfer chain - see below;
-previously a loan-out sitting between a permanent signing and its eventual
-resale made `next_transfer_fee` land on the loan's own unrecorded fee
-instead of skipping through to the real sale). A still-at-the-club player,
+only ~25% of transfers have a genuine subsequent sale for a recorded fee
+(up from ~17% once loans were pulled out of the transfer chain, and as
+high as ~31% before the transfer backfill's departure-fix batches added
+thousands of "Retired"/"Without Club" closures that end a tenure without
+ever being resold - see **Known limitations** below). A still-at-the-club player,
 or one whose next move is a real free transfer or a loan (see "Loan spells
 are scored separately" below — loans can no longer land here at all, now
 that they're detected and pulled out of the chain before this is
@@ -338,8 +338,8 @@ appearance counts and value growth genuinely incomparable in scale to a
 permanent tenure's. The four FotMob components (rating/attacking/
 defensive/possession - see below) are the exception: they're ranked
 against transfers and loans *combined* (see `attach_fotmob_components` in
-`scripts/build_dataset.py`) - about 44% of loans end up with a usable
-score in at least one bucket (lower than permanent transfers' 82%, since a
+`scripts/build_dataset.py`) - about 39% of loans end up with a usable
+score in at least one bucket (lower than permanent transfers' 67%, since a
 loan spell is usually a shorter tenure for a less-established player, so
 it clears FotMob's per-category minutes thresholds less often), but a
 given rating/tackles-per-90/etc. now means the same percentile whether
@@ -433,19 +433,19 @@ several destination leagues with real transfer volume in this dataset
 start much later — Russia's Premier League only from 2019/2020, Greece's
 Super League 1 not until 2021/2022 — and the newest-added leagues
 (Serbia, Romania) don't start until 2025/2026, though those two barely
-register as transfer destinations in this dataset. This isn't a
-matching-algorithm weakness for the leagues it does hit hard: checked
-directly for Greece, the name/club matcher succeeds on 86% of transfers
-that actually fall within a covered season (217 of 253) — right in line
-with every other league — but 92 of Greece's 345 candidate transfers/
-loans (27%) predate FotMob's Greek coverage entirely, dragging the
-league's *overall* FotMob match rate down to 62% even though the matcher
-itself isn't the problem. Russia shows the same pattern at a smaller
-scale (74% overall, coverage only from 2019/2020). Overall, 82% of scored
-transfers end up with a usable score in *at least one* of the four
-buckets — coverage varies by bucket (rating 70%, attacking 81%, defensive
-72%, possession 72%; rating specifically seems to need more minutes/
-matches than the others to qualify on FotMob's side). Each bucket's weight is dropped independently for a row missing
+register as transfer destinations in this dataset. This isn't a matching-algorithm weakness for the leagues it does hit
+hard, it's a volume effect: Greece and Russia's overall FotMob match
+rate (31% and 44% respectively, across permanent transfers and loans
+combined) dropped sharply once the transfer backfill (see **Known
+limitations** below) added thousands of older transfers dating back to
+2013 for leagues whose FotMob coverage only starts in 2019/2020
+(Russia) or 2021/2022 (Greece) - the matcher itself isn't any weaker
+there, there's just proportionally far more pre-coverage history to
+miss now. Overall, 67% of scored permanent transfers (39% of loans) end
+up with a usable score in *at least one* of the four buckets — coverage
+varies by bucket for permanent transfers (rating 54%, attacking 67%,
+defensive 57%, possession 57%; rating specifically seems to need more
+minutes/matches than the others to qualify on FotMob's side). Each bucket's weight is dropped independently for a row missing
 it, and the other weights renormalized, the same pattern already used for
 `resale_profit` - so a transfer can show, say, attacking and possession
 but not rating and defensive, and the score still sums to the same 0-100
@@ -625,8 +625,8 @@ features (age, position, physical attributes, fee, market value, prior-year
 performance including FotMob rating/xG/xA/passing/defensive output, and
 origin/destination club & league strength) — nothing about what happened
 after the move. Evaluated on a temporal holdout (trained on
-transfers before mid-2023, tested on transfers since): **MAE ≈ 12.64 points**
-on the 0–100 scale, R² ≈ 0.157, vs. ≈14.4 MAE for always predicting the
+transfers before mid-2023, tested on transfers since): **MAE ≈ 12.57 points**
+on the 0–100 scale, R² ≈ 0.156, vs. ≈14.4 MAE for always predicting the
 average. That's a modest but real signal, and honestly weaker than scoring
 a fixed first year would give — predicting a player's *entire future stint*
 at a new club from pre-transfer stats alone is genuinely hard, since
@@ -890,14 +890,21 @@ already be similar on it by construction, trivializing the comparison).
   leagues, but not until 2019/2020 for Russia or 2021/2022 for Greece -
   see "FotMob's coverage has two real ceilings" above for the full
   per-league picture), and not at all for Ukraine's Premier League. About
-  18% of scored permanent transfers (56% of loans)
+  33% of scored permanent transfers (61% of loans)
   still have no FotMob data in any of the four buckets and fall back to
   value growth, playing time, and value for money (plus perf_level/perf_delta
   for the permanent score) carrying the position almost entirely, as
   before - and even among covered transfers, individual buckets have
-  uneven coverage (rating 70%, attacking 81%, defensive 72%, possession
-  72% for permanent transfers), so it's common for a transfer or loan to
-  show some but not all four rows.
+  uneven coverage (rating 54%, attacking 67%, defensive 57%, possession
+  57% for permanent transfers), so it's common for a transfer or loan to
+  show some but not all four rows. Both figures dropped noticeably after
+  the transfer backfill (see below): the ~6,300-player backfill and its
+  follow-up fixes added thousands of transfers dating back to 2013,
+  many of them older than FotMob's coverage window for their
+  destination league, so the FotMob-matched share of the *whole*
+  dataset fell even though the same `scripts/fetch_fotmob_stats.py` re-fetch
+  (7,507 matched tenures, up from 5,705) matched every transfer FotMob
+  could possibly cover.
 - FotMob player/club matching relies on name/club text matching (no shared
   id exists between the two sites), which is inherently approximate.
   Verified well for a few high-volume leagues by hand (English club
