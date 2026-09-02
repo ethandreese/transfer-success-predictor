@@ -625,8 +625,8 @@ features (age, position, physical attributes, fee, market value, prior-year
 performance including FotMob rating/xG/xA/passing/defensive output, and
 origin/destination club & league strength) — nothing about what happened
 after the move. Evaluated on a temporal holdout (trained on
-transfers before mid-2023, tested on transfers since): **MAE ≈ 12.76 points**
-on the 0–100 scale, R² ≈ 0.158, vs. ≈14.5 MAE for always predicting the
+transfers before mid-2023, tested on transfers since): **MAE ≈ 12.64 points**
+on the 0–100 scale, R² ≈ 0.157, vs. ≈14.4 MAE for always predicting the
 average. That's a modest but real signal, and honestly weaker than scoring
 a fixed first year would give — predicting a player's *entire future stint*
 at a new club from pre-transfer stats alone is genuinely hard, since
@@ -1037,7 +1037,37 @@ already be similar on it by construction, trivializing the comparison).
   for the two failure patterns already found in the smaller batches
   (reserve-team promotions via known naming conventions - Castilla,
   Atlètic, Primavera, etc. - and duplicate candidates) turned up zero
-  further cases at the full scale.
+  further cases at the full scale. Gareth Bale's own Real Madrid move was
+  a case in point for a second, much bigger issue found right after: it
+  was correctly added by the batch above but still didn't score, for the
+  exact reason Hazard's and Firmino's original two rows needed a real
+  subsequent departure added (see above) - his real Real Madrid -> LAFC
+  free transfer wasn't in the data either, so `tenure_end` defaulted to
+  "today" and his (now career-over, so no-longer-updating) market value
+  was too stale to pass `value_after.notna()`. Checked how widespread
+  that specific pattern was among every row the backfill had added so
+  far, not just the fee/type verification already done: of the 3,334
+  backfilled candidates already clearing the appearance-count bar, 1,903
+  (~57%) were silently failing this exact way - almost the entire gap
+  between "passes the apps filter" and "actually scores". Re-ran the same
+  transferHistory-API method once more, this time fetching each affected
+  player's real subsequent move (skipping any loans in between, same
+  fold-back-into-the-same-tenure logic `load_transfers()` already uses)
+  instead of a new candidate transfer: 1,888 of 1,903 resolved (99.2% -
+  the remaining 15 genuinely have no recorded next move yet), pushing
+  permanent transfers from 6,467 to 8,297. The same check against the
+  *original* (non-backfilled) transfers.csv population found a much
+  smaller version of the same gap - 129 of 5,180 already-passing
+  candidates (~2.5%, mostly very recent 2024+ moves where transfers.csv's
+  last snapshot simply predates the player's next real move) - fixed the
+  same way, 111 of 129 resolved, for a final 8,356 permanent transfers.
+  A departure row is never itself scored (it exists purely to give
+  `tenure_end` something real to find), so unlike the primary candidate
+  rows it doesn't need its destination club to exist in `clubs.csv` -
+  "Retired" and "Without Club" (club_id 123/515) are real, frequently-used
+  pseudo-clubs in transfers.csv itself but aren't actually present as rows
+  in `clubs.csv`, which the first version of this departure-fetch script
+  wrongly treated as a skip reason before that was caught and relaxed.
 - Loan detection depends on a one-time batch fetch from transfermarkt's
   live, unofficial `transferHistory` API (`scripts/fetch_transfer_types.py`)
   — an undocumented endpoint, not a published third-party API, so it isn't

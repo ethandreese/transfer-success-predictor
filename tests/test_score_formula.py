@@ -300,17 +300,23 @@ def test_fotmob_data_covers_most_transfers_but_not_all():
 
 def test_resale_profit_only_counted_for_genuine_positive_fee_sales():
     """
-    ~31% of transfers have a known resale (a genuine subsequent sale for a
+    ~25% of transfers have a known resale (a genuine subsequent sale for a
     recorded fee) - the rest (still at the club, exited for free, or the
     next move's fee just isn't recorded) should have has_resale_data false
     and resale_profit_pct null. This rate rose from ~17% once loans were
     excluded from the transfer chain (see load_transfers/load_loan_spells)
     - previously, a loan-out sitting between a permanent signing and its
     eventual resale would make next_transfer_fee land on the loan's
-    (unrecorded) fee instead of skipping through to the real sale.
+    (unrecorded) fee instead of skipping through to the real sale. Dropped
+    again from ~31% once data/manual_transfers.csv's backfill (see README)
+    added thousands of transfers whose closing "departure" is frequently a
+    real, recorded retirement/free exit rather than a sale - a lower
+    resale rate than the original, more actively-tracked population, not
+    a bug (the original ~5,048 transfers still resolve resales at ~31%,
+    checked directly against this file before the threshold was updated).
     """
     df = pd.read_csv(os.path.join(DATA_DIR, "transfers_processed.csv"))
-    assert df["has_resale_data"].mean() == pytest.approx(0.308, abs=0.02)
+    assert df["has_resale_data"].mean() == pytest.approx(0.252, abs=0.02)
     assert df.loc[~df["has_resale_data"], "resale_profit_pct"].isna().all()
     assert df.loc[df["has_resale_data"], "resale_profit_pct"].notna().all()
     assert df.loc[df["has_resale_data"], "next_transfer_fee"].gt(0).all()
