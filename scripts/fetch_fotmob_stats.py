@@ -114,6 +114,14 @@ OUT_PATH = os.path.join(RAW_DIR, "fotmob_stats_cache.csv")
 TRANSFERS_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "transfers_processed.csv")
 LOANS_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "loans_processed.csv")
 
+# Same packaged Transfermarkt dataset build_dataset.py reads (kagglehub cache,
+# overridable the same way) - used here only to work out which significant
+# words are safe to match clubs on within a league (see AMBIGUOUS_CLUB_WORDS).
+TRANSFERMARKT_RAW_DIR = os.environ.get(
+    "TRANSFERMARKT_RAW_DIR",
+    os.path.expanduser("~/.cache/kagglehub/datasets/davidcariboo/player-scores/versions/677"),
+)
+
 # Pure corporate-form tokens that carry no identifying information (German
 # "1.FC"/"VfB"/"TSG", Italian "AC"/"SSC", Spanish "CD"/"UD"/"RCD", French
 # "AJ"/"OGC"/"SM", English "AFC") - NOT "City"/"United"/"Town", which
@@ -205,25 +213,87 @@ def normalize_club(name):
     return re.sub(r"\s+", " ", n).strip()
 
 
+# Known transliteration variants of the same word - clubs.csv spells three
+# of RU1's Moscow clubs "Moskva"/"Moskau" while to_club_name (matching
+# FotMob's English spelling) says "Moscow". Without normalizing these to
+# one canonical spelling, "moscow" would look falsely unique to whichever
+# club happens to already say "Moscow" in clubs.csv (Torpedo), instead of
+# correctly ambiguous across every real Moscow club - see
+# AMBIGUOUS_CLUB_WORDS, which is exactly what let Loko Moscow resolve to
+# Dinamo Moscow's stats before this was added.
+CLUB_WORD_SYNONYMS = {"moskva": "moscow", "moskau": "moscow"}
+
+
 def club_significant_words(norm_name):
-    """Words left after dropping CLUB_FILLER_TOKENS and anything under 4 characters (too short to be distinguishing on its own)."""
-    return {w for w in norm_name.split() if w not in CLUB_FILLER_TOKENS and len(w) >= 4}
+    """Words left after dropping CLUB_FILLER_TOKENS and anything under 4 characters (too short to be distinguishing on its own), with known transliteration variants (CLUB_WORD_SYNONYMS) folded to one spelling."""
+    words = {w for w in norm_name.split() if w not in CLUB_FILLER_TOKENS and len(w) >= 4}
+    return {CLUB_WORD_SYNONYMS.get(w, w) for w in words}
+
+
+def _load_ambiguous_club_words():
+    """
+    Per competition_id, every significant word (see club_significant_words)
+    shared by 2+ *different* real clubs in clubs.csv - e.g. ES1's "real"
+    (Real Madrid/Sociedad/Betis/Oviedo/Valladolid/Zaragoza all have it),
+    GB1's "city" (Man City/Leicester/Norwich/Swansea/Hull/Stoke/Cardiff) or
+    "west" (West Ham United/West Bromwich Albion). club_names_match's
+    shared-significant-word tier is meant to catch the SAME club under a
+    different rendering (Bayern Munich/Bayern München on "bayern", Sporting
+    CP/Sporting Lisbon on... - see below), but a word this common within one
+    league isn't distinguishing at all - checked directly against every
+    currently-fuzzy/exact-matched transfer: this tier alone was resolving
+    Manchester City to Swansea City's stats, Real Madrid to Real Sociedad's
+    or Real Betis's, West Ham United to West Bromwich Albion's, and three
+    different Moscow-club and Danish-"Boldklub"-club pairs to each other -
+    all different real clubs with no other basis for the match. A word
+    unique to one club in its league (bayern, freiburg, dortmund, aarhus,
+    braga - even though FotMob renders the last as "Sporting Braga") stays
+    a valid signal; only words two or more real clubs in the same league
+    actually share get excluded.
+
+    Counted by club_id, not name text - clubs.csv itself spells three of
+    RU1's Moscow clubs "Moskva"/"Moskau" and one in Cyrillic outright, so
+    counting by raw name string would under- or over-count real clubs
+    depending on which spelling a given row happens to use; club_id is the
+    one thing guaranteed to mean "one real club" regardless of spelling
+    (CLUB_WORD_SYNONYMS handles the transliteration side separately, so
+    "moscow" itself still comes out ambiguous).
+    """
+    clubs_path = os.path.join(TRANSFERMARKT_RAW_DIR, "clubs.csv")
+    if not os.path.exists(clubs_path):
+        return {}
+    clubs = pd.read_csv(clubs_path, usecols=["club_id", "name", "domestic_competition_id"])
+
+    ambiguous = {}
+    for comp_id, group in clubs.groupby("domestic_competition_id"):
+        word_clubs = {}
+        for club_id, name in zip(group["club_id"], group["name"]):
+            for word in club_significant_words(normalize_club(name)):
+                word_clubs.setdefault(word, set()).add(club_id)
+        ambiguous[comp_id] = {w for w, ids in word_clubs.items() if len(ids) > 1}
+    return ambiguous
+
+
+AMBIGUOUS_CLUB_WORDS = _load_ambiguous_club_words()
 
 
 def club_names_match(norm_a, norm_b, comp_id=None):
     """
     Checked in order: an explicit LEAGUE_CLUB_ALIASES entry for this
     league, then three progressively looser generic checks: exact/
-    substring match, a shared significant word (post-filler-stripping), or
-    a high fuzzy-ratio (catches transliteration drift, e.g. Cyrillic names
-    romanized slightly differently by the two sites).
+    substring match, a shared significant word (post-filler-stripping,
+    excluding words AMBIGUOUS_CLUB_WORDS marks as shared by multiple real
+    clubs in this league), or a high fuzzy-ratio (catches transliteration
+    drift, e.g. Cyrillic names romanized slightly differently by the two
+    sites).
     """
     aliases = LEAGUE_CLUB_ALIASES.get(comp_id, {})
     if aliases.get(norm_a) == norm_b or aliases.get(norm_b) == norm_a:
         return True
     if norm_a == norm_b or norm_a in norm_b or norm_b in norm_a:
         return True
-    if club_significant_words(norm_a) & club_significant_words(norm_b):
+    shared_words = club_significant_words(norm_a) & club_significant_words(norm_b)
+    if shared_words - AMBIGUOUS_CLUB_WORDS.get(comp_id, set()):
         return True
     return difflib.SequenceMatcher(None, norm_a, norm_b).ratio() >= 0.72
 

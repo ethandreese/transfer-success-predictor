@@ -1325,6 +1325,42 @@ already be similar on it by construction, trivializing the comparison).
   expected step down, since some of what the wrong matches were
   contributing was real correlation even though attached to the wrong
   player. All 98 tests pass.
+- The player-identity fix above has an exact club-side counterpart:
+  `club_names_match`'s shared-significant-word tier (built to catch the
+  same club under a different name - "Bayern Munich" vs. FotMob's "Bayern
+  München" on the shared word "bayern") has no way to tell a genuinely
+  distinguishing word from a generic one shared by several real clubs in
+  the same league. Checked directly by building the real word/league
+  collision table from clubs.csv: 155 within-league club pairs share a
+  "significant" word - Spain's six "Real ___" clubs all share "real",
+  England's "___ City"/"___ Town" clubs all share "city"/"town", France's
+  "Stade ___" clubs share "stade" - and re-running the matcher offline
+  found this wasn't just theoretical: Manchester City was resolving to
+  Swansea City's stats, Real Madrid to Real Sociedad's or Real Betis's,
+  West Ham United to West Bromwich Albion's, and three Moscow-club and
+  Danish-"Boldklub"-club pairs to each other, all via one shared generic
+  word with nothing else in common. Fix: precompute, per competition_id,
+  which significant words are actually shared by 2+ different real clubs
+  in clubs.csv (grouped by club_id, not name text - clubs.csv itself
+  spells three of Russia's Moscow clubs "Moskva"/"Moskau" and one outright
+  in Cyrillic, so counting by name string first over-counted "Dinamo" and
+  "Spartak" as ambiguous too, caught by testing against clubs known to
+  need the tier - fixed by keying on club_id and folding transliteration
+  variants to one spelling via a small CLUB_WORD_SYNONYMS table before
+  counting) - the tier now requires a shared word that ISN'T on that
+  league's ambiguous list. Genuinely unique words still match fine (Bayern
+  Munich/München, Sporting CP/Lisbon, SC Braga/"Sporting Braga",
+  Aarhus GF/AGF Aarhus, Rapid Vienna/SK Rapid Wien). Two pairs lose
+  coverage rather than gaining a wrong answer: Russia's two real "Dinamo"
+  clubs (Moskva/Makhachkala) and two real "Spartak" clubs (Moskva/
+  Vladikavkaz) mean neither word alone is safe even after transliteration
+  normalization, so FK Dinamo Moskva vs. "Dinamo Moscow" (FotMob) now
+  correctly falls through to no-match instead of an unsafe guess - the
+  same "no match beats a wrong one" trade-off as every other fix here.
+  Re-ran both fetch scripts and rebuilt: permanent transfers with FotMob
+  coverage 5,353 -> 5,336, loans 1,614 -> 1,611 (small, expected -
+  removing wrong matches rather than replacing them). Retrained: test MAE
+  12.66, R^2 0.151, materially unchanged. All 98 tests pass.
 - Predicting a *new* hypothetical transfer is meaningfully less reliable
   than the historical scores shown for known transfers, since the model
   only sees pre-transfer information by construction.
