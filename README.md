@@ -1272,6 +1272,43 @@ already be similar on it by construction, trivializing the comparison).
   error away from being wrongly excluded rather than just mis-scored.
   Neither loan's score moved by more than 0.1 point once FotMob/percentile
   ranking absorbed the corrected counts.
+- Went looking for a repeat of the ter Stegen/Christensen FotMob identity
+  bug above, since that class of bug (a real player's tenure silently
+  showing a different real player's stats) had only been checked once, a
+  while before this dataset roughly doubled in size. Re-ran `find_fotmob_id`
+  offline against every currently-matched transfer/loan using just the
+  local season cache (no live requests) and traced which pass (exact vs.
+  fuzzy) resolved each of the 8,167 matches: 562 came from the fuzzy
+  fallback. Recomputing each one's name-similarity ratio in *both*
+  directions (`difflib`'s ratio isn't symmetric for different-length
+  strings) found one genuine case that shouldn't have matched at all:
+  `get_close_matches` accepts a candidate if its ratio clears 0.6 in the
+  single direction it happens to compute, and "blair alston" vs. "jamie
+  hamilton" clears it that way (0.62) while failing badly in reverse
+  (0.31) - two names with no real resemblance, but Blair Alston's real
+  2019 St. Johnstone -> Hamilton Academical transfer was showing a
+  different, unrelated Hamilton Academical player's FotMob rating,
+  attacking/defensive/possession percentiles, and success_score as a
+  result (the club check passed too, since Jamie Hamilton genuinely plays
+  for the right club - just isn't Blair Alston). The other 561 fuzzy
+  matches all checked out as real nickname/full-name variants (Bremer ->
+  Gleison Bremer, Cyriac -> Gohi Bi Cyriac, Xavier -> António Xavier,
+  etc.) - every one of them already clears 0.6 in both directions, so
+  requiring both was a precise fix: `find_fotmob_id` now discards any
+  `get_close_matches` candidate whose reverse-direction ratio doesn't also
+  clear the cutoff, changing exactly this one case and nothing else in the
+  fuzzy population. Re-ran `fetch_fotmob_stats.py` and
+  `fetch_pretransfer_fotmob_stats.py` (both share this function; the
+  live-prediction-form autofill script, `fetch_current_fotmob_stats.py`,
+  shares it too but wasn't re-run this pass since it doesn't feed any
+  historical score) and rebuilt: Blair Alston now correctly has no FotMob
+  data at all rather than someone else's (success_score 30.5 -> 47.2, the
+  four FotMob components computed the same way any other unmatched
+  transfer's are - dropped and renormalized, not zeroed). Retrained
+  afterward: test MAE 12.60, R^2 0.157 (up slightly from 0.155, alongside
+  806 more pre-transfer FotMob rows now matched simply because
+  transfers_processed.csv had grown since this cache was last built, not
+  because of the fix itself). All 98 tests pass.
 - Predicting a *new* hypothetical transfer is meaningfully less reliable
   than the historical scores shown for known transfers, since the model
   only sees pre-transfer information by construction.

@@ -371,6 +371,20 @@ def find_fotmob_id(transfer_row, season_tables, seasons_newest_first, comp_id):
         table = table.copy()
         table["norm_name"] = table["fotmob_name"].map(normalize_club)
         close = difflib.get_close_matches(norm_name, table["norm_name"].tolist(), n=3, cutoff=0.6)
+        # get_close_matches only checks the ratio in one direction (candidate,
+        # word) - difflib's ratio isn't symmetric for different-length
+        # strings, so a pair with no real resemblance can still clear the
+        # cutoff there while failing it the other way round. Found on real
+        # data: ratio("blair alston", "jamie hamilton") is 0.31, but
+        # get_close_matches computes the reverse (0.62) and passed it
+        # through - then the club check passed too, since Jamie Hamilton is
+        # a real, different Hamilton Academical player. Requiring both
+        # directions to clear the cutoff rejects that pair while keeping
+        # every legitimate nickname/full-name match already found (Bremer ->
+        # Gleison Bremer, Cyriac -> Gohi Bi Cyriac, etc. all clear 0.6 both
+        # ways) - checked directly against the full dataset, this is the
+        # only one of 562 fuzzy matches it changes.
+        close = [c for c in close if difflib.SequenceMatcher(None, norm_name, c).ratio() >= 0.6]
         candidates = table[table["norm_name"].isin(close)]
         if candidates.empty:
             continue
