@@ -277,6 +277,59 @@ def _load_ambiguous_club_words():
 AMBIGUOUS_CLUB_WORDS = _load_ambiguous_club_words()
 
 
+def _load_next_competition():
+    """
+    For every (player_id, transfer_date) that shows up as some tenure's
+    tenure_end in transfers_processed.csv/loans_processed.csv, the
+    competition_id the player's real *next* transfer (transfers.csv +
+    manual_transfers.csv, matched by player_id and that exact date) landed
+    in. Powers the mirror image of the mid-season-join guard in run_league():
+    that guard drops the join season when a player arrives mid-season from
+    another club in the *same* league, because FotMob attributes the whole
+    season to wherever they're registered when fetched, not split by stint
+    (confirmed on Marc Guehi's Jan 2026 Crystal Palace -> Man City move
+    showing a near-full season under Man City). The same mechanism cuts the
+    other way at the *end* of a tenure: if a player leaves mid-season for
+    another club in the same league, their outgoing tenure's own final
+    season gets contaminated by whatever they did afterward - checked
+    directly against every currently FotMob-matched transfer/loan whose
+    tenure_end falls mid-season with a same-league next move: 206 of 259
+    had their last aggregated season showing a fotmob_team that didn't even
+    club_names_match the tenure's own destination (Memphis Depay's Barcelona
+    tenure picking up his post-departure Atletico Madrid season, Danny
+    Ings's Aston Villa tenure picking up his West Ham one, and so on) - not
+    a rare edge case, the dominant outcome once a same-league next move
+    exists. None if there's no matching next transfer (still there,
+    retired, or its destination club isn't in clubs.csv).
+    """
+    transfers = pd.read_csv(
+        os.path.join(TRANSFERMARKT_RAW_DIR, "transfers.csv"),
+        usecols=["player_id", "transfer_date", "to_club_id"], parse_dates=["transfer_date"],
+    )
+    manual_path = os.path.join(os.path.dirname(__file__), "..", "data", "manual_transfers.csv")
+    manual = (
+        pd.read_csv(manual_path, usecols=["player_id", "transfer_date", "to_club_id"], parse_dates=["transfer_date"])
+        if os.path.exists(manual_path) else pd.DataFrame(columns=["player_id", "transfer_date", "to_club_id"])
+    )
+    all_transfers = pd.concat([transfers, manual]).drop_duplicates(subset=["player_id", "transfer_date"])
+
+    clubs_path = os.path.join(TRANSFERMARKT_RAW_DIR, "clubs.csv")
+    if not os.path.exists(clubs_path):
+        return {}
+    clubs = pd.read_csv(clubs_path, usecols=["club_id", "domestic_competition_id"])
+    club_comp = dict(zip(clubs["club_id"], clubs["domestic_competition_id"]))
+
+    all_transfers["next_comp"] = all_transfers["to_club_id"].map(club_comp)
+    return {
+        (pid, date): comp
+        for pid, date, comp in zip(all_transfers["player_id"], all_transfers["transfer_date"], all_transfers["next_comp"])
+        if pd.notna(comp)
+    }
+
+
+NEXT_COMPETITION = _load_next_competition()
+
+
 def club_names_match(norm_a, norm_b, comp_id=None):
     """
     Checked in order: an explicit LEAGUE_CLUB_ALIASES entry for this
@@ -519,8 +572,15 @@ def run_league(client, comp_id, transfers):
         is_intra_league = t["from_domestic_competition_id"] == comp_id
         is_midseason_join = t["transfer_date"].month not in (6, 7, 8)
         join_season = season_label_for_date(t["transfer_date"])
-        contaminated = join_season if (is_intra_league and is_midseason_join and join_season in tenure_seasons) else None
-        agg_seasons = [s for s in tenure_seasons if s != contaminated]
+        join_contaminated = join_season if (is_intra_league and is_midseason_join and join_season in tenure_seasons) else None
+
+        # Mirror image at the other end of the tenure - see NEXT_COMPETITION.
+        next_comp = NEXT_COMPETITION.get((t["player_id"], t["tenure_end"]))
+        is_midseason_leave = t["tenure_end"].month not in (6, 7, 8)
+        leave_season = season_label_for_date(t["tenure_end"])
+        leave_contaminated = leave_season if (next_comp == comp_id and is_midseason_leave and leave_season in tenure_seasons) else None
+
+        agg_seasons = [s for s in tenure_seasons if s not in (join_contaminated, leave_contaminated)]
 
         fotmob_id = find_fotmob_id(t, season_tables, list(reversed(tenure_seasons)), comp_id)
         if fotmob_id is None:

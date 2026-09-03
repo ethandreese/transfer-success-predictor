@@ -1361,6 +1361,55 @@ already be similar on it by construction, trivializing the comparison).
   coverage 5,353 -> 5,336, loans 1,614 -> 1,611 (small, expected -
   removing wrong matches rather than replacing them). Retrained: test MAE
   12.66, R^2 0.151, materially unchanged. All 98 tests pass.
+- The biggest FotMob-correctness bug this pass wasn't a name/club matching
+  problem at all - it was in the season-stitching logic the earlier ones
+  had no reason to touch. This file's own docstring already documents that
+  FotMob attributes a player's whole season to whichever club they're
+  registered at when fetched, not split by stint, and that
+  `run_league()` drops the join season from a tenure's aggregate whenever
+  the player arrived mid-season from another club in the same league
+  (Marc Guehi's Jan 2026 Crystal Palace -> Man City move showing a
+  near-full season under Man City, confirmed there). What that guard never
+  covered: the *other* end of the same mechanism. A player who **leaves**
+  mid-season for another club in the same league has their outgoing
+  tenure's own final season contaminated the identical way, once fetched
+  after that next move has happened. Checked directly: of every currently
+  FotMob-matched transfer/loan whose tenure ends mid-season with a
+  same-league next move on record, 206 of 259 had a last aggregated season
+  whose fotmob_team didn't even `club_names_match` the tenure's own
+  destination club - not a rare edge case, the dominant outcome once a
+  same-league next move exists. Real examples caught this way: Memphis
+  Depay's 2021-2023 Barcelona tenure was picking up his post-departure
+  Atlético Madrid season (rating swung from a contaminated 6.59 to his
+  real Barcelona 7.35), Danny Ings's Aston Villa tenure was picking up his
+  West Ham one, Alexander Isak's Newcastle tenure was picking up his
+  Liverpool one.
+
+  Fix mirrors the join-side guard exactly, from the other direction: a new
+  `NEXT_COMPETITION` lookup (built from transfers.csv + manual_transfers.csv
+  + clubs.csv, keyed by (player_id, tenure_end) - the same real "what did
+  this player do next" question the appearances.csv backfill work earlier
+  had to answer per-player, just precomputed for every tenure at once) says
+  what league the player's actual next transfer landed in; `run_league()`
+  now excludes the tenure's final season too whenever that next move was
+  intra-league and mid-season, the same way it already excluded the first
+  season for a mid-season arrival. Re-ran both fetch scripts and rebuilt:
+  permanent transfers with FotMob coverage 5,336 -> 5,307, loans 1,611 ->
+  1,571 (some tenures had *only* the now-excluded contaminated season to
+  draw from and lose FotMob data entirely rather than gain a wrong number -
+  the same "no match beats a wrong one" trade-off as every fix this
+  session). Retrained: test MAE 12.73, R^2 0.148, essentially unchanged.
+  All 98 tests pass.
+
+  `fetch_pretransfer_fotmob_stats.py`'s own contamination check turned out
+  already complete on inspection, not missing this same gap - its pre-
+  transfer window's one boundary that can land on a real transfer event is
+  the transfer_date itself (the departure this whole transfer already is),
+  which its existing `is_intra_league`/`contaminated` check handles; the
+  window's other edge is a fixed 365-day lookback with no transfer event to
+  land on. `fetch_current_fotmob_stats.py` (the live-prediction-form
+  autofill script) wasn't re-run or audited this pass, same as the last two
+  fixes - it feeds no historical score.
 - Predicting a *new* hypothetical transfer is meaningfully less reliable
   than the historical scores shown for known transfers, since the model
   only sees pre-transfer information by construction.
