@@ -1,0 +1,5 @@
+appearance_id,player_id,player_name,date,wrong_club_id,wrong_club_name,correct_club_id,correct_club_name,note
+3077255_420187,420187,Nick Venema,2018-11-30,798,Excelsior Rotterdam,200,FC Utrecht,away game at Excelsior misattributed to the home club instead of Utrecht
+3122357_420187,420187,Nick Venema,2018-12-20,234,Feyenoord Rotterdam,200,FC Utrecht,away game at Feyenoord misattributed to the home club instead of Utrecht
+3141144_339332,339332,Noa Lang,2019-03-17,1090,AZ Alkmaar,610,Ajax Amsterdam,away game at AZ Alkmaar misattributed to the home club instead of Ajax
+3141147_339332,339332,Noa Lang,2019-04-03,1283,FC Emmen,610,Ajax Amsterdam,away game at FC Emmen misattributed to the home club instead of Ajax

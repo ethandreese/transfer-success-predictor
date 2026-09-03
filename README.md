@@ -1217,6 +1217,61 @@ already be similar on it by construction, trivializing the comparison).
   this batch fails `value_before.gt(0)`/`value_after.notna()` even with a
   real, correctly-dated transfer record now in place. Retrained afterward:
   test MAE 12.60 (baseline 14.36), R^2 0.155, in line with prior runs.
+- The 287 unresolved candidates from the pass above (no matching transfer in
+  that player's own transfermarkt history at all) turned out to share a
+  mechanism, not just noise: for some away fixtures, appearances.csv records
+  the *home* club as the player's own instead of their real (away) club -
+  confirmed directly against games.csv for the biggest offenders (Callumn
+  Morrison alone flagged 12 fictitious transitions - his row alternates
+  between Hearts, his real club, and that week's opponent, exactly tracking
+  Hearts' home/away fixture list). Checked how many of the 287 fit this
+  specific signature (the flagged transition's "new" club is the home side
+  of that exact game, the "old" club the away side): 124 (43%) do, and the
+  reverse direction (away shown instead of home) appears once in 287 -
+  a real, one-directional bug, not random noise, and not Scotland-specific
+  (SC1: 40, but also ES1: 23, L1: 13, FR1: 12, plus Champions/Europa League
+  and domestic cup fixtures). The other 163 don't fit and stay unexplained
+  (likely a mix of the reserve-team-promotion problem above and other
+  appearances.csv errors).
+
+  Since this is a bug in the packaged dataset rather than something specific
+  to these 287 flagged transitions, checked whether it reaches any
+  *currently scored* transfer or loan too, not just unresolved candidates:
+  scanned every player for 3+ distinct real clubs within any 30-day window
+  (real transfer rules can't produce that; this bug can) - national-team
+  call-ups have to be excluded first here, not just for the World Cup
+  filtering above, since a real transfer that happens to land right next to
+  an international break otherwise looks like exactly this signature (first
+  pass wrongly flagged Ademola Lookman, Evann Guessand, and Seko Fofana this
+  way - all three checked directly against games.csv and are clean, correct
+  transfers). 36 players have the real signature. Cross-referencing against
+  every row in transfers_processed.csv/loans_processed.csv found 14 of them
+  own 27 currently-scored rows between the two files - but owning *some*
+  erratic stretch in a career doesn't mean it touches the *specific*
+  transfer being scored, so each row's own scoring window (year-before for
+  the pre-window, transfer date through tenure_end for the post-window) was
+  checked against that player's actual anomalous date range. Only 2 of the
+  27 overlap: Nick Venema's 2019 Utrecht -> Almere City loan and Noa Lang's
+  2020 Ajax -> FC Twente loan, both in the pre-loan window specifically -
+  Venema's row on 2018-11-30 shows Excelsior Rotterdam (that day's home
+  club) instead of Utrecht, his real (away) side, and again on 2018-12-20
+  with Feyenoord Rotterdam; Lang's rows on 2019-03-17 and 2019-04-03 show AZ
+  Alkmaar and FC Emmen instead of Ajax, his real away side both times.
+
+  Small enough (2 rows, 4 appearance rows total) that an automated
+  correction pipeline isn't worth building - `data/manual_appearance_corrections.csv`
+  is a tiny, hand-verified list of (appearance_id, wrong_club_id,
+  correct_club_id) rows instead, same reasoning as manual_transfers.csv for
+  missing transfers, just for individual appearance rows. `load_appearances()`
+  applies it by appearance_id, only overwriting a row if its club_id still
+  matches what was verified at correction-write time (so a future upstream
+  dataset change can't get silently clobbered by a stale correction).
+  Effect: Venema's pre_apps went 17 -> 19 and Lang's 10 -> 12 (both were
+  undercounting his two real away starts) - Lang's case in particular had
+  been sitting exactly on the `pre_apps >= 10` bar before the fix, one data
+  error away from being wrongly excluded rather than just mis-scored.
+  Neither loan's score moved by more than 0.1 point once FotMob/percentile
+  ranking absorbed the corrected counts.
 - Predicting a *new* hypothetical transfer is meaningfully less reliable
   than the historical scores shown for known transfers, since the model
   only sees pre-transfer information by construction.

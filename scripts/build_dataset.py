@@ -563,16 +563,53 @@ def compute_club_value_proxy(players):
     return proxy
 
 
+MANUAL_APPEARANCE_CORRECTIONS_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "manual_appearance_corrections.csv")
+
+
 def load_appearances():
-    """Load appearances.csv: one row per (player, game) with goals/assists/minutes and the competition it was in."""
+    """
+    Load appearances.csv: one row per (player, game) with goals/assists/minutes
+    and the competition it was in.
+
+    A handful of rows have the wrong player_club_id: for some away fixtures,
+    the raw dataset records the *home* club instead of the player's own -
+    found while checking whether the appearances.csv-vs-transfers.csv
+    misattribution problem documented in _load_manual_transfers (Saka's and
+    Curtis Jones's histories including games for clubs they've never played
+    for) had a mechanism, not just isolated examples. Confirmed directly
+    against games.csv for several players (e.g. Nick Venema's 2018-11-30 and
+    2018-12-20 appearances are recorded under that day's home club -
+    Excelsior Rotterdam, Feyenoord Rotterdam - while he was actually turning
+    out for Utrecht, the away side both times; Noa Lang's 2019-03-17 and
+    2019-04-03 rows have the same issue with Ajax as the true away club).
+    Scanning every player for >=3 distinct real clubs within any 30-day
+    window (impossible for a real transfer, easy for this bug) found 36
+    players with the signature; cross-referencing against every currently
+    scored transfer/loan found only these two players' pre-transfer windows
+    actually overlap an affected date range, so this stays a small,
+    hand-verified correction list (data/manual_appearance_corrections.csv)
+    rather than an automated across-the-board fix - same reasoning as
+    manual_transfers.csv for missing transfers, just for appearance rows
+    instead of transfer rows.
+    """
     df = pd.read_csv(
         os.path.join(RAW_DIR, "appearances.csv"),
         usecols=[
-            "player_id", "player_club_id", "competition_id", "date",
+            "appearance_id", "player_id", "player_club_id", "competition_id", "date",
             "goals", "assists", "minutes_played",
         ],
         parse_dates=["date"],
     )
+
+    corrections = pd.read_csv(MANUAL_APPEARANCE_CORRECTIONS_PATH, usecols=["appearance_id", "wrong_club_id", "correct_club_id"])
+    df = df.merge(corrections, on="appearance_id", how="left")
+    # Only apply where the live club_id still matches what was verified at the
+    # time the correction was written - if the upstream dataset changes this
+    # row some other way, silently overwriting it could do more harm than
+    # leaving the (now different) discrepancy alone.
+    still_wrong = df["player_club_id"] == df["wrong_club_id"]
+    df.loc[still_wrong, "player_club_id"] = df.loc[still_wrong, "correct_club_id"]
+    df = df.drop(columns=["appearance_id", "wrong_club_id", "correct_club_id"])
     return df
 
 
