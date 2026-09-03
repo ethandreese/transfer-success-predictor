@@ -371,20 +371,29 @@ def find_fotmob_id(transfer_row, season_tables, seasons_newest_first, comp_id):
         table = table.copy()
         table["norm_name"] = table["fotmob_name"].map(normalize_club)
         close = difflib.get_close_matches(norm_name, table["norm_name"].tolist(), n=3, cutoff=0.6)
-        # get_close_matches only checks the ratio in one direction (candidate,
-        # word) - difflib's ratio isn't symmetric for different-length
-        # strings, so a pair with no real resemblance can still clear the
-        # cutoff there while failing it the other way round. Found on real
-        # data: ratio("blair alston", "jamie hamilton") is 0.31, but
-        # get_close_matches computes the reverse (0.62) and passed it
-        # through - then the club check passed too, since Jamie Hamilton is
-        # a real, different Hamilton Academical player. Requiring both
-        # directions to clear the cutoff rejects that pair while keeping
-        # every legitimate nickname/full-name match already found (Bremer ->
-        # Gleison Bremer, Cyriac -> Gohi Bi Cyriac, etc. all clear 0.6 both
-        # ways) - checked directly against the full dataset, this is the
-        # only one of 562 fuzzy matches it changes.
-        close = [c for c in close if difflib.SequenceMatcher(None, norm_name, c).ratio() >= 0.6]
+        # get_close_matches' raw character-ratio cutoff turned out to accept
+        # far more than the one asymmetric-ratio case first found here
+        # (requiring the ratio to also clear 0.6 in reverse - see git
+        # history): auditing every currently-fuzzy-matched transfer/loan for
+        # a FotMob id claimed by two different real Transfermarkt players
+        # turned up 34 such collisions, e.g. Mario Suarez wrongly resolving
+        # to Mauro Zarate's stats, Cristian Ansaldi to Cristian Zapata's,
+        # Habib Diarra to Habib Diallo's - none of these pairs share a
+        # single real name token, but a shared first name or generically-
+        # similar surname plus a same-club coincidence was enough to clear
+        # 0.6 *in both directions*, since raw character overlap doesn't
+        # know a name is made of discrete tokens. Every legitimate fuzzy
+        # match found instead has the shorter name's tokens wholly contained
+        # in the longer name's - a nickname/shortened form (Bremer subset of
+        # "Gleison Bremer", Alisson subset of "Alisson Becker") or a fuller
+        # name with an extra middle/second surname (Kerim Frei subset of
+        # "Kerim Frei Koyunlu", Fode Ballo subset of "Fode Ballo-Toure") -
+        # never a same-length pair that merely happens to share one token.
+        # Requiring that containment instead of a raw ratio rejects every
+        # confirmed-wrong collision above while keeping every confirmed-real
+        # one.
+        query_tokens = set(norm_name.split())
+        close = [c for c in close if query_tokens <= set(c.split()) or set(c.split()) <= query_tokens]
         candidates = table[table["norm_name"].isin(close)]
         if candidates.empty:
             continue

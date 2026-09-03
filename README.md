@@ -1279,36 +1279,52 @@ already be similar on it by construction, trivializing the comparison).
   offline against every currently-matched transfer/loan using just the
   local season cache (no live requests) and traced which pass (exact vs.
   fuzzy) resolved each of the 8,167 matches: 562 came from the fuzzy
-  fallback. Recomputing each one's name-similarity ratio in *both*
-  directions (`difflib`'s ratio isn't symmetric for different-length
-  strings) found one genuine case that shouldn't have matched at all:
-  `get_close_matches` accepts a candidate if its ratio clears 0.6 in the
-  single direction it happens to compute, and "blair alston" vs. "jamie
-  hamilton" clears it that way (0.62) while failing badly in reverse
-  (0.31) - two names with no real resemblance, but Blair Alston's real
-  2019 St. Johnstone -> Hamilton Academical transfer was showing a
-  different, unrelated Hamilton Academical player's FotMob rating,
-  attacking/defensive/possession percentiles, and success_score as a
-  result (the club check passed too, since Jamie Hamilton genuinely plays
-  for the right club - just isn't Blair Alston). The other 561 fuzzy
-  matches all checked out as real nickname/full-name variants (Bremer ->
-  Gleison Bremer, Cyriac -> Gohi Bi Cyriac, Xavier -> António Xavier,
-  etc.) - every one of them already clears 0.6 in both directions, so
-  requiring both was a precise fix: `find_fotmob_id` now discards any
-  `get_close_matches` candidate whose reverse-direction ratio doesn't also
-  clear the cutoff, changing exactly this one case and nothing else in the
-  fuzzy population. Re-ran `fetch_fotmob_stats.py` and
-  `fetch_pretransfer_fotmob_stats.py` (both share this function; the
-  live-prediction-form autofill script, `fetch_current_fotmob_stats.py`,
-  shares it too but wasn't re-run this pass since it doesn't feed any
-  historical score) and rebuilt: Blair Alston now correctly has no FotMob
-  data at all rather than someone else's (success_score 30.5 -> 47.2, the
-  four FotMob components computed the same way any other unmatched
-  transfer's are - dropped and renormalized, not zeroed). Retrained
-  afterward: test MAE 12.60, R^2 0.157 (up slightly from 0.155, alongside
-  806 more pre-transfer FotMob rows now matched simply because
-  transfers_processed.csv had grown since this cache was last built, not
-  because of the fix itself). All 98 tests pass.
+  fallback. First check - recomputing each one's name-similarity ratio in
+  *both* directions, since `difflib`'s ratio isn't symmetric for different-
+  length strings - found one clear case: `get_close_matches` accepts a
+  candidate once its ratio clears 0.6 in the single direction it happens to
+  compute, and "blair alston" vs. "jamie hamilton" clears it that way (0.62)
+  while failing badly in reverse (0.31), two names with no real resemblance.
+  Shipped that fix, then went further before trusting "the other 561 are
+  fine": grouped every fuzzy match by the FotMob id it resolved to and
+  looked for the same id claimed by two different real Transfermarkt
+  players - a FotMob identity can't belong to two people, so any such
+  collision proves at least one side is wrong regardless of what its own
+  ratio says. Found 34, and the both-directions check above didn't catch
+  any of them: raw character-ratio similarity doesn't know a name is made
+  of discrete tokens, so two unrelated people sharing just a first name or
+  a generically-similar surname (Mario Suarez/Mauro Zarate, Cristian
+  Ansaldi/Cristian Zapata, Habib Diarra/Habib Diallo, Ben Johnson/Mikey
+  Johnston) can clear 0.6 *in both directions* purely on overall character
+  overlap. Every legitimate fuzzy match, by contrast, has the shorter
+  name's tokens wholly contained in the longer one's - a nickname (Bremer
+  standing in for "Gleison Bremer", Alisson for "Alisson Becker") or a
+  fuller name with an extra middle/second surname (Kerim Frei inside "Kerim
+  Frei Koyunlu") - never a same-length pair merely sharing one token. Real
+  fix: require that containment instead of trusting the raw ratio at all.
+  Checked directly: 32 of the 34 collisions resolve cleanly once applied
+  (the wrong side stops matching, the right side - the one with an exact
+  match elsewhere - is unaffected). The remaining 2 are a structurally
+  different problem no token rule can fix without cost: two players
+  (Aleksandr Tashaev, and a player Transfermarkt itself records with the
+  single-token name "Jordan") have no exact FotMob match anywhere, and a
+  bare single-word query trivially subsets into *any* longer name sharing
+  that word - rejecting single-token subset matches outright would also
+  discard every legitimate nickname case above (Bremer, Alisson, Hannibal,
+  Danilo, Fabiano, Reinildo, Willyan, Everton, Xavier, Cyriac all resolve
+  via exactly that one-token-into-a-longer-name shape), a worse trade for
+  two remaining unresolved players. Left as a known gap rather than papered
+  over. Re-ran `fetch_fotmob_stats.py` and `fetch_pretransfer_fotmob_stats.py`
+  (both share this function; the live-prediction-form autofill script,
+  `fetch_current_fotmob_stats.py`, shares it too but wasn't re-run this pass
+  since it doesn't feed any historical score) and rebuilt: FotMob coverage
+  dropped slightly as the wrong matches were removed rather than replaced
+  (permanent transfers 5,586 -> 5,353 matched, loans 1,665 -> 1,614) -
+  correctness over coverage, consistent with every other fix here. Retrained
+  afterward: test MAE 12.70 (was 12.60), R^2 0.151 (was 0.157) - a small,
+  expected step down, since some of what the wrong matches were
+  contributing was real correlation even though attached to the wrong
+  player. All 98 tests pass.
 - Predicting a *new* hypothetical transfer is meaningfully less reliable
   than the historical scores shown for known transfers, since the model
   only sees pre-transfer information by construction.
