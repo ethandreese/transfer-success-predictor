@@ -1410,6 +1410,29 @@ already be similar on it by construction, trivializing the comparison).
   land on. `fetch_current_fotmob_stats.py` (the live-prediction-form
   autofill script) wasn't re-run or audited this pass, same as the last two
   fixes - it feeds no historical score.
+- `load_actual_sub_positions()` (see above) had its own small case-
+  sensitivity bug: 3,631 of `game_lineups.csv`'s rows record the broad
+  position as lowercase "midfield" instead of "Midfield" - the only such
+  case-duplicate among every position/sub-position label in that file.
+  Left unmerged, those votes fragment away from the properly-capitalized
+  bucket when picking each player's single most-common fielded position:
+  2,057 of the 2,195 affected players ended up with the literal string
+  "midfield" as their own returned value - harmless in itself, since
+  `lookup_weights` can't recognize that any more than it recognizes
+  "Midfield" (both fall back to the broad position's weights the same
+  way) - but for a handful of players enough of their real Midfield
+  appearances were siphoned into the lowercase bucket that a different,
+  less-common label won the count instead, including at least one real
+  reclassification into "Attacking Midfield" - a sub-position that *does*
+  carry its own distinct weight profile - instead of the generic Midfield
+  fallback the correctly-merged count actually supports. Fixed by folding
+  the lowercase variant into "Midfield" before counting. Currently zero
+  visible effect - none of the affected players are in today's scored
+  population, so `transfers_processed.csv`/`loans_processed.csv` come out
+  byte-identical after rebuilding - but a real, confirmed bug in the
+  lookup itself rather than a hypothetical one, the same reasoning as the
+  "Missing"-position fix above, and it will start mattering the moment an
+  affected player's transfer clears the scoring bar.
 - Predicting a *new* hypothetical transfer is meaningfully less reliable
   than the historical scores shown for known transfers, since the model
   only sees pre-transfer information by construction.

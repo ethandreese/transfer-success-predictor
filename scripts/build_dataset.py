@@ -507,6 +507,20 @@ def load_actual_sub_positions():
         os.path.join(RAW_DIR, "game_lineups.csv"),
         usecols=["player_id", "position"],
     ).dropna(subset=["position"])
+    # 3,631 rows record the broad position as lowercase "midfield" instead
+    # of "Midfield" - the only such case-duplicate among every position/
+    # sub-position label here. Left unmerged, those votes fragment away
+    # from "Midfield" in the mode below: for 2,057 of the 2,195 affected
+    # players "midfield" (lowercase) ends up as this function's own return
+    # value, a sub_position lookup_weights can't recognize either (falls
+    # back to the broad position weights - harmless, since "Midfield" would
+    # have fallen back the same way) - but a handful of players had enough
+    # of their real Midfield appearances siphoned into the lowercase bucket
+    # that a different, less-common label won the count instead, including
+    # at least one real reclassification into a sub-position that *does*
+    # carry its own weight profile (Attacking Midfield) instead of the
+    # generic Midfield fallback the merged count actually supports.
+    lineups["position"] = lineups["position"].replace({"midfield": "Midfield"})
     return lineups.groupby("player_id")["position"].agg(lambda s: s.value_counts().idxmax())
 
 
