@@ -1163,6 +1163,60 @@ already be similar on it by construction, trivializing the comparison).
   with real data, which annualize to 18-67 games/year, and the broken
   rows, which annualize to under 16) before trusting the denominator at
   all; rows below that skip forgiveness entirely.
+- Re-ran the appearances.csv-vs-transfers.csv cross-check above against the
+  now-backfilled data, to see whether it had been exhaustive: for every
+  player, find each place their appearances.csv club changes from one game
+  to the next, then check whether that (player, destination club) pair
+  exists anywhere in transfers.csv + `data/manual_transfers.csv` combined.
+  National-team call-ups show up as a "club change" too (a player's June
+  2026 World Cup squad, say) - filtered out by requiring both clubs be real
+  rows in clubs.csv, which dropped 3,900 of them, almost all clustered
+  right around the World Cup window. Of the 29,591 real club-to-club
+  transitions left, 2,028 (6.9%) still had no matching transfer record -
+  down sharply from "thousands, spread across every league" before the
+  backfill, but no longer spread evenly: it clusters hard in specific
+  leagues (Scotland - St. Mirren, Kilmarnock, Heart of Midlothian,
+  Motherwell, Celtic, Dundee; Ukraine - Chornomorets Odesa, Olimpik
+  Donetsk, Karpaty Lviv; a handful of Greek clubs too), a different and
+  more useful signal than the first pass's every-league noise. Verified the
+  same way as before (transfermarkt's live transferHistory API): 1,709
+  (84%) came back genuinely real, 287 matched no transfer at all in that
+  player's own transfermarkt history - spot-checked a sample and it's the
+  same appearances.csv-misattribution problem as Saka/Jones above (Wesley
+  Fofana's flagged Saint-Étienne -> Angers move, Nico Schlotterbeck's
+  flagged Werder Bremen spell, and Robin Le Normand's flagged Getafe/Real
+  Betis moves all fit no version of those players' real careers) - plus 29
+  duplicate candidates converging on the same real transfer and 3 more
+  reserve/youth-team promotions caught by a club-name pattern (Castilla,
+  Primavera, U19/U21/U23, etc). Two more bugs surfaced and fixed during
+  this pass: another instance of the malformed-date bug above (a fresh
+  "2009-00-01" this time, not a one-off), and the verification script's own
+  fee parser only recognized fee text starting with "EUR" - the live API
+  actually returns it with the literal "€" symbol ("€1.35m"), which had
+  been silently zeroing out every parsed fee until caught before anything
+  was written. Since each confirmed player's full transfer history was
+  already fetched, their next real move afterward (skipping over
+  intervening loans for a permanent transfer, same fold-back logic as
+  above) was pulled from the same response and added too, at no extra API
+  cost - so this batch doesn't ship the tenure_end bug the first one had to
+  discover after the fact. 1,313 such rows went in alongside the 1,712
+  primary ones, 3,025 total appended to `data/manual_transfers.csv`
+  (14,289 -> 17,314 rows). Rebuilding: permanent transfers clearing the
+  appearance-window filter grew from 8,356 to 8,523, but only 2 of the
+  1,712 primary candidates actually clear the market-value-freshness bar
+  too and show up scored - Paco Alcácer's 2016 Valencia -> Barcelona move
+  and David N'Gog's 2016 Stade Reims -> Panionios move - final count 8,358.
+  Loans stayed flat at 4,306 (17 of this batch's loans now score, offset by
+  17 previously-scoring rows whose tenure_end shifted once a teammate's
+  newly-added transfer became their real next-move anchor - `tenure_end` is
+  computed per player across every known transfer, so adding one real
+  transfer can silently recompute another). The tiny visible yield despite
+  84% of candidates being genuinely real matches the league clustering
+  above: Transfermarkt tracks market value for Scottish/Ukrainian/Greek
+  clubs far less consistently than for clubs.csv's core leagues, so most of
+  this batch fails `value_before.gt(0)`/`value_after.notna()` even with a
+  real, correctly-dated transfer record now in place. Retrained afterward:
+  test MAE 12.60 (baseline 14.36), R^2 0.155, in line with prior runs.
 - Predicting a *new* hypothetical transfer is meaningfully less reliable
   than the historical scores shown for known transfers, since the model
   only sees pre-transfer information by construction.
