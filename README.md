@@ -879,6 +879,42 @@ already be similar on it by construction, trivializing the comparison).
 
 ## Known limitations
 
+**Data-quality pass summary** (see the detailed entries below for the full
+investigation trail on each): starting from the appearances.csv-vs-
+transfers.csv gap backfill, a systematic hunt for similar bugs found and
+fixed several real ones. Net effect on the visible dataset was small on
+purpose - this was overwhelmingly a correctness pass, not a coverage one:
+permanent transfers scored went 8,356 -> 8,358, loans stayed flat at 4,306,
+even though 3,025 newly-verified real transfers went into
+`data/manual_transfers.csv` (most don't clear the scoring bar - see below).
+What actually changed was how much of what the site was already showing
+was *wrong*:
+- **206 currently-scored tenures** had their final season's FotMob stats
+  silently contaminated by whatever club the player moved to *afterward*
+  (Memphis Depay's Barcelona tenure was carrying his Atlético Madrid
+  season) - the single largest fix, both in row count and in how wrong the
+  old numbers were.
+- **34 players** were showing a different real player's FotMob stats
+  outright (Mario Suárez showing Mauro Zárate's rating) from a fuzzy name
+  matcher that was far leakier than one known case; **9 confirmed**
+  cross-club mismatches (Manchester City ↔ Swansea City, Real Madrid ↔
+  Real Sociedad/Betis) from the identical flaw on the club side, covering
+  155 structurally at-risk club pairs league-wide.
+- **2 loans** had undercounted pre-tenure appearances from a home/away
+  attribution bug in `appearances.csv` - one was sitting exactly on the
+  `pre_apps >= 10` scoring threshold.
+- **2,195 players** had a latent sub-position miscalculation from a stray
+  lowercase label in `game_lineups.csv` - currently zero visible effect,
+  but real, and it will start mattering the moment an affected player's
+  transfer clears the scoring bar.
+
+The model's own test MAE moved from 12.60 to 12.73 (R^2 0.155 -> 0.148)
+across these fixes - not a regression. Some of what the wrong data was
+contributing was coincidental correlation attached to the wrong player or
+club; a model trained on the corrected data reading marginally "less
+accurate" by that metric is the expected result of removing noise that
+happened to look like signal, not a sign anything broke.
+
 - The base Transfermarkt dataset has no column for defense-specific output
   (tackles, clean sheets, saves) - now substantially addressed by the four
   FotMob-derived components for both permanent transfers and loans (see
