@@ -215,6 +215,16 @@ POSITION_CONDITIONAL_FEATURES = [
 # reference_values median below is already the right "typical" comparison -
 # no position-conditional lookup needed for these specifically.
 
+# The 5 real Transfermarkt pre-transfer performance stats a live prediction
+# can be missing entirely for (a player currently at a club outside
+# LEAGUE_MAP - see app/main.py:impute_recent_performance) - never missing
+# in the training data itself (every historical transfer has real
+# appearance history), so this only matters at serve time. Structurally
+# dependent on each other (pre_minutes roughly equals pre_apps times
+# pre_mins_per_app) - see recent_performance_samples below and
+# app/main.py:PLAYING_TIME_FEATURES.
+RECENT_PERFORMANCE_FEATURES = ["pre_apps", "pre_minutes", "pre_goals_p90", "pre_ga_p90", "pre_mins_per_app"]
+
 
 def add_derived_features(df):
     """Add the log-transformed and NaN-filled columns NUMERIC_FEATURES/CATEGORICAL_FEATURES expect but transfers_processed.csv doesn't already have."""
@@ -398,6 +408,31 @@ def main():
         for position, sub in df.groupby("position")
     }
 
+    # For a live prediction with no real recent-performance data at all
+    # (see app/main.py:impute_recent_performance - a player currently at a
+    # club outside LEAGUE_MAP, e.g. Messi at Inter Miami), a single median
+    # point is one arbitrary guess at an unknown 5-feature combination, and
+    # a tree ensemble's response to a feature isn't linear - E[f(X)] !=
+    # f(E[X]). Checked directly: for a real missing-data case, predicting
+    # with the median point gave 55.6, but averaging the prediction over
+    # every real attacker's actual (self-consistent) profile gave a mean of
+    # 57.0 with real spread (52.9-63.1 across individual attackers) - the
+    # median point isn't neutral, it's just one specific (and here,
+    # somewhat pessimistic) guess. Every real position-matched row of
+    # RECENT_PERFORMANCE_FEATURES is stored here (not a random subsample -
+    # each position has at most ~1,600 rows, cheap to store and to average
+    # over in one batched pipeline.predict() call at serve time, ~35ms for
+    # 2,585 rows, tested directly) so app/main.py can marginalize over the
+    # real empirical distribution instead of committing to one point guess.
+    # Whole rows, not independently-sampled columns - these 5 features are
+    # structurally dependent (see PLAYING_TIME_FEATURES in app/main.py), so
+    # sampling each column on its own would recreate the exact "impossible
+    # combination" bug already fixed for the leave-one-out explanation.
+    recent_performance_samples = {
+        position: sub[RECENT_PERFORMANCE_FEATURES].to_dict(orient="records")
+        for position, sub in df.groupby("position")
+    }
+
     # A €100m fee for a player already valued at €70m isn't remarkable -
     # it's a ~1.4x premium, in line with what similarly-valued players go
     # for. But comparing the raw €100m against a flat "typical paid fee"
@@ -527,6 +562,7 @@ def main():
             "reference_values": reference_values,
             "reference_values_paid": reference_values_paid,
             "reference_values_by_position": reference_values_by_position,
+            "recent_performance_samples": recent_performance_samples,
             "position_conditional_features": POSITION_CONDITIONAL_FEATURES,
             "fee_regression": fee_regression,
             "club_value_rating_regression": club_value_rating_regression,

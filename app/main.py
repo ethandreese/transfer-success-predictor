@@ -799,6 +799,43 @@ def build_feature_row(req: PredictRequest) -> tuple[pd.DataFrame, dict]:
     return df, has_real_data
 
 
+def predict_marginalized_recent_performance(feature_row: pd.DataFrame, position: str) -> float:
+    """
+    The displayed success_score for a player with no real recent-
+    performance data at all (see impute_recent_performance) - averages the
+    model's prediction over every real same-position RECENT_PERFORMANCE_FEATURES
+    combination in the training data (metadata["recent_performance_samples"],
+    computed in train_model.py), instead of committing to feature_row's
+    single median-point guess for those 5 features.
+
+    A tree ensemble's response to a feature isn't linear, so E[f(X)] !=
+    f(E[X]) - checked directly: for a real missing-data case, the median
+    point predicted 55.6, but averaging over every real attacker's actual
+    profile gave a mean of 57.0 with real spread (52.9-63.1 depending on
+    which attacker's profile was used) - the median point isn't a neutral
+    "no information" input, it's one specific (and here, pessimistic)
+    guess. Whole real rows are used, not independently-resampled columns -
+    RECENT_PERFORMANCE_FEATURES are structurally dependent on each other
+    (see PLAYING_TIME_FEATURES), so resampling each column on its own would
+    recreate the exact "impossible combination" bug already fixed for the
+    leave-one-out explanation.
+
+    One batched pipeline.predict() call over all samples at once (~35ms for
+    2,585 rows, tested directly) rather than one call per sample - cheap
+    enough to run on every request that needs it. Falls back to
+    feature_row's own (median-imputed) prediction if this position somehow
+    has no stored samples at all (defensive - every position has hundreds
+    in practice).
+    """
+    samples = metadata["recent_performance_samples"].get(position)
+    if not samples:
+        return float(pipeline.predict(feature_row)[0])
+    batch = pd.concat([feature_row] * len(samples), ignore_index=True)
+    for feat in RECENT_PERFORMANCE_FEATURES:
+        batch[feat] = [s[feat] for s in samples]
+    return float(pipeline.predict(batch).mean())
+
+
 def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_data_flags: dict = {}, top_k: int = 5):
     """
     Approximate per-feature contributions by swapping one feature at a time
@@ -917,10 +954,19 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_data_f
     playing_time_contribution = swap_and_score(playing_time_refs)
     playing_time_direction = "raising" if playing_time_contribution >= 0 else "lowering"
     if not real_data_flags.get("pre_apps", True):
+        # Not "raising/lowering the score by 0.0 pts" here, unlike every
+        # other no-data message below - that framing would be misleading
+        # now: the *displayed* score already comes from
+        # predict_marginalized_recent_performance (see predict()), which
+        # measurably shifts the score from what a single median guess would
+        # give (checked directly: 55.6 -> 57.0 for a real case), just not in
+        # a way this leave-one-out swap can attribute to a specific point
+        # value the way it does for every feature that has one.
         playing_time_stats = None
         playing_time_detail = (
             "No recent performance data available for this player (outside the tracked leagues) - "
-            f"using league-typical values, {playing_time_direction} the score by {abs(playing_time_contribution)} pts"
+            f"the score above already averages the prediction across many real {POSITION_PLURAL.get(position, position).lower()}' "
+            "actual recent-performance profiles, rather than guessing a single typical one"
         )
     else:
         playing_time_stats = [
@@ -998,11 +1044,16 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_data_f
         if feat in RECENT_PERFORMANCE_FEATURES and not real_data_flags.get(feat, True):
             # actual_value already equals reference_value here (build_feature_row
             # imputed it with this exact reference - see impute_recent_performance),
-            # so contribution is guaranteed 0.0 - the plain swing-only detail below
-            # would read as a technically-true but useless "27 apps vs. a typical
-            # defender's 27 apps", instead of saying plainly that this player has no
-            # real recent-performance data at all (a club outside LEAGUE_MAP - see
-            # build_lookups.py).
+            # so this swap's own contribution is guaranteed 0.0 - the plain
+            # swing-only detail below would read as a technically-true but useless
+            # "0.31 vs. a typical midfielder's 0.31", instead of saying plainly
+            # that this player has no real recent-performance data at all (a club
+            # outside LEAGUE_MAP - see build_lookups.py). Not "raising/lowering the
+            # score by 0.0 pts" either, unlike a normal 0-contribution feature -
+            # that would misleadingly imply this feature played no part in the
+            # displayed score, when the *displayed* score actually comes from
+            # predict_marginalized_recent_performance (see predict()), which
+            # averages over real values of this feature rather than guessing one.
             contributions.append({
                 "feature": feat,
                 "label": FEATURE_LABELS.get(feat, feat),
@@ -1012,7 +1063,8 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_data_f
                 "stats": None,
                 "detail": (
                     "No recent performance data available for this player (outside the "
-                    f"tracked leagues) - using a league-typical value, {direction} the score by {abs(contribution)} pts"
+                    "tracked leagues) - the score above already averages the prediction across "
+                    f"many real {POSITION_PLURAL.get(position, position).lower()}' actual values"
                 ),
             })
             continue
@@ -1298,13 +1350,37 @@ def predict(req: PredictRequest):
     historical transfers - a single point estimate would overstate how
     confident a R^2~0.10 model can be), the top-5 feature explanation, and
     the comparables themselves.
+
+    When there's no real recent-performance data at all (see
+    impute_recent_performance), the *displayed* score comes from
+    predict_marginalized_recent_performance instead of a plain
+    pipeline.predict() on feature_row's single median-point guess for those
+    5 features - see that function for why. explain_prediction is
+    deliberately still built from median_point_score, not the marginalized
+    one: every one of its per-feature swaps compares against feature_row's
+    own prediction, so feeding it a different base_score than what
+    feature_row itself predicts would shift every single feature's
+    contribution by the exact same constant amount (base_score minus
+    feature_row's real prediction) - caught directly while verifying this,
+    every contribution in a missing-data explanation was inflated by the
+    same ~+1.5, not just the recent-performance entries' own. The
+    breakdown explains the median-point prediction (self-consistent, as
+    always); only the headline number is upgraded to the marginalized one -
+    the two already don't sum to exactly the same thing for any nonlinear-
+    model prediction here, so this doesn't introduce a new kind of gap,
+    just widens the existing one slightly for this one case.
     """
     try:
         feature_row, real_data_flags = build_feature_row(req)
-        raw_score = float(pipeline.predict(feature_row)[0])
+        position = feature_row["position"].iloc[0]
+        median_point_score = float(pipeline.predict(feature_row)[0])
+        if real_data_flags.get("pre_apps", True):
+            raw_score = median_point_score
+        else:
+            raw_score = predict_marginalized_recent_performance(feature_row, position)
         score = max(0.0, min(100.0, raw_score))
         comps = find_comparables(feature_row)
-        explanation = explain_prediction(feature_row, raw_score, real_data_flags)
+        explanation = explain_prediction(feature_row, median_point_score, real_data_flags)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     comp_scores = [c["success_score"] for c in comps]

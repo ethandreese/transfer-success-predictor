@@ -6,7 +6,9 @@ raw Transfermarkt dataset.
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app, build_feature_row, explain_prediction, pipeline, PredictRequest
+from app.main import (
+    app, build_feature_row, explain_prediction, pipeline, predict_marginalized_recent_performance, PredictRequest,
+)
 
 client = TestClient(app)
 
@@ -175,6 +177,35 @@ def test_predict_missing_recent_performance_is_imputed_not_zero(sample_predict_p
     for feat in ["pre_goals_p90", "pre_ga_p90"]:
         assert all_features[feat]["contribution"] == 0.0
         assert "No recent performance data available" in all_features[feat]["detail"]
+
+
+def test_predict_missing_recent_performance_marginalizes_instead_of_one_guess(sample_predict_payload):
+    """
+    The *displayed* success_score for a missing-data player should come
+    from predict_marginalized_recent_performance (averaging the prediction
+    over every real same-position profile), not the plain pipeline.predict()
+    on feature_row's single median-imputed guess used for everything else
+    (comparables, other features' swap baseline) - a single median point
+    isn't neutral, since a tree ensemble's response to a feature isn't
+    linear (E[f(X)] != f(E[X]), checked directly with a real case where the
+    two differed by ~1.4 points - the gap's size depends on the specific
+    combination of other features, so isn't asserted as a fixed margin here).
+    """
+    payload = {**sample_predict_payload, "pre_apps": None, "pre_minutes": None,
+               "pre_goals_p90": None, "pre_ga_p90": None, "pre_mins_per_app": None}
+    req = PredictRequest(**payload)
+    feature_row, real_data_flags = build_feature_row(req)
+    expected_score = round(max(0.0, min(100.0, predict_marginalized_recent_performance(feature_row, "Attack"))), 1)
+
+    res = client.post("/api/predict", json=payload)
+    assert res.status_code == 200
+    assert res.json()["success_score"] == pytest.approx(expected_score, abs=0.05)
+
+    # Deterministic - marginalizing over a fixed, precomputed sample set
+    # (not live random sampling), so repeating the exact same request must
+    # give the exact same score.
+    res2 = client.post("/api/predict", json=payload)
+    assert res2.json()["success_score"] == res.json()["success_score"]
 
 
 def test_predict_playing_time_explained_as_one_group_not_backwards():

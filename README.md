@@ -1725,6 +1725,45 @@ happened to look like signal, not a sign anything broke.
   (`ga_p90 = goals_p90 + assists_p90`) but tested empirically without
   finding the same severity of issue, so they were left as independent
   entries rather than grouped on spec.
+- **When there's no real recent-performance data at all, the *displayed
+  score itself* now averages over real profiles instead of guessing one
+  median point.** Median-imputing the 5 missing features (see the
+  `build_lookups.py` fix above) fixed the fabricated-0 bug, but a single
+  median point still isn't a neutral "no information" input to a tree
+  ensemble - a model's response to a feature isn't linear, so
+  `E[f(X)] != f(E[X])`. Checked directly: for a real missing-data case, the
+  median point predicted 55.6, but averaging the prediction over every
+  real attacker's actual (self-consistent) profile in the training data
+  gave a mean of 57.0, with real spread across individual attackers
+  (52.9-63.1) - the median point wasn't neutral, it was one specific (and
+  here, pessimistic) guess. Fixed by storing every real position-matched
+  `RECENT_PERFORMANCE_FEATURES` combination from the training data
+  (`recent_performance_samples` in metadata.json - whole rows, not
+  independently-resampled columns, since resampling each column on its own
+  would recreate the exact impossible-combination bug above) and averaging
+  the model's prediction across all of them in one batched
+  `pipeline.predict()` call (`predict_marginalized_recent_performance` in
+  `app/main.py`) - checked directly for speed too: 35ms for 2,585 rows,
+  cheap enough to run on every request that needs it, and fully
+  deterministic since the sample set is precomputed at train time, not
+  drawn fresh per request.
+
+  This only changes the *headline* number - `explain_prediction` still
+  builds its per-feature breakdown from `feature_row`'s single median-point
+  prediction, deliberately not the marginalized one. Caught directly while
+  wiring this in: feeding the marginalized score into `explain_prediction`
+  as its base shifted *every single feature's* contribution by the exact
+  same constant (the gap between the two scores), not just the missing-data
+  features' own - a systematic bug, not a rounding nuance, since every
+  swap's contribution is `base_score − modified_score` and only
+  `base_score` had changed. Fixed by decoupling the two: the breakdown
+  explains the median-point prediction (self-consistent with itself, as
+  always), while only the number shown above it is upgraded to the
+  marginalized one. The two already don't sum to exactly the same thing for
+  any nonlinear-model prediction here (leave-one-out contributions never
+  perfectly reconcile with the total) - this widens that existing,
+  accepted gap slightly for this one case rather than introducing a new
+  kind of inconsistency.
 - Predicting a *new* hypothetical transfer is meaningfully less reliable
   than the historical scores shown for known transfers, since the model
   only sees pre-transfer information by construction.
