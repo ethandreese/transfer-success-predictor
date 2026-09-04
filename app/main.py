@@ -714,6 +714,15 @@ def compute_pretransfer_fotmob_composites(row):
 
 RECENT_PERFORMANCE_FEATURES = ["pre_apps", "pre_minutes", "pre_goals_p90", "pre_ga_p90", "pre_mins_per_app"]
 
+# The 3 of RECENT_PERFORMANCE_FEATURES that are structurally dependent on
+# each other (minutes roughly equals apps times mins_per_app) - explained
+# as one combined swap, not independently, to avoid producing a physically
+# impossible synthetic row (see explain_prediction). pre_goals_p90/
+# pre_ga_p90 are also related (ga_p90 = goals_p90 + assists_p90) but tested
+# empirically without finding the same severity of issue, so they're left
+# as independent explanation entries.
+PLAYING_TIME_FEATURES = ["pre_apps", "pre_minutes", "pre_mins_per_app"]
+
 
 def impute_recent_performance(row):
     """
@@ -884,11 +893,58 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_data_f
 
     is_goalkeeper = position == "Goalkeeper"
     has_data_flag_names = set(PRETRANSFER_FOTMOB_HAS_DATA_FLAGS.values())
+    typical_pos_label = f"a typical {POSITION_PLURAL.get(position, position).rstrip('s')}'s"
 
     contributions = []
+
+    # pre_apps/pre_minutes/pre_mins_per_app are structurally dependent
+    # (minutes roughly equals apps times mins_per_app) - swapping just one
+    # to its reference while the other two stay at the transfer's real
+    # values can produce a physically impossible row (e.g. "0 apps, 1979
+    # minutes, 0 min/app") that no real transfer ever has, which the model
+    # then extrapolates unpredictably at. Checked directly: for a real
+    # player with 0 recent apps/minutes/mins_per_app, swapping pre_minutes
+    # alone showed a backwards +3.1 ("raising the score" for having no
+    # recent playing time), while swapping all three together to one
+    # consistent "typical" combination showed the correct, honest -4.2 -
+    # and the three separate single-swap contributions don't even sum
+    # close to that joint number, confirming they aren't independent.
+    # Swapped together here for the explanation only, as one combined
+    # "Recent playing time" entry with a bulleted breakdown of the real
+    # numbers - the model itself is untouched, and was never shown an
+    # inconsistent combination like this in training, only real ones.
+    playing_time_refs = {f: resolve_reference(f)[0] for f in PLAYING_TIME_FEATURES}
+    playing_time_contribution = swap_and_score(playing_time_refs)
+    playing_time_direction = "raising" if playing_time_contribution >= 0 else "lowering"
+    if not real_data_flags.get("pre_apps", True):
+        playing_time_stats = None
+        playing_time_detail = (
+            "No recent performance data available for this player (outside the tracked leagues) - "
+            f"using league-typical values, {playing_time_direction} the score by {abs(playing_time_contribution)} pts"
+        )
+    else:
+        playing_time_stats = [
+            f"{FEATURE_LABELS[f]}: {format_feature_value(f, feature_row[f].iloc[0], context)}"
+            for f in PLAYING_TIME_FEATURES
+        ]
+        playing_time_detail = (
+            f"vs. {typical_pos_label} recent playing time, {playing_time_direction} the score by {abs(playing_time_contribution)} pts"
+        )
+    contributions.append({
+        "feature": "pre_playing_time",
+        "label": "Recent playing time",
+        "contribution": playing_time_contribution,
+        "actual_value": None,
+        "typical_value": None,
+        "stats": playing_time_stats,
+        "detail": playing_time_detail,
+    })
+
     for feat in NUMERIC_FEATURES + CATEGORICAL_FEATURES:
         if feat in has_data_flag_names:
             continue  # a data-quality flag, not a football signal - the composite feature's own detail (below) already says when it has no real data
+        if feat in PLAYING_TIME_FEATURES:
+            continue  # already handled together above - see playing_time_contribution
         reference_value, typical_label = resolve_reference(feat)
         actual_value = feature_row[feat].iloc[0]
         contribution = swap_and_score({feat: reference_value})

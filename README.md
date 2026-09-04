@@ -1698,13 +1698,33 @@ happened to look like signal, not a sign anything broke.
   position-conditional reference `explain_prediction` would independently
   pick, guaranteeing a true, honest 0.0 contribution and an explicit "No
   recent performance data available" message instead of a fabricated swing.
-  A related but separate thing surfaced while verifying this: for a player
+  A related but separate bug surfaced while verifying this: for a player
   at a *covered* club with a genuinely real 0 recent minutes (e.g. an
-  actual long-term injury), `pre_minutes` can still occasionally show a
-  small *positive* contribution in isolation even though the correlated
-  `pre_mins_per_app` correctly penalizes the same player - a real (if
-  surprising) shape the trained model learned at that boundary, not a data
-  artifact, and not addressed here.
+  actual long-term injury), `pre_minutes` could still show a small
+  *positive* contribution in isolation, even though the correlated
+  `pre_mins_per_app` correctly penalized the same player. Not a data
+  artifact this time, and not the model being wrong either - the leave-
+  one-out explanation swap itself was the problem: `pre_apps`,
+  `pre_minutes`, and `pre_mins_per_app` are structurally dependent
+  (minutes roughly equals apps times mins_per_app), so swapping `pre_minutes`
+  alone to its reference (~1979) while `pre_apps`/`pre_mins_per_app` stayed
+  at the player's real 0 produced a physically impossible synthetic row -
+  "0 apps, 1979 minutes, 0 min/app" - that no real transfer has ever had,
+  which the model then extrapolated at unpredictably. Checked directly: a
+  real player with real 0s across all three showed +3.1 for `pre_minutes`
+  swapped alone, but swapping all three together to one consistent
+  "typical" combination showed the correct, honest -4.2 - and the three
+  separate single-swap numbers don't even sum close to that joint one,
+  confirming they aren't independent contributions to begin with. Fixed by
+  swapping the three together as one combined "Recent playing time" entry
+  (bulleted breakdown of the real apps/minutes/min-per-app numbers,
+  the same shape as the FotMob group explanations above) rather than three
+  separate ones - explanation-only, the model itself never saw an
+  inconsistent combination like this in training, only real ones, so it
+  needed no change. `pre_goals_p90`/`pre_ga_p90` are related the same way
+  (`ga_p90 = goals_p90 + assists_p90`) but tested empirically without
+  finding the same severity of issue, so they were left as independent
+  entries rather than grouped on spec.
 - Predicting a *new* hypothetical transfer is meaningfully less reliable
   than the historical scores shown for known transfers, since the model
   only sees pre-transfer information by construction.

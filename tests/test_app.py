@@ -167,9 +167,40 @@ def test_predict_missing_recent_performance_is_imputed_not_zero(sample_predict_p
     raw_score = float(pipeline.predict(feature_row)[0])
     explanation = explain_prediction(feature_row, raw_score, real_data_flags, top_k=100)
     all_features = {e["feature"]: e for e in explanation}
-    for feat in ["pre_apps", "pre_minutes", "pre_goals_p90", "pre_ga_p90", "pre_mins_per_app"]:
+    # pre_apps/pre_minutes/pre_mins_per_app are explained together as one
+    # "pre_playing_time" entry (see PLAYING_TIME_FEATURES) - pre_goals_p90/
+    # pre_ga_p90 remain independent entries.
+    assert all_features["pre_playing_time"]["contribution"] == 0.0
+    assert "No recent performance data available" in all_features["pre_playing_time"]["detail"]
+    for feat in ["pre_goals_p90", "pre_ga_p90"]:
         assert all_features[feat]["contribution"] == 0.0
         assert "No recent performance data available" in all_features[feat]["detail"]
+
+
+def test_predict_playing_time_explained_as_one_group_not_backwards():
+    """
+    pre_apps/pre_minutes/pre_mins_per_app are structurally dependent
+    (minutes roughly equals apps times mins_per_app) - explaining
+    pre_minutes alone (holding pre_apps/pre_mins_per_app fixed at their
+    real 0 values) used to produce a physically impossible synthetic row
+    ("0 apps, ~2000 minutes, 0 min/app") that the model extrapolated at
+    unpredictably, showing a backwards *positive* contribution for having
+    no recent playing time. Swapping all three together should show a
+    real, honest *negative* contribution instead - checked directly for a
+    real player with real 0 recent apps/minutes/mins_per_app.
+    """
+    payload = {
+        "age_at_transfer": 22.0, "height_in_cm": 178.0, "position": "Midfield",
+        "sub_position": "Attacking Midfield", "foot": "left",
+        "pre_apps": 0.0, "pre_minutes": 0.0, "pre_goals_p90": 0.0, "pre_ga_p90": 0.0, "pre_mins_per_app": 0.0,
+        "transfer_fee": 30_000_000.0, "value_before": 25_000_000.0,
+        "from_domestic_competition_id": "L1", "to_domestic_competition_id": "GB1",
+        "from_total_market_value": 80_000_000.0, "to_total_market_value": 900_000_000.0,
+    }
+    all_features = {e["feature"]: e for e in explain_all(payload)}
+    assert all_features["pre_playing_time"]["contribution"] < 0
+    assert "lowering" in all_features["pre_playing_time"]["detail"]
+    assert all_features["pre_playing_time"]["stats"] is not None  # real data - bulleted breakdown, not the "no data" message
 
 
 def test_predict_fee_explanation_compares_against_value_expectation_not_flat_average(sample_predict_payload):
