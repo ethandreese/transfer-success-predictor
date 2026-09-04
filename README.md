@@ -1444,8 +1444,9 @@ happened to look like signal, not a sign anything broke.
   which its existing `is_intra_league`/`contaminated` check handles; the
   window's other edge is a fixed 365-day lookback with no transfer event to
   land on. `fetch_current_fotmob_stats.py` (the live-prediction-form
-  autofill script) wasn't re-run or audited this pass, same as the last two
-  fixes - it feeds no historical score.
+  autofill script) wasn't re-run or audited in this specific pass, same as
+  the last two fixes - it feeds no historical score - but see below, it got
+  its own audit right after.
 - `load_actual_sub_positions()` (see above) had its own small case-
   sensitivity bug: 3,631 of `game_lineups.csv`'s rows record the broad
   position as lowercase "midfield" instead of "Midfield" - the only such
@@ -1469,6 +1470,37 @@ happened to look like signal, not a sign anything broke.
   lookup itself rather than a hypothetical one, the same reasoning as the
   "Missing"-position fix above, and it will start mattering the moment an
   affected player's transfer clears the scoring bar.
+- `fetch_current_fotmob_stats.py` (the live-prediction-form "recent form"
+  autofill, feeding `players_lookup.csv`'s `recent_fotmob_*` columns) was
+  explicitly *not* re-run alongside the three matching fixes above, since
+  it feeds no historical score - but it shares `find_fotmob_id` and
+  `club_names_match` with the two scripts that do, unchanged, so its
+  cached output was just as exposed to the same bugs. It was: last built
+  back when the *only* fix in place was the original ter Stegen/
+  Christensen one, so it still carried the asymmetric-ratio, token-
+  containment, and ambiguous-club-word bugs all fixed since. Re-running it
+  removed 327 of 4,576 cached players' matches outright, and - checked
+  directly - changed the value for precisely zero players who kept a
+  match, the same "remove the wrong answer, don't replace it with a
+  different guess" signature as every fix above. The removed sample reads
+  exactly like the earlier bug list: players at "Stoke City," "West Ham
+  United," "Manchester United," "Real Sociedad," "FK Dinamo Moskva" (twice)
+  - the same generic-word club collisions, now caught here too.
+
+  Rebuilding this exposed a real pipeline ordering wrinkle, not a new bug:
+  `fetch_current_fotmob_stats.py` reads each player's `current_club_name`
+  from `players_lookup.csv` itself (not the raw dataset directly), but
+  `players_lookup.csv` hadn't been rebuilt in about a year - so the first
+  pass would have queried FotMob against a year-stale set of "current"
+  clubs. Fixed by rebuilding in the right order (`build_lookups.py` first
+  for fresh `current_club_name`, then `fetch_current_fotmob_stats.py`,
+  then `build_lookups.py` again to merge the corrected stats in) rather
+  than patching around it. That full rebuild necessarily pulled in a
+  year's worth of unrelated, legitimate drift too - `age_now` shifting for
+  virtually every player, ~276 players' `current_club_name` reflecting a
+  real transfer since then, some incidental data-source corrections - all
+  expected from the underlying dataset simply being newer, not part of
+  this fix and not audited further here.
 - Predicting a *new* hypothetical transfer is meaningfully less reliable
   than the historical scores shown for known transfers, since the model
   only sees pre-transfer information by construction.
