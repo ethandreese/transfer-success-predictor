@@ -857,6 +857,53 @@ than the nearest-neighbor mechanism (using neighbors chosen by a feature
 to explain that same feature would be circular — the neighbors would
 already be similar on it by construction, trivializing the comparison).
 
+**The pre-transfer FotMob stats are grouped in the explanation the same
+way the historical score groups them (rating/attacking/defensive/
+possession), without changing what the model itself trains on.** The
+model still consumes all 12 raw per-90 stats separately - a tree ensemble
+genuinely can learn more from ungrouped features than from a hand-
+aggregated percentile, so that part of the "raw numbers, not
+`compute_fotmob_component_pcts`'s buckets" reasoning above stands. What
+didn't hold up was using that same ungrouped shape for the *explanation*:
+individually, correlated stats (xG/xA/chances-created all move together
+for the same player) understate each other in a one-at-a-time leave-one-
+out swap, and fragment FotMob's real combined signal - "the single
+biggest accuracy improvement found this project" - into up to 7 line
+items too small to ever make a top-5 explanation. Fixed by swapping each
+whole group to its reference values in one prediction (not one feature at
+a time) for the explanation only, reporting one combined contribution and
+a labeled bulleted breakdown (`explain_prediction`'s `stats` field, same
+`{"description", "stats"}` shape `describe_fotmob_component` already uses
+for the historical card) - "Recent attacking output: +3.1, raising the
+score by 3.1 pts" with xG/xA/chances-created bulleted underneath, instead
+of three separate barely-there line items. `rating` stays its own entry
+(nothing to combine it with); the two defensive variants (outfield
+tackles/interceptions/clearances/recoveries vs. a goalkeeper's saves/
+save%/goals-conceded) are combined into one swap group rather than picked
+by position, since whichever variant doesn't apply to a given player is
+already sitting at its imputed median and swapping it again changes
+nothing - only the *description* shows the position-relevant subset, so
+an outfield player's card never lists a nonsensical "0 saves/90".
+
+Building this surfaced a real, separate bug, not just a UX gap: an
+imputed pre_fotmob_* feature (~35-45% of predictions have no real value
+for a given stat) was being compared against the *position-conditional*
+reference median in the leave-one-out swap, while the actual value itself
+had been imputed with the *flat, all-position* median in
+`build_feature_row` - two different baselines compared against each
+other, manufacturing a real-looking contribution out of pure imputation
+artifact (caught directly: an attacker with zero real defensive FotMob
+data was showing a confident "+3.7 Recent defensive work", purely because
+the flat median for tackles/90 sits above the attacker-specific one).
+Fixed by threading through which pre_fotmob_* features were genuinely
+provided (`build_feature_row` now returns that set alongside the feature
+row) and forcing an imputed feature's reference to the exact same flat
+median it was imputed with, guaranteeing a true zero rather than a fake
+swing - `has_pre_fotmob_data` (previously its own confusing top-5 entry,
+a data-quality flag with no football meaning) is retired in favor of each
+group's own "no recent FotMob data available" messaging when none of its
+underlying stats are real.
+
 ## Pages
 
 - **`/`** — predict a hypothetical transfer: search a real player, pick a

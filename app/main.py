@@ -357,20 +357,73 @@ FEATURE_LABELS = {
     "from_domestic_competition_id": "Origin league",
     "to_domestic_competition_id": "Destination league",
     "pre_fotmob_rating": "Recent FotMob rating",
-    "pre_fotmob_expected_goals_per_90": "Recent xG per 90",
-    "pre_fotmob_expected_assists_per_90": "Recent xA per 90",
-    "pre_fotmob_chances_created_p90": "Recent chances created per 90",
-    "pre_fotmob_accurate_pass": "Recent accurate passes per 90",
-    "pre_fotmob_won_contest": "Recent successful dribbles per 90",
-    "pre_fotmob_total_tackle": "Recent tackles per 90",
-    "pre_fotmob_interception": "Recent interceptions per 90",
-    "pre_fotmob_effective_clearance": "Recent clearances per 90",
-    "pre_fotmob_ball_recovery": "Recent recoveries per 90",
-    "pre_fotmob_saves": "Recent saves per 90",
-    "pre_fotmob__save_percentage": "Recent save percentage",
-    "pre_fotmob_goals_conceded": "Recent goals conceded per 90",
-    "has_pre_fotmob_data": "Recent FotMob data available",
+    # The other 12 pre_fotmob_* stats and has_pre_fotmob_data don't need an
+    # entry here - they're grouped (PRETRANSFER_FOTMOB_GROUPS) or folded
+    # into a group's own "no data" messaging in explain_prediction, never
+    # shown as their own standalone contribution.
 }
+
+# Pre-transfer FotMob stats are grouped into the same on-pitch buckets the
+# historical score uses (rating/attacking/defensive/possession - see
+# compute_fotmob_component_pcts in build_dataset.py), instead of surfacing
+# as 6-7 separate prediction-explanation line items. Individually they're
+# small and mutually correlated (xG/xA/chances-created all move together
+# for the same player), which used to both understate each one's real
+# contribution (see explain_prediction's leave-one-out swap - swapping just
+# one of several correlated features barely moves the prediction even when
+# the underlying signal matters a lot) and fragment FotMob's real combined
+# importance - "the single biggest accuracy improvement found this
+# project" per the comment above PRETRANSFER_FOTMOB_FEATURES in
+# train_model.py - into pieces too small to ever make a top-5 explanation.
+# rating stays its own single-feature entry (nothing to combine it with).
+# The two defensive variants (outfield tackles/interceptions/clearances/
+# recoveries vs. a goalkeeper's saves/save%/goals-conceded) are combined
+# into one swap-group rather than picked by position: whichever variant
+# doesn't apply to this player is already sitting at its imputed median
+# (an outfield player has no real saves data), so swapping it again to
+# that same median changes nothing - describe_pretransfer_fotmob_group
+# below still only *describes* the position-relevant subset.
+PRETRANSFER_FOTMOB_GROUPS = {
+    "pretransfer_attacking": {
+        "label": "Recent attacking output",
+        "features": ["pre_fotmob_expected_goals_per_90", "pre_fotmob_expected_assists_per_90", "pre_fotmob_chances_created_p90"],
+    },
+    "pretransfer_defensive": {
+        "label": "Recent defensive work",
+        "goalkeeper_label": "Recent shot-stopping",
+        "features": [
+            "pre_fotmob_total_tackle", "pre_fotmob_interception", "pre_fotmob_effective_clearance", "pre_fotmob_ball_recovery",
+            "pre_fotmob_saves", "pre_fotmob__save_percentage", "pre_fotmob_goals_conceded",
+        ],
+        "goalkeeper_features": ["pre_fotmob_saves", "pre_fotmob__save_percentage", "pre_fotmob_goals_conceded"],
+        "outfield_features": ["pre_fotmob_total_tackle", "pre_fotmob_interception", "pre_fotmob_effective_clearance", "pre_fotmob_ball_recovery"],
+    },
+    "pretransfer_possession": {
+        "label": "Recent passing/possession",
+        "features": ["pre_fotmob_accurate_pass", "pre_fotmob_won_contest"],
+    },
+}
+PRETRANSFER_FOTMOB_GROUPED_FEATURES = {f for g in PRETRANSFER_FOTMOB_GROUPS.values() for f in g["features"]}
+
+# Short per-stat labels for a group's bulleted breakdown (see
+# explain_prediction) - FEATURE_LABELS' full "Recent xG per 90" is
+# redundant once it's already a bullet under a "Recent attacking output"
+# heading, so these stay terse.
+PRETRANSFER_FOTMOB_STAT_LABELS = {
+    "pre_fotmob_expected_goals_per_90": "xG",
+    "pre_fotmob_expected_assists_per_90": "xA",
+    "pre_fotmob_chances_created_p90": "Chances created",
+    "pre_fotmob_accurate_pass": "Accurate passes",
+    "pre_fotmob_won_contest": "Successful dribbles",
+    "pre_fotmob_total_tackle": "Tackles",
+    "pre_fotmob_interception": "Interceptions",
+    "pre_fotmob_effective_clearance": "Clearances",
+    "pre_fotmob_ball_recovery": "Recoveries",
+    "pre_fotmob_saves": "Saves",
+    "pre_fotmob__save_percentage": "Save rate",
+    "pre_fotmob_goals_conceded": "Goals conceded",
+}
+
 
 PRETRANSFER_FOTMOB_PER90_FEATURES = {
     "pre_fotmob_expected_goals_per_90", "pre_fotmob_expected_assists_per_90", "pre_fotmob_chances_created_p90",
@@ -509,8 +562,22 @@ class PredictRequest(BaseModel):
     pre_fotmob_goals_conceded: float | None = None
 
 
-def build_feature_row(req: PredictRequest) -> pd.DataFrame:
-    """Turn a PredictRequest into the single-row DataFrame the model pipeline expects, computing the log/ratio features it was trained on."""
+def build_feature_row(req: PredictRequest) -> tuple[pd.DataFrame, set[str]]:
+    """
+    Turn a PredictRequest into the single-row DataFrame the model pipeline
+    expects, computing the log/ratio features it was trained on. Also
+    returns which pre_fotmob_* features were genuinely provided (as opposed
+    to imputed with the flat median just below) - explain_prediction needs
+    that to avoid a false swing: an imputed feature's reference value must
+    match the same flat median it was imputed with, not the position-
+    conditional one a *real* value would be compared against, or comparing
+    two different baselines manufactures a "contribution" out of nothing
+    (caught directly: an attacker with no defensive FotMob data was showing
+    a real-looking "+3.7 Recent defensive work", purely from the global
+    imputed median for tackles/interceptions/etc. reading higher than the
+    attacker-specific reference median those same all-zero stats get
+    compared against).
+    """
     row = req.model_dump()
     row["log_transfer_fee"] = np.log1p(row["transfer_fee"])
     row["log_value_before"] = np.log1p(row["value_before"])
@@ -524,13 +591,17 @@ def build_feature_row(req: PredictRequest) -> pd.DataFrame:
     )
     pretransfer_fotmob_medians = metadata["pretransfer_fotmob_medians"]
     row["has_pre_fotmob_data"] = int(row["pre_fotmob_rating"] is not None)
+    real_pretransfer_fotmob_features = {
+        feat for feat in metadata["pretransfer_fotmob_features"] if row.get(feat) is not None
+    }
     for feat in metadata["pretransfer_fotmob_features"]:
         if row.get(feat) is None:
             row[feat] = pretransfer_fotmob_medians[feat]
-    return pd.DataFrame([row])[NUMERIC_FEATURES + CATEGORICAL_FEATURES]
+    df = pd.DataFrame([row])[NUMERIC_FEATURES + CATEGORICAL_FEATURES]
+    return df, real_pretransfer_fotmob_features
 
 
-def explain_prediction(feature_row: pd.DataFrame, base_score: float, top_k: int = 5):
+def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_pretransfer_fotmob_features: set[str] = frozenset(), top_k: int = 5):
     """
     Approximate per-feature contributions by swapping one feature at a time
     to its "typical transfer" reference value (median/mode from training
@@ -538,6 +609,13 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, top_k: int 
     means the actual value pushed the score up relative to a typical
     transfer; negative means it pulled the score down. This is a simple,
     transparent stand-in for a proper SHAP explanation.
+
+    real_pretransfer_fotmob_features (see build_feature_row) says which
+    pre_fotmob_* features are genuine rather than median-imputed - an
+    imputed one must be compared against that *same* flat median, not the
+    position-conditional reference a real value would get, or the swap
+    manufactures a contribution out of the gap between two different
+    baselines instead of a real signal.
     """
     reference = metadata["reference_values"]
     position = feature_row["position"].iloc[0]
@@ -575,13 +653,21 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, top_k: int 
     log_value_before = feature_row["log_value_before"].iloc[0]
     expected_log_fee = fee_reg["intercept"] + fee_reg["slope"] * log_value_before
 
-    contributions = []
-    for feat in NUMERIC_FEATURES + CATEGORICAL_FEATURES:
-        typical_label = "a typical transfer's"
+    pretransfer_fotmob_medians = metadata["pretransfer_fotmob_medians"]
+
+    def resolve_reference(feat):
+        """The reference ("typical") value + label for one feature - same rules regardless of whether it's swapped alone or as part of a group."""
+        if feat in pretransfer_fotmob_medians and feat not in real_pretransfer_fotmob_features:
+            # This value is itself the flat median (build_feature_row
+            # imputed it when the request left it unset) - comparing it
+            # against a position-conditional reference below would swap
+            # two different baselines against each other and manufacture a
+            # contribution out of nothing. Comparing the exact same median
+            # against itself guarantees a true, honest zero.
+            return pretransfer_fotmob_medians[feat], "a typical transfer's"
         if feat == "log_transfer_fee" and is_paid_transfer:
-            reference_value = expected_log_fee
-            typical_label = "what's typically paid for a similarly-valued player:"
-        elif feat in position_conditional and feat in position_reference and pd.notna(position_reference[feat]):
+            return expected_log_fee, "what's typically paid for a similarly-valued player:"
+        if feat in position_conditional and feat in position_reference and pd.notna(position_reference[feat]):
             # pd.notna guards a real gap: a GK-only stat (e.g. saves) has no
             # meaningful median for outfield positions at all (virtually no
             # attacker/midfielder has FotMob save data), so
@@ -589,19 +675,28 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, top_k: int 
             # fabricated number - falls through to the flat reference below,
             # which is always a real finite value (see train_model.py's
             # median-imputation for pre_fotmob_* features).
-            reference_value = position_reference[feat]
-            typical_label = f"a typical {POSITION_PLURAL.get(position, position).rstrip('s')}'s"
-        elif is_paid_transfer and feat in paid_reference:
-            reference_value = paid_reference[feat]
-            typical_label = "a typical paid transfer's"
-        else:
-            reference_value = reference[feat]
+            return position_reference[feat], f"a typical {POSITION_PLURAL.get(position, position).rstrip('s')}'s"
+        if is_paid_transfer and feat in paid_reference:
+            return paid_reference[feat], "a typical paid transfer's"
+        return reference[feat], "a typical transfer's"
 
-        actual_value = feature_row[feat].iloc[0]
+    def swap_and_score(feats_to_values):
+        """Predict with the given {feature: reference_value} substitutions applied all at once; returns the contribution (base_score - modified_score)."""
         modified = feature_row.copy()
-        modified[feat] = reference_value
+        for feat, value in feats_to_values.items():
+            modified[feat] = value
         modified_score = float(pipeline.predict(modified)[0])
-        contribution = round(base_score - modified_score, 1)
+        return round(base_score - modified_score, 1)
+
+    contributions = []
+    for feat in NUMERIC_FEATURES + CATEGORICAL_FEATURES:
+        if feat in PRETRANSFER_FOTMOB_GROUPED_FEATURES:
+            continue  # handled as part of its group below, not individually
+        if feat == "has_pre_fotmob_data":
+            continue  # a data-quality flag, not a football signal - each group's own detail already says when it has no real data
+        reference_value, typical_label = resolve_reference(feat)
+        actual_value = feature_row[feat].iloc[0]
+        contribution = swap_and_score({feat: reference_value})
         actual_display = format_feature_value(feat, actual_value, context)
         typical_display = format_feature_value(feat, reference_value, context)
         direction = "raising" if contribution >= 0 else "lowering"
@@ -632,8 +727,57 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, top_k: int 
             "contribution": contribution,
             "actual_value": actual_display,
             "typical_value": typical_display,
+            "stats": None,
             "detail": f"{actual_display} {vs_clause}, {direction} the score by {abs(contribution)} pts",
         })
+
+    is_goalkeeper = position == "Goalkeeper"
+    for group_key, group in PRETRANSFER_FOTMOB_GROUPS.items():
+        # Swap every underlying feature to its own reference value in one
+        # prediction, not one at a time - see PRETRANSFER_FOTMOB_GROUPS for
+        # why one-at-a-time understates a group of correlated features.
+        refs = {feat: resolve_reference(feat) for feat in group["features"]}
+        contribution = swap_and_score({feat: ref[0] for feat, ref in refs.items()})
+        direction = "raising" if contribution >= 0 else "lowering"
+
+        # Describe only the position-relevant subset (an outfield player's
+        # "recent defensive work" shouldn't list a nonsensical 0 saves/90) -
+        # everything else in the group still went into the swap above.
+        describe_feats = group.get(
+            "goalkeeper_features" if is_goalkeeper else "outfield_features", group["features"]
+        )
+        # Real data for *this* group specifically, not the blanket
+        # has_pre_fotmob_data flag (which only tracks whether pre_fotmob_rating
+        # was provided) - a player can have real attacking stats but no
+        # defensive ones, and each group needs its own answer.
+        has_any_data = any(feat in real_pretransfer_fotmob_features for feat in describe_feats)
+        label = group.get("goalkeeper_label", group["label"]) if is_goalkeeper else group["label"]
+        typical_label = "a typical goalkeeper's" if is_goalkeeper else f"a typical {POSITION_PLURAL.get(position, position).rstrip('s')}'s"
+        # A labeled bullet per underlying stat (not a bare "0.55 vs. 0.31" -
+        # a reader has no way to tell xG from xA from chances-created
+        # otherwise), same {"description", "stats"} shape
+        # describe_fotmob_component uses for the historical breakdown's own
+        # multi-stat rows, so the frontend renders both the same way.
+        stats = [
+            f"{PRETRANSFER_FOTMOB_STAT_LABELS[feat]}: {format_feature_value(feat, feature_row[feat].iloc[0], context)} "
+            f"(typical: {format_feature_value(feat, refs[feat][0], context)})"
+            for feat in describe_feats
+        ]
+        description = (
+            f"vs. {typical_label} recent numbers, {direction} the score by {abs(contribution)} pts"
+            if has_any_data else
+            f"No recent FotMob data available for this player - using league-typical values, {direction} the score by {abs(contribution)} pts"
+        )
+        contributions.append({
+            "feature": group_key,
+            "label": label,
+            "contribution": contribution,
+            "actual_value": None,
+            "typical_value": None,
+            "stats": stats if has_any_data else None,
+            "detail": description,
+        })
+
     contributions.sort(key=lambda c: abs(c["contribution"]), reverse=True)
     return contributions[:top_k]
 
@@ -866,11 +1010,11 @@ def predict(req: PredictRequest):
     the comparables themselves.
     """
     try:
-        feature_row = build_feature_row(req)
+        feature_row, real_pretransfer_fotmob_features = build_feature_row(req)
         raw_score = float(pipeline.predict(feature_row)[0])
         score = max(0.0, min(100.0, raw_score))
         comps = find_comparables(feature_row)
-        explanation = explain_prediction(feature_row, raw_score)
+        explanation = explain_prediction(feature_row, raw_score, real_pretransfer_fotmob_features)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     comp_scores = [c["success_score"] for c in comps]

@@ -159,7 +159,10 @@ function renderResult(suffix, result) {
       <div class="explain-row">
         <span class="tooltip-wrap explain-label">
           ${e.label}
-          <span class="tooltip-box">${convertMoneyInText(e.detail)}</span>
+          <span class="tooltip-box">
+            ${convertMoneyInText(e.detail)}
+            ${e.stats ? `<ul class="tooltip-stats">${e.stats.map(s => `<li>${convertMoneyInText(s)}</li>`).join("")}</ul>` : ""}
+          </span>
         </span>
         <div class="explain-bar-track">
           <div class="explain-bar-fill ${positive ? "pos" : "neg"}" style="width:${width}%"></div>
