@@ -615,11 +615,19 @@ class PredictRequest(BaseModel):
     position: str
     sub_position: str
     foot: str
-    pre_apps: float = Field(..., ge=0)
-    pre_minutes: float = Field(..., ge=0)
-    pre_goals_p90: float = Field(..., ge=0)
-    pre_ga_p90: float = Field(..., ge=0)
-    pre_mins_per_app: float = Field(..., ge=0)
+    # Optional, not required: a player currently at a club outside
+    # LEAGUE_MAP (e.g. Messi at Inter Miami, Son at LAFC - both MLS) has no
+    # reliable recent-performance data at all (see build_lookups.py and
+    # search_players() above) - autofilled from players_lookup.csv's
+    # recent_* columns when available and left unset otherwise, the same
+    # pattern as pre_fotmob_* below. build_feature_row median-imputes a
+    # missing one instead of a fabricated 0, which used to be sent here and
+    # get treated as this player's genuine (terrible) recent form.
+    pre_apps: float | None = Field(None, ge=0)
+    pre_minutes: float | None = Field(None, ge=0)
+    pre_goals_p90: float | None = Field(None, ge=0)
+    pre_ga_p90: float | None = Field(None, ge=0)
+    pre_mins_per_app: float | None = Field(None, ge=0)
     transfer_fee: float = Field(..., ge=0)
     value_before: float = Field(..., gt=0)
     from_domestic_competition_id: str
@@ -704,16 +712,58 @@ def compute_pretransfer_fotmob_composites(row):
     return composites, has_real_data
 
 
+RECENT_PERFORMANCE_FEATURES = ["pre_apps", "pre_minutes", "pre_goals_p90", "pre_ga_p90", "pre_mins_per_app"]
+
+
+def impute_recent_performance(row):
+    """
+    A player currently at a club outside LEAGUE_MAP (see build_lookups.py -
+    e.g. Messi at Inter Miami, Son at LAFC, both MLS) has no reliable recent-
+    performance data at all, so all 5 RECENT_PERFORMANCE_FEATURES arrive as
+    None together (they're derived from one appearances rollup, not five
+    independent ones - see build_lookups.py's build_players_lookup). Used to
+    silently arrive as a fabricated 0 instead - a real, terrible "0 recent
+    minutes played" signal for a player the model actually has no data on,
+    which explain_prediction would then describe as if it meant something
+    (and could show a backwards-looking "raising the score" swing purely as
+    an artifact of where 0 happens to sit relative to the model's learned
+    curve, not because 0 recent minutes is actually good).
+
+    Missing features are filled with the exact same reference value
+    resolve_reference (in explain_prediction) would independently pick for
+    them - the position-conditional median, falling back to the flat one -
+    so the leave-one-out swap for an imputed feature compares it against
+    itself and reports an honest, guaranteed 0.0 contribution rather than a
+    fabricated one from comparing two different baselines.
+
+    Returns has_real_data: True if every one of the 5 fields was genuinely
+    provided, False if this function had to impute all of them.
+    """
+    position = row["position"]
+    position_reference = metadata["reference_values_by_position"].get(position, {})
+    flat_reference = metadata["reference_values"]
+    has_real_data = all(row.get(f) is not None for f in RECENT_PERFORMANCE_FEATURES)
+    if not has_real_data:
+        for f in RECENT_PERFORMANCE_FEATURES:
+            position_value = position_reference.get(f)
+            row[f] = position_value if position_value is not None else flat_reference[f]
+    return has_real_data
+
+
 def build_feature_row(req: PredictRequest) -> tuple[pd.DataFrame, dict]:
     """
     Turn a PredictRequest into the single-row DataFrame the model pipeline
     expects, computing the log/ratio/composite features it was trained on.
-    Also returns which of the 4 pre-transfer FotMob composites were
-    genuinely computed from real data (as opposed to imputed with the
-    training median) - see compute_pretransfer_fotmob_composites and
-    explain_prediction.
+    Also returns which pre-transfer signals were genuinely computed from
+    real data (as opposed to imputed with a reference value) - the 4
+    pre-transfer FotMob composites (see compute_pretransfer_fotmob_composites)
+    plus each of the 5 RECENT_PERFORMANCE_FEATURES names, all mapped to the
+    one shared boolean impute_recent_performance returns (they're always
+    missing together, not independently) - all consumed by
+    explain_prediction the same way.
     """
     row = req.model_dump()
+    has_real_recent_data = impute_recent_performance(row)
     row["log_transfer_fee"] = np.log1p(row["transfer_fee"])
     row["log_value_before"] = np.log1p(row["value_before"])
     row["log_from_club_value"] = np.log1p(row["from_total_market_value"])
@@ -729,6 +779,8 @@ def build_feature_row(req: PredictRequest) -> tuple[pd.DataFrame, dict]:
     row.update(composites)
     for composite_feat, flag in PRETRANSFER_FOTMOB_HAS_DATA_FLAGS.items():
         row[flag] = int(has_real_data[composite_feat])
+    for feat in RECENT_PERFORMANCE_FEATURES:
+        has_real_data[feat] = has_real_recent_data
 
     # Keep the raw pre_fotmob_* columns too, not just NUMERIC_FEATURES/
     # CATEGORICAL_FEATURES - the model pipeline only ever selects its own
@@ -738,7 +790,7 @@ def build_feature_row(req: PredictRequest) -> tuple[pd.DataFrame, dict]:
     return df, has_real_data
 
 
-def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_pretransfer_composites: dict = {}, top_k: int = 5):
+def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_data_flags: dict = {}, top_k: int = 5):
     """
     Approximate per-feature contributions by swapping one feature at a time
     to its "typical transfer" reference value (median/mode from training
@@ -747,13 +799,16 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_pretra
     transfer; negative means it pulled the score down. This is a simple,
     transparent stand-in for a proper SHAP explanation.
 
-    real_pretransfer_composites (see build_feature_row) says which of the 4
-    pre-transfer FotMob composites were genuinely computed from real data
-    rather than median-imputed - an imputed one must be compared against
-    that *same* median, not some other reference, or the swap manufactures
-    a contribution out of the gap between two different baselines instead
-    of a real signal (the exact failure mode that motivated moving to
-    position-relative composites in the first place - see
+    real_data_flags (see build_feature_row) says which pre-transfer signals
+    were genuinely computed from real data rather than reference-imputed -
+    the 4 pre-transfer FotMob composites, plus each of the 5
+    RECENT_PERFORMANCE_FEATURES names mapped to one shared boolean (they're
+    always missing together, not independently - see
+    impute_recent_performance). An imputed value must be compared against
+    that *same* reference, not some other one, or the swap manufactures a
+    contribution out of the gap between two different baselines instead of
+    a real signal (the exact failure mode that motivated moving to
+    position-relative composites for FotMob in the first place - see
     train_model.py:PRETRANSFER_FOTMOB_COMPOSITES).
     """
     reference = metadata["reference_values"]
@@ -796,7 +851,7 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_pretra
 
     def resolve_reference(feat):
         """The reference ("typical") value + label for one feature."""
-        if feat in pretransfer_fotmob_composite_medians and not real_pretransfer_composites.get(feat, True):
+        if feat in pretransfer_fotmob_composite_medians and not real_data_flags.get(feat, True):
             # This value is itself the bucket's median (build_feature_row
             # imputed it - no real underlying stat for this bucket) -
             # comparing it against any other reference would swap two
@@ -853,7 +908,7 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_pretra
             spec = PRETRANSFER_FOTMOB_COMPOSITE_RAW_FEATURES[feat]
             raw_feats = spec.get("goalkeeper_raw_features", spec["raw_features"]) if is_goalkeeper else spec["raw_features"]
             label = spec.get("goalkeeper_label", FEATURE_LABELS[feat]) if is_goalkeeper else FEATURE_LABELS[feat]
-            has_real_data = real_pretransfer_composites.get(feat, True)
+            has_real_data = real_data_flags.get(feat, True)
             typical_pos_label = "a typical goalkeeper's" if is_goalkeeper else f"a typical {POSITION_PLURAL.get(position, position).rstrip('s')}'s"
             if has_real_data and len(raw_feats) > 1:
                 # Multiple sub-stats: a bulleted list, same as
@@ -881,6 +936,28 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_pretra
                 "typical_value": None,
                 "stats": stats,
                 "detail": detail,
+            })
+            continue
+
+        if feat in RECENT_PERFORMANCE_FEATURES and not real_data_flags.get(feat, True):
+            # actual_value already equals reference_value here (build_feature_row
+            # imputed it with this exact reference - see impute_recent_performance),
+            # so contribution is guaranteed 0.0 - the plain swing-only detail below
+            # would read as a technically-true but useless "27 apps vs. a typical
+            # defender's 27 apps", instead of saying plainly that this player has no
+            # real recent-performance data at all (a club outside LEAGUE_MAP - see
+            # build_lookups.py).
+            contributions.append({
+                "feature": feat,
+                "label": FEATURE_LABELS.get(feat, feat),
+                "contribution": contribution,
+                "actual_value": None,
+                "typical_value": None,
+                "stats": None,
+                "detail": (
+                    "No recent performance data available for this player (outside the "
+                    f"tracked leagues) - using a league-typical value, {direction} the score by {abs(contribution)} pts"
+                ),
             })
             continue
 
@@ -1101,28 +1178,40 @@ def transfer_detail(player_id: int, transfer_date: str):
     return build_transfer_card(match.iloc[0])
 
 
+RECENT_PERFORMANCE_COLUMNS = [
+    "recent_apps", "recent_minutes", "recent_goals", "recent_assists",
+    "recent_ga_p90", "recent_goals_p90", "recent_mins_per_app",
+]
+
+
 @app.get("/api/players/search")
 def search_players(q: str, limit: int = 10):
     """
     Accent-insensitive substring search over players_lookup.csv, for the
-    prediction form's player autocomplete. recent_fotmob_* columns are
-    genuinely numeric (unlike the other columns here, which are safely
-    blanket-filled with "" for a missing string field) and feed straight
-    into PredictRequest's Optional[float] pre_fotmob_* fields - filling a
-    missing one with "" would send the frontend a string that's neither a
-    valid float nor JSON null, breaking the request. Left as real NaN,
-    then swapped to None (valid JSON null) below instead - a fabricated
-    "" or 0 would misrepresent "no data" as a real value.
+    prediction form's player autocomplete. recent_fotmob_* columns and
+    RECENT_PERFORMANCE_COLUMNS are genuinely numeric (unlike the other
+    columns here, which are safely blanket-filled with "" for a missing
+    string field) and feed straight into PredictRequest's Optional[float]
+    pre_fotmob_*/pre_apps/pre_minutes/etc. fields - filling a missing one
+    with "" would send the frontend a string that's neither a valid float
+    nor JSON null, breaking the request. Left as real NaN, then swapped to
+    None (valid JSON null) below instead - a fabricated "" or 0 would
+    misrepresent "no data" as a real value. RECENT_PERFORMANCE_COLUMNS is
+    genuinely NaN for a player at a club outside LEAGUE_MAP (e.g. Messi at
+    Inter Miami, Son at LAFC - both MLS) - see build_lookups.py - rather
+    than always having a real number the way it used to before that was
+    fixed, which is exactly why this needs the same numeric-safe handling
+    recent_fotmob_* already had.
     """
     if len(q) < 2:
         return []
     mask = players_df["_name_fold"].str.contains(fold_accents(q), na=False, regex=False)
     rows = players_df[mask].head(limit).drop(columns=["_name_fold"])
-    fotmob_cols = [c for c in rows.columns if c.startswith("recent_fotmob")]
-    records = rows.drop(columns=fotmob_cols).fillna("").to_dict(orient="records")
-    fotmob_records = rows[fotmob_cols].astype(object).where(rows[fotmob_cols].notna(), None).to_dict(orient="records")
-    for record, fotmob_record in zip(records, fotmob_records):
-        record.update(fotmob_record)
+    numeric_cols = [c for c in rows.columns if c.startswith("recent_fotmob")] + RECENT_PERFORMANCE_COLUMNS
+    records = rows.drop(columns=numeric_cols).fillna("").to_dict(orient="records")
+    numeric_records = rows[numeric_cols].astype(object).where(rows[numeric_cols].notna(), None).to_dict(orient="records")
+    for record, numeric_record in zip(records, numeric_records):
+        record.update(numeric_record)
     return records
 
 
@@ -1155,11 +1244,11 @@ def predict(req: PredictRequest):
     the comparables themselves.
     """
     try:
-        feature_row, real_pretransfer_composites = build_feature_row(req)
+        feature_row, real_data_flags = build_feature_row(req)
         raw_score = float(pipeline.predict(feature_row)[0])
         score = max(0.0, min(100.0, raw_score))
         comps = find_comparables(feature_row)
-        explanation = explain_prediction(feature_row, raw_score, real_pretransfer_composites)
+        explanation = explain_prediction(feature_row, raw_score, real_data_flags)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     comp_scores = [c["success_score"] for c in comps]

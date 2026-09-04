@@ -1670,6 +1670,41 @@ happened to look like signal, not a sign anything broke.
   real transfer since then, some incidental data-source corrections - all
   expected from the underlying dataset simply being newer, not part of
   this fix and not audited further here.
+- `scripts/build_lookups.py`'s `recent_apps`/`recent_minutes`/
+  `recent_goals_p90`/`recent_ga_p90`/`recent_mins_per_app` (the live-
+  prediction form's "recent performance" autofill) were blanket
+  `.fillna(0)` regardless of *why* a player had no matching appearance rows
+  in the trailing 365-day window - conflating "genuinely played 0 minutes"
+  (a real signal, e.g. a long injury at a tracked club) with "we have no
+  coverage of this player's current league at all". Found via a user
+  report: searching Messi (now at Inter Miami) or Son (LAFC) - both MLS,
+  not one of the 23 tracked leagues (`LEAGUE_MAP`) - autofilled 0 apps/0
+  minutes into the predict form, which the model then treated as this
+  player's genuine (terrible) recent form, and the explanation described a
+  real-looking "raising/lowering the score" swing for a value that was
+  actually just a data gap. Checked directly: 2,119 of 8,635 players in
+  `players_lookup.csv` (25%) were affected, concentrated in Brazil, MLS,
+  Mexico, Argentina, Saudi Arabia, Japan, Colombia, Australia, and South
+  Korea - every one of these already correctly shows no `recent_fotmob_*`
+  data (that pipeline already gates on `LEAGUE_MAP`), so the two data
+  sources disagreed on the exact same players. Fixed by gating the same
+  way: a player at a club outside `LEAGUE_MAP` gets real `NaN`, not a
+  computed-but-unreliable value (some had a handful of appearance rows from
+  the 2025 Club World Cup, a one-off tournament, not real ongoing coverage)
+  or a fabricated 0; `search_players()` now sends that through as JSON
+  `null` instead of blanket-`fillna("")`-ing it into an empty string;
+  `PredictRequest`'s five affected fields are now optional; and
+  `build_feature_row` median-imputes a missing one against the exact same
+  position-conditional reference `explain_prediction` would independently
+  pick, guaranteeing a true, honest 0.0 contribution and an explicit "No
+  recent performance data available" message instead of a fabricated swing.
+  A related but separate thing surfaced while verifying this: for a player
+  at a *covered* club with a genuinely real 0 recent minutes (e.g. an
+  actual long-term injury), `pre_minutes` can still occasionally show a
+  small *positive* contribution in isolation even though the correlated
+  `pre_mins_per_app` correctly penalizes the same player - a real (if
+  surprising) shape the trained model learned at that boundary, not a data
+  artifact, and not addressed here.
 - Predicting a *new* hypothetical transfer is meaningfully less reliable
   than the historical scores shown for known transfers, since the model
   only sees pre-transfer information by construction.

@@ -10,7 +10,10 @@ Outputs:
 """
 import os
 
+import numpy as np
 import pandas as pd
+
+from fetch_fotmob_stats import LEAGUE_MAP
 
 RAW_DIR = os.environ.get(
     "TRANSFERMARKT_RAW_DIR",
@@ -128,9 +131,27 @@ def build_players_lookup():
     players = players.merge(stats, on="player_id", how="left")
     players["age_now"] = (REFERENCE_DATE - players["date_of_birth"]).dt.days / 365.25
 
+    # A player currently at a club outside LEAGUE_MAP (e.g. Messi/Inter Miami,
+    # Son/LAFC - both MLS, not one of the 23 tracked leagues) has no reliable
+    # "recent" signal here at all, but naively summing whatever appearance
+    # rows happen to exist can still produce a real-looking number: both
+    # clubs show up in appearances.csv with a handful of rows from the 2025
+    # Club World Cup, a one-off international tournament, not real ongoing
+    # league coverage - and outside that fluke, the more common case is
+    # simply zero matching rows, which .fillna(0) below would otherwise
+    # silently equate with "played 0 minutes recently" (a real, meaningful
+    # signal for a player at a *covered* club - e.g. returning from a long
+    # injury) rather than "we don't have real data for this club at all".
+    # Forcing every recent_* column to NaN for an uncovered league - even
+    # when the naive aggregation above found a nonzero value - keeps that
+    # distinction: build_feature_row/explain_prediction in app/main.py
+    # median-impute a real NaN and say so in the explanation, instead of
+    # quietly feeding the model a fabricated hard 0 (or a stray Club World
+    # Cup cameo) as if it were this player's real current form.
+    covered_league = players["current_club_domestic_competition_id"].isin(LEAGUE_MAP)
     for c in ["recent_apps", "recent_minutes", "recent_goals", "recent_assists",
               "recent_ga_p90", "recent_goals_p90", "recent_mins_per_app"]:
-        players[c] = players[c].fillna(0)
+        players[c] = np.where(covered_league, players[c].fillna(0), np.nan)
 
     players = players.merge(load_current_fotmob_stats(), on="player_id", how="left")
     recent_minutes_per_90 = (players["recent_fotmob_total_minutes"] / 90).clip(lower=1)

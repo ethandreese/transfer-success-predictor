@@ -20,9 +20,9 @@ def explain_all(payload_dict):
     reference instead of the free-transfer-skewed overall one.
     """
     req = PredictRequest(**payload_dict)
-    feature_row, real_pretransfer_composites = build_feature_row(req)
+    feature_row, real_data_flags = build_feature_row(req)
     raw_score = float(pipeline.predict(feature_row)[0])
-    return explain_prediction(feature_row, raw_score, real_pretransfer_composites, top_k=100)
+    return explain_prediction(feature_row, raw_score, real_data_flags, top_k=100)
 
 
 @pytest.fixture
@@ -142,6 +142,36 @@ def test_predict_performance_explanation_is_position_conditional(sample_predict_
     assert "0.2" not in ga_row["typical_value"]  # the misleading flat cross-position median
 
 
+def test_predict_missing_recent_performance_is_imputed_not_zero(sample_predict_payload):
+    """
+    A player currently at a club outside LEAGUE_MAP (e.g. Messi at Inter
+    Miami, Son at LAFC - both MLS) has no real recent-performance data at
+    all - pre_apps/pre_minutes/pre_goals_p90/pre_ga_p90/pre_mins_per_app
+    arrive as None (see build_lookups.py/search_players()), not a
+    fabricated 0. build_feature_row should median-impute a plausible
+    position-typical value instead of feeding the model a literal 0 (a
+    real, terrible "played 0 minutes recently" signal for a player it
+    actually has no data on), and explain_prediction should say plainly
+    that the data is missing with an honest 0.0 contribution, rather than
+    a backwards-looking swing that happens to fall out of comparing 0
+    against a real reference.
+    """
+    payload = {**sample_predict_payload, "pre_apps": None, "pre_minutes": None,
+               "pre_goals_p90": None, "pre_ga_p90": None, "pre_mins_per_app": None}
+    req = PredictRequest(**payload)
+    feature_row, real_data_flags = build_feature_row(req)
+    assert feature_row["pre_apps"].iloc[0] > 0  # imputed with a real position median, not 0
+    assert feature_row["pre_minutes"].iloc[0] > 0
+    assert real_data_flags["pre_apps"] is False
+
+    raw_score = float(pipeline.predict(feature_row)[0])
+    explanation = explain_prediction(feature_row, raw_score, real_data_flags, top_k=100)
+    all_features = {e["feature"]: e for e in explanation}
+    for feat in ["pre_apps", "pre_minutes", "pre_goals_p90", "pre_ga_p90", "pre_mins_per_app"]:
+        assert all_features[feat]["contribution"] == 0.0
+        assert "No recent performance data available" in all_features[feat]["detail"]
+
+
 def test_predict_fee_explanation_compares_against_value_expectation_not_flat_average(sample_predict_payload):
     """
     A €50m fee for a player worth €60m isn't remarkable - it should be
@@ -225,6 +255,22 @@ def test_players_search_response_has_no_internal_fields():
     res = client.get("/api/players/search", params={"q": "Haaland"})
     for p in res.json():
         assert "_name_fold" not in p
+
+
+def test_players_search_sends_null_not_zero_for_uncovered_league_players():
+    """
+    A player currently at a club outside LEAGUE_MAP (e.g. Messi at Inter
+    Miami - MLS isn't one of the 23 tracked leagues) has no real recent-
+    performance data - the search response must send JSON null so the
+    frontend/build_feature_row can tell "no data" apart from a real 0,
+    not a fabricated 0.0 that looks like this player genuinely played
+    zero minutes recently (see build_lookups.py).
+    """
+    res = client.get("/api/players/search", params={"q": "Lionel Messi"})
+    matches = [p for p in res.json() if p["name"] == "Lionel Messi"]
+    assert len(matches) == 1
+    assert matches[0]["recent_apps"] is None
+    assert matches[0]["recent_minutes"] is None
 
 
 def test_clubs_search_is_accent_insensitive():
