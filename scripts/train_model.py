@@ -409,6 +409,30 @@ def main():
     fee_slope, fee_intercept = np.polyfit(paid["log_value_before"], paid["log_transfer_fee"], 1)
     fee_regression = {"slope": float(fee_slope), "intercept": float(fee_intercept)}
 
+    # Historical context for the "origin/destination club value" explanation
+    # (see app/main.py:explain_prediction) - a bare "€900m vs. a typical
+    # attacker's €172m" swing never says why a bigger squad valuation
+    # matters. Checked directly on this same filtered df: of every
+    # success_score component, rating_pct correlates with log(to_club_value)
+    # far more than any other (r=0.29, vs. 0.23 for attacking_pct, 0.22 for
+    # possession_pct, -0.07 for defensive_pct - moving to a bigger-budget
+    # club doesn't uniformly help every component, it's concentrated in
+    # post-move rating). log(from_club_value) shows the same pattern, weaker
+    # (r=0.19) - players leaving a bigger club already tend to be better
+    # players, so they keep rating well after leaving too. Fit rating_pct ~
+    # log(value) for both directions so the explanation can quote the actual
+    # regression-implied percentile gap for *this* prediction's specific
+    # values, the same "fit a line, evaluate it at this transfer's own
+    # numbers" idea as fee_regression above, rather than a single baked-in
+    # number for everyone.
+    rating_known = df.dropna(subset=["rating_pct"])
+    to_slope, to_intercept = np.polyfit(rating_known["log_to_club_value"], rating_known["rating_pct"], 1)
+    from_slope, from_intercept = np.polyfit(rating_known["log_from_club_value"], rating_known["rating_pct"], 1)
+    club_value_rating_regression = {
+        "to": {"slope": float(to_slope), "intercept": float(to_intercept)},
+        "from": {"slope": float(from_slope), "intercept": float(from_intercept)},
+    }
+
     # Historical context for the "destination/origin league" explanation
     # (see app/main.py:explain_prediction) - a bare "vs. a typical
     # transfer's Premier League" swing with no explanation reads as "moving
@@ -443,6 +467,47 @@ def main():
         if paid_to_counts.get(lg, 0) >= MIN_LEAGUE_SAMPLE
     }
 
+    # Historical context for the "position"/"sub-position" explanation (see
+    # app/main.py:explain_prediction) - swapping a transfer's actual
+    # position against whichever category happens to be the dataset's mode
+    # (Defender/Centre-Back) read as "being an attacker instead of a
+    # defender" causing the swing, with no explanation at all. Checked
+    # directly on this same filtered df: real, if modest, baseline
+    # differences do exist by position (50.0 for goalkeepers to 54.6 for
+    # midfielders) and sub-position (50.4 for centre-backs to 65.0 for
+    # second strikers) - but nothing here isolates *why* (could be the
+    # scoring formula's own per-position weighting, could be market-
+    # evaluation differences, could be both), so the note states the
+    # baseline gap as a fact without inventing a mechanism, unlike
+    # league_context_note's fee-premium explanation above. Same
+    # MIN_LEAGUE_SAMPLE gate as the league baselines - several sub-positions
+    # (e.g. "Attack", 2 rows) are too thin to trust.
+    position_counts = df["position"].value_counts()
+    position_success_baseline = {
+        p: round(float(v), 1)
+        for p, v in df.groupby("position")[TARGET].mean().items()
+        if position_counts.get(p, 0) >= MIN_LEAGUE_SAMPLE
+    }
+    sub_position_counts = df["sub_position"].value_counts()
+    sub_position_success_baseline = {
+        p: round(float(v), 1)
+        for p, v in df.groupby("sub_position")[TARGET].mean().items()
+        if sub_position_counts.get(p, 0) >= MIN_LEAGUE_SAMPLE
+    }
+
+    # Historical context for the "foot" explanation - checked directly on
+    # this same filtered df: left-footed transfers average 54.3, "both"
+    # 55.3, right-footed 52.4 - a real but small gap with no clear football
+    # mechanism found behind it (unlike league/club-value above), so the
+    # note is deliberately hedged rather than asserting a cause that hasn't
+    # been verified.
+    foot_counts = df["foot"].value_counts()
+    foot_success_baseline = {
+        f: round(float(v), 1)
+        for f, v in df.groupby("foot")[TARGET].mean().items()
+        if foot_counts.get(f, 0) >= MIN_LEAGUE_SAMPLE
+    }
+
     os.makedirs(MODEL_DIR, exist_ok=True)
     joblib.dump(pipeline, os.path.join(MODEL_DIR, "model.joblib"))
     joblib.dump(
@@ -464,6 +529,7 @@ def main():
             "reference_values_by_position": reference_values_by_position,
             "position_conditional_features": POSITION_CONDITIONAL_FEATURES,
             "fee_regression": fee_regression,
+            "club_value_rating_regression": club_value_rating_regression,
             "pct_free_transfers": round(pct_free_transfers, 3),
             # Needed at serving time to turn a hypothetical prediction's raw
             # height_in_cm into the height_vs_position feature the model
@@ -472,6 +538,9 @@ def main():
             "league_success_baseline_to": league_success_baseline_to,
             "league_success_baseline_from": league_success_baseline_from,
             "league_fee_ratio_baseline_to": league_fee_ratio_baseline_to,
+            "position_success_baseline": position_success_baseline,
+            "sub_position_success_baseline": sub_position_success_baseline,
+            "foot_success_baseline": foot_success_baseline,
             # Needed at serving time to turn a hypothetical prediction's raw
             # pre_fotmob_* inputs into the 4 position-relative composites the
             # model actually expects (pretransfer_percentile_tables for the

@@ -852,6 +852,61 @@ explanation was also cleaned up - it used to read "+8cm vs. a typical
 transfer's +0cm" (technically correct but redundant, since the reference
 is 0 by construction), now reads "+8cm vs. the position average".
 
+**Three more explanation rows read as unexplained number comparisons even
+after the fixes above - origin/destination club value, position/
+sub-position, and foot.** All three could swing the score by several
+points with nothing but "X vs. a typical Y", the same gap the league fix
+above closed for leagues.
+
+- **Club value** (`log_to_club_value`/`log_from_club_value`) - "€900m vs.
+  a typical attacker's €172m" never said what a bigger squad valuation
+  actually buys a transfer. Checked directly against every success_score
+  component: of the four FotMob-derived buckets, `rating_pct` correlates
+  with destination club value far more than any other (r=0.29 vs. 0.23 for
+  attacking, 0.22 for possession, -0.07 for defensive) - moving to a
+  bigger-budget club doesn't uniformly help every component, the effect is
+  concentrated in post-move rating. Origin club value shows the same
+  pattern, weaker (r=0.19) - players already at a big club tend to keep
+  rating well after leaving it. Fit `rating_pct ~ log(club value)` on the
+  training data (`club_value_rating_regression` in metadata.json, the same
+  "fit a line, evaluate it at this transfer's own numbers" idea as
+  `fee_regression`) so the explanation can quote the actual percentile gap
+  implied by *this* prediction's specific values: *"€900.0m vs. a typical
+  attacker's €172.3m: moving to a squad valued this highly has historically
+  come with a stronger post-move rating - signings there average around
+  the 67th percentile, vs. the 55th percentile at a club valued like
+  €172.3m, likely reflecting the quality of teammates and system a
+  wealthier club can offer."* Suppressed (falls back to the plain swing)
+  when the two implied percentiles land within 4 points of each other -
+  not enough of a gap to say anything the swing itself doesn't already.
+- **Position / sub-position** - the reference value for any categorical
+  feature is the dataset's single most common category, so a bare "Attack
+  vs. a typical transfer's Defender" reads as "being an attacker instead
+  of a defender" causing the swing, no explanation attached. Unlike
+  league, there's no single verified mechanism here - checked directly
+  that real, if modest, baseline differences do exist by position (50.0
+  for goalkeepers to 54.6 for midfielders) and sub-position (50.4 for
+  centre-backs to 65.0 for second strikers), but nothing isolates *why*
+  (could be the historical formula's own per-position weighting, could be
+  market-evaluation differences, could be both) - so the note states the
+  real gap as a fact rather than inventing a cause: *"Attack transfers have
+  historically averaged 53.5 vs. 51.6 for Defender transfers - a real
+  baseline gap in this dataset, not a claim that one position is inherently
+  a better transfer bet."* A category too thin to trust a stable average
+  (same `MIN_LEAGUE_SAMPLE = 15` gate as the league baselines - e.g. the
+  2-row "Attack" sub-position) is left out of the baseline entirely.
+- **Foot** - the smallest and least explicable of the three: left-footed
+  transfers average 54.3, "both" 55.3, right-footed 52.4, a real gap with
+  no football mechanism found behind it despite looking. Rather than
+  invent one, the note says so plainly and hedges: *"left vs. a typical
+  transfer's right: Left-footed transfers have historically averaged 54.3
+  vs. 52.4 for Right-footed transfers - a small, real gap in the data with
+  no confirmed football mechanism behind it - worth reading skeptically."*
+
+(`category_baseline_note`/`club_value_rating_note` in `app/main.py`,
+baselines and the rating regression computed in `scripts/train_model.py`
+on the same filtered training data every other reference value uses.)
+
 **"Compare to similar transfers" already exists as a separate mechanism**
 (`find_comparables`, a nearest-neighbor lookup over the full feature
 space) and powers both the "most similar historical transfers" list and

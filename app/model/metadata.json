@@ -133,6 +133,16 @@
     "slope": 1.0382355831965435,
     "intercept": -0.6652127673763167
   },
+  "club_value_rating_regression": {
+    "to": {
+      "slope": 6.963286154637173,
+      "intercept": -76.9263113942037
+    },
+    "from": {
+      "slope": 4.131264680533851,
+      "intercept": -21.276834528522983
+    }
+  },
   "pct_free_transfers": 0.323,
   "position_height_means": {
     "Attack": 181.3057961359094,
@@ -188,6 +198,32 @@
     "SC1": 1.21,
     "TR1": 0.79,
     "UKR1": 0.88
+  },
+  "position_success_baseline": {
+    "Attack": 53.5,
+    "Defender": 51.6,
+    "Goalkeeper": 50.0,
+    "Midfield": 54.6
+  },
+  "sub_position_success_baseline": {
+    "Attacking Midfield": 60.7,
+    "Central Midfield": 53.3,
+    "Centre-Back": 50.4,
+    "Centre-Forward": 52.4,
+    "Defensive Midfield": 51.7,
+    "Goalkeeper": 50.0,
+    "Left Midfield": 58.8,
+    "Left Winger": 55.1,
+    "Left-Back": 52.5,
+    "Right Midfield": 57.4,
+    "Right Winger": 54.0,
+    "Right-Back": 51.2,
+    "Second Striker": 65.0
+  },
+  "foot_success_baseline": {
+    "both": 55.3,
+    "left": 54.3,
+    "right": 52.4
   },
   "pretransfer_percentile_tables": {
     "pre_fotmob_rating": {

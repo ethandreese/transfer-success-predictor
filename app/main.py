@@ -522,6 +522,87 @@ def league_context_note(feat, actual_league, reference_league):
     return note
 
 
+CATEGORY_BASELINE_NOTE_TAIL = {
+    "position": "a real baseline gap in this dataset, not a claim that one position is inherently a better transfer bet",
+    "sub_position": "a real baseline gap in this dataset at a finer-grained role level, not a claim that one role is inherently a better bet",
+    "foot": "a small, real gap in the data with no confirmed football mechanism behind it - worth reading skeptically",
+}
+
+# "left"/"right"/"both" read oddly as a bare noun ("left transfers") the way
+# "Attack"/"Centre-Forward" do - display forms so category_baseline_note's
+# "{X} transfers" phrasing reads naturally for foot too.
+FOOT_DISPLAY = {"left": "Left-footed", "right": "Right-footed", "both": "Two-footed"}
+
+
+def category_baseline_note(feat, actual_value, reference_value):
+    """
+    Add the real historical average success_score for a categorical
+    feature's actual vs. reference value (position/sub_position/foot),
+    instead of an unexplained swing against whichever category happens to
+    be the dataset's mode (e.g. "Attack vs. a typical transfer's Defender"
+    with nothing to say why). Unlike league_context_note, none of these
+    three have a checked, verified mechanism behind the gap - position and
+    sub_position plausibly trace back to the historical formula's own
+    per-position weighting, but that isn't confirmed, and foot's gap has no
+    football explanation found at all - so CATEGORY_BASELINE_NOTE_TAIL
+    states the real number without inventing a cause, hedging explicitly
+    for "foot" since that gap is smallest and least explicable. Returns ""
+    when either category is too thin a sample to trust (missing from the
+    baseline dict - see MIN_LEAGUE_SAMPLE in train_model.py).
+    """
+    baseline = metadata[f"{feat}_success_baseline"]
+    if actual_value not in baseline or reference_value not in baseline:
+        return ""
+    display = FOOT_DISPLAY if feat == "foot" else {}
+    actual_label = display.get(actual_value, actual_value)
+    reference_label = display.get(reference_value, reference_value)
+    return (
+        f": {actual_label} transfers have historically averaged {baseline[actual_value]} "
+        f"vs. {baseline[reference_value]} for {reference_label} transfers - {CATEGORY_BASELINE_NOTE_TAIL[feat]}"
+    )
+
+
+def club_value_rating_note(direction, actual_log_value, reference_log_value, reference_display):
+    """
+    Explain WHY origin/destination squad value moves the prediction,
+    instead of a bare "€900m vs. a typical attacker's €172m" swing that
+    never says what a bigger club value actually buys a transfer. Checked
+    directly against every success_score component: log(club value)
+    correlates with post-move rating_pct far more than with any other
+    component (destination: r=0.29 vs. 0.23 for attacking, 0.22 for
+    possession, -0.07 for defensive; origin: r=0.19, same pattern, weaker) -
+    so the story is specifically about post-move rating, not attacking
+    output or playing time. `club_value_rating_regression` (rating_pct ~
+    log(club value), fit on the training data - see train_model.py) lets
+    this quote the actual percentile gap implied by *this* prediction's own
+    values rather than one baked-in number for everyone. actual_log_value/
+    reference_log_value are already log1p-transformed (the model's own
+    log_to_club_value/log_from_club_value feature), matching what the
+    regression was fit against, so no conversion is needed here.
+    Returns "" when the two implied percentiles are within 4 points of each
+    other - not enough of a gap for the note to say anything a reader
+    couldn't already tell from the swing itself.
+    """
+    reg = metadata["club_value_rating_regression"]["to" if direction == "to" else "from"]
+    pred_actual = float(np.clip(reg["slope"] * actual_log_value + reg["intercept"], 0, 100))
+    pred_reference = float(np.clip(reg["slope"] * reference_log_value + reg["intercept"], 0, 100))
+    if abs(pred_actual - pred_reference) < 4:
+        return ""
+    if direction == "to":
+        return (
+            f": moving to a squad valued this highly has historically come with a stronger post-move "
+            f"rating - signings there average around the {ordinal(pred_actual)} percentile, vs. the "
+            f"{ordinal(pred_reference)} percentile at a club valued like {reference_display}, likely "
+            f"reflecting the quality of teammates and system a wealthier club can offer"
+        )
+    return (
+        f": players leaving a squad valued this highly have historically gone on to rate around the "
+        f"{ordinal(pred_actual)} percentile at their new club, vs. the {ordinal(pred_reference)} percentile "
+        f"for those leaving a club valued like {reference_display}, likely reflecting the caliber of "
+        f"player a club that size already tends to have"
+    )
+
+
 class PredictRequest(BaseModel):
     """
     A hypothetical transfer to score: a player's pre-transfer profile
@@ -816,6 +897,10 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_pretra
             vs_clause = "vs. the position average"
         elif feat in ("to_domestic_competition_id", "from_domestic_competition_id"):
             vs_clause = f"vs. {typical_label} {typical_display}{league_context_note(feat, actual_value, reference_value)}"
+        elif feat in ("log_to_club_value", "log_from_club_value"):
+            club_side = "to" if feat == "log_to_club_value" else "from"
+            note = club_value_rating_note(club_side, actual_value, reference_value, typical_display)
+            vs_clause = f"vs. {typical_label} {typical_display}{note}"
         elif feat == "fee_to_value_ratio":
             vs_clause = (
                 f"vs. {typical_label} {typical_display}: paying up to ~1.3x market value counts as a "
@@ -823,6 +908,8 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_pretra
             )
         elif feat == "club_quality_ratio":
             vs_clause = f"vs. {typical_label} {typical_display} (destination squad value ÷ origin squad value)"
+        elif feat in ("position", "sub_position", "foot"):
+            vs_clause = f"vs. {typical_label} {typical_display}{category_baseline_note(feat, actual_value, reference_value)}"
         else:
             vs_clause = f"vs. {typical_label} {typical_display}"
 
