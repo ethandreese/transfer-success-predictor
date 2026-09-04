@@ -718,11 +718,16 @@ elsewhere in this project, nothing here needed to be walked back.
   contamination to guard against - FotMob already attributes a season to
   whichever club a player is *currently* registered at, which is exactly
   the club this script wants.
-- The predict model consumes these as **raw per-90 numbers**, not the
-  percentile-ranked, league-baseline-adjusted components the historical
-  score computes (`compute_fotmob_component_pcts`) - a tree ensemble can
-  learn its own splits/thresholds directly, so that machinery (built to
-  combine components onto one comparable 0-100 scale) isn't needed here.
+- The predict model originally consumed these as **raw per-90 numbers**,
+  not the percentile-ranked, league-baseline-adjusted components the
+  historical score computes (`compute_fotmob_component_pcts`) - the
+  reasoning being that a tree ensemble can learn its own splits/
+  thresholds directly, so that machinery (built to combine components
+  onto one comparable 0-100 scale) wasn't needed here. That didn't hold
+  up once checked directly - see "The pre-transfer FotMob stats are now
+  fed to the model as position-relative percentiles" further below,
+  which replaces this with the same position-conditional approach the
+  historical score uses.
 - ~35-45% of transfers have no pre-transfer FotMob match (an uncovered
   origin league, or a real coverage gap - same ceilings as the
   post-transfer side). Missing values are median-imputed (fit-on-train
@@ -859,12 +864,16 @@ already be similar on it by construction, trivializing the comparison).
 
 **The pre-transfer FotMob stats are grouped in the explanation the same
 way the historical score groups them (rating/attacking/defensive/
-possession), without changing what the model itself trains on.** The
-model still consumes all 12 raw per-90 stats separately - a tree ensemble
-genuinely can learn more from ungrouped features than from a hand-
-aggregated percentile, so that part of the "raw numbers, not
-`compute_fotmob_component_pcts`'s buckets" reasoning above stands. What
-didn't hold up was using that same ungrouped shape for the *explanation*:
+possession), without changing what the model itself trains on.** At the
+time, the model still consumed all 12 raw per-90 stats separately - the
+reasoning being that a tree ensemble can learn more from ungrouped
+features than from a hand-aggregated percentile, so grouping was treated
+as purely an explanation-layer concern here. (That reasoning didn't
+survive contact with the position-weighting problem below - the model
+itself was later changed to consume the same 4 groups the explanation
+already displays, once it became clear "ungrouped" and "position-blind"
+were the same underlying issue.) What didn't hold up *first* was using
+that same ungrouped shape for the *explanation*:
 individually, correlated stats (xG/xA/chances-created all move together
 for the same player) understate each other in a one-at-a-time leave-one-
 out swap, and fragment FotMob's real combined signal - "the single
@@ -903,6 +912,64 @@ swing - `has_pre_fotmob_data` (previously its own confusing top-5 entry,
 a data-quality flag with no football meaning) is retired in favor of each
 group's own "no recent FotMob data available" messaging when none of its
 underlying stats are real.
+
+**The pre-transfer FotMob stats are now fed to the model as
+position-relative percentiles, not raw per-90 numbers - the raw-number
+design was never actually position-aware, unlike every other part of this
+project.** The historical score weights defensive/attacking/possession
+components differently per position (e.g. defensive weight 0.28 for
+Goalkeeper vs. 0.02 for Attack in `score_weights.json`), but the predict
+model's 12 raw FotMob stats sat on one shared scale for every position -
+nothing told it that 2.0 tackles/90 is unremarkable for a striker but
+excellent for a center-back, or that a goalkeeper's "0 expected-goals/90"
+reflects a stat that doesn't apply to the position, not poor attacking
+play. Checked directly with a synthetic-row diagnostic before changing
+anything: swinging tackles/90 across the four broad positions on the old
+model produced almost flat sensitivity regardless of position (it should
+swing hardest for defenders), attackers showed the *smallest* xG
+sensitivity of any position (backwards - it should be the largest), and
+swinging saves/90 for outfield positions produced negative, nonsensical
+contributions from data those positions have no real signal for.
+
+Fixed by replacing the 12 raw stats with 4 position-relative percentile
+composites - rating, attacking (xG/xA/chances-created), defensive
+(tackles/interceptions/clearances/recoveries for outfielders, saves/
+save%/goals-conceded for goalkeepers), and possession (accurate passes
+and successful dribbles per 90) - computed the same way the historical
+score's own `compute_fotmob_component_pcts` does: where a raw value falls
+(0-100) among same-position players, with breakpoints fit on the
+training split's own distribution (`np.percentile`, persisted to
+metadata.json) and applied via linear interpolation at serve time, the
+same fit-on-train/apply-to-test discipline used everywhere else in this
+project. Validated with a 5-seed A/B/C experiment before shipping:
+composites-only beat raw-only on both MAE and R² at every seed tried,
+while adding composites *alongside* the raw stats (rather than replacing
+them) gave no further benefit - a tree ensemble gets nothing extra from
+two redundant, correlated views of the same signal. Test MAE 12.73 →
+12.65, R² 0.148 → 0.159 on the same temporal holdout. Re-running the
+synthetic-row diagnostic against the new model confirms the original bug
+is actually fixed: position-irrelevant stats (saves for outfielders,
+tackles/xG for goalkeepers) now show exactly 0.0 sensitivity, and
+position-relevant stats swing in the correct direction for every
+position tested.
+
+This also simplified the explanation layer built above - since the 4
+composites *are* the groups (rating/attacking/defensive/possession) the
+leave-one-out swap already displayed, the group-swap-and-recombine logic
+collapsed into an ordinary single-feature swap like every other feature,
+with the raw stat values kept alongside purely for display (not fed to
+the model, just carried through `build_feature_row` so the bulleted
+breakdown can still show real numbers, e.g. "73rd percentile" rather than
+just the abstract composite). Two bugs turned up while wiring this in:
+(1) the swap for the single-stat rating composite initially crashed with
+a `KeyError`, since it has no `stats` bulleted-list entry the way the
+3-stat groups do - fixed by branching on stat count, the same single-vs-
+multi distinction `describe_fotmob_component` already uses for the
+historical card; (2) that same crash resurfaced after the first fix
+because `build_feature_row` had been slicing its output down to just the
+model's input columns, discarding the raw `pre_fotmob_*` values the
+explanation needed to describe - fixed by keeping every column and
+letting `ColumnTransformer` select only the ones it needs, by name.
 
 ## Pages
 

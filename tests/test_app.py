@@ -20,9 +20,9 @@ def explain_all(payload_dict):
     reference instead of the free-transfer-skewed overall one.
     """
     req = PredictRequest(**payload_dict)
-    feature_row, real_pretransfer_fotmob_features = build_feature_row(req)
+    feature_row, real_pretransfer_composites = build_feature_row(req)
     raw_score = float(pipeline.predict(feature_row)[0])
-    return explain_prediction(feature_row, raw_score, real_pretransfer_fotmob_features, top_k=100)
+    return explain_prediction(feature_row, raw_score, real_pretransfer_composites, top_k=100)
 
 
 @pytest.fixture

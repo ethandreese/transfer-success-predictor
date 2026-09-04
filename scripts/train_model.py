@@ -40,20 +40,141 @@ PRETRANSFER_FOTMOB_FEATURES = [
     "pre_fotmob_total_tackle", "pre_fotmob_interception", "pre_fotmob_effective_clearance", "pre_fotmob_ball_recovery",
     "pre_fotmob_saves", "pre_fotmob__save_percentage", "pre_fotmob_goals_conceded",
 ]
-# ~35-45% of transfers have no FotMob match for the pre-transfer year
-# (same real coverage ceilings as the post-transfer side - see README) -
-# each pre_fotmob_* feature is median-imputed (see
-# pretransfer_fotmob_medians below) rather than dropping those rows
-# outright, with this flag so the model can learn to discount an imputed
-# placeholder rather than trusting it as a real "average" performance.
-HAS_PRETRANSFER_FOTMOB_FEATURE = "has_pre_fotmob_data"
+# These 12 raw stats are the fetched/autofilled *inputs* (see
+# scripts/fetch_pretransfer_fotmob_stats.py, app/main.py:PredictRequest) -
+# not what the model trains on directly. See PRETRANSFER_FOTMOB_COMPOSITES
+# below for why.
+PRETRANSFER_RATING_STAT = "pre_fotmob_rating"
+PRETRANSFER_ATTACKING_STATS = ["pre_fotmob_expected_goals_per_90", "pre_fotmob_expected_assists_per_90", "pre_fotmob_chances_created_p90"]
+PRETRANSFER_DEFENSIVE_OUTFIELD_STATS = ["pre_fotmob_total_tackle", "pre_fotmob_interception", "pre_fotmob_effective_clearance", "pre_fotmob_ball_recovery"]
+PRETRANSFER_DEFENSIVE_GK_STATS = ["pre_fotmob_saves", "pre_fotmob__save_percentage", "pre_fotmob_goals_conceded"]
+PRETRANSFER_POSSESSION_STATS = ["pre_fotmob_accurate_pass", "pre_fotmob_won_contest"]
+# Fewer conceded is better - percentile-ranked on the negated value so a
+# higher percentile always means "better", same as fotmob_goals_conceded_inv
+# in build_dataset.py.
+PRETRANSFER_INVERTED_STATS = {"pre_fotmob_goals_conceded"}
+
+# The model trains on these 4 position-relative percentiles (mirroring
+# compute_fotmob_component_pcts in build_dataset.py - the same rating/
+# attacking/defensive/possession split the historical score's own
+# components use), not the 12 raw per-90 stats above. Checked empirically
+# across 5 random seeds: replacing the raw stats with these beat feeding
+# them in raw on every seed (MAE 12.68 -> 12.63, R^2 0.152 -> 0.161), and
+# fixed a real problem the raw version had, not just a style preference -
+# a raw stat's absolute scale means something completely different by
+# position (1.5 tackles/90 is unremarkable for a striker, below average
+# for a centre-back), so the model had no reliable way to learn that
+# defensive stats should matter more for a defender than an attacker with
+# a training set this small. Confirmed directly: swinging
+# pre_fotmob_total_tackle from a low to a high value for a synthetic row
+# of each position moved the raw-feature model's prediction by nearly the
+# same amount regardless of position (+1.6 for an attacker, +2.0 for a
+# defender), and for pre_fotmob_expected_goals_per_90 the *smallest* swing
+# was for attackers - backwards from what the feature is supposed to
+# capture. A percentile-within-position feature doesn't have this problem
+# by construction: the number itself already means "how good is this for
+# their position", so the model doesn't have to somehow relearn that
+# per position from a training set this size. Adding the composites
+# *alongside* the raw stats (rather than replacing them) tested no better
+# than the raw-only baseline - redundant, correlated inputs don't help a
+# tree ensemble, they just add noise to split on.
+PRETRANSFER_FOTMOB_COMPOSITES = ["pre_fotmob_rating_pct", "pre_fotmob_attacking_pct", "pre_fotmob_defensive_pct", "pre_fotmob_possession_pct"]
+# Per-bucket, not one blanket flag - a player can have real attacking data
+# and no defensive data, and the model should be able to discount each
+# composite independently rather than treating "has any FotMob data at
+# all" as one signal.
+PRETRANSFER_FOTMOB_HAS_DATA_FLAGS = ["has_pre_rating_data", "has_pre_attacking_data", "has_pre_defensive_data", "has_pre_possession_data"]
+PRETRANSFER_PERCENTILE_POINTS = list(range(101))
+
+
+def build_pretransfer_percentile_tables(df):
+    """
+    Per (raw stat, position), percentile breakpoints (0th..100th, at every
+    integer point) fit from real - non-imputed, this must be called before
+    any imputation - values only, for interpolation-based lookup later (see
+    pretransfer_percentile). This is compute_fotmob_component_pcts's
+    within-position percentile rank in build_dataset.py, but as a fitted,
+    persistable transform rather than a one-off batch rank: a live
+    prediction needs "what percentile would THIS value fall at, relative to
+    the training distribution", which a batch-only rank can't answer for a
+    value that wasn't already in the batch. `df` should be the train split
+    for the holdout eval, the full dataset for the deployed model - same
+    fit-on-train/apply-to-test discipline as every other fitted reference
+    here. A position with under 20 real values for a stat (e.g. saves for
+    an outfield position) gets no table entry - lookup then treats the
+    value as missing, same as zero coverage; 20 is an arbitrary but
+    reasonable floor for a percentile curve to mean anything.
+    """
+    tables = {}
+    for stat in PRETRANSFER_FOTMOB_FEATURES:
+        sign = -1 if stat in PRETRANSFER_INVERTED_STATS else 1
+        tables[stat] = {}
+        for position, sub in df.groupby("position"):
+            values = sub[stat].dropna()
+            if len(values) < 20:
+                continue
+            tables[stat][position] = (sign * values).quantile([p / 100 for p in PRETRANSFER_PERCENTILE_POINTS]).tolist()
+    return tables
+
+
+def compute_pretransfer_fotmob_composites(df, tables):
+    """
+    Turn the 12 raw pre_fotmob_* stats into the 4 position-relative
+    composites the model actually trains on (PRETRANSFER_FOTMOB_COMPOSITES) -
+    same bucket definitions, and the same "average whichever sub-stats are
+    actually available, NaN only if none are" tolerance, as
+    compute_fotmob_component_pcts - applied to a fitted percentile lookup
+    (`tables`, see build_pretransfer_percentile_tables) instead of a batch
+    rank. "Defensive" uses a genuinely different stat set by position
+    (saves/save%/goals-conceded for goalkeepers, tackles/interceptions/
+    clearances/recoveries for everyone else), same reasoning as the
+    historical score's own defensive bucket.
+    """
+    df = df.copy()
+    pct = {}
+    for stat in PRETRANSFER_FOTMOB_FEATURES:
+        sign = -1 if stat in PRETRANSFER_INVERTED_STATS else 1
+        col = pd.Series(np.nan, index=df.index)
+        for position, sub in df.groupby("position"):
+            breakpoints = tables.get(stat, {}).get(position)
+            if breakpoints is None:
+                continue
+            looked_up = pd.Series(np.interp(sign * sub[stat], breakpoints, PRETRANSFER_PERCENTILE_POINTS), index=sub.index)
+            looked_up[sub[stat].isna()] = np.nan  # np.interp has no real notion of a missing input - mask it back in explicitly
+            col.loc[sub.index] = looked_up
+        pct[stat] = col
+
+    def avg_pct(stats):
+        return pd.concat([pct[s] for s in stats], axis=1).mean(axis=1, skipna=True)
+
+    df["pre_fotmob_rating_pct"] = pct[PRETRANSFER_RATING_STAT]
+    df["pre_fotmob_attacking_pct"] = avg_pct(PRETRANSFER_ATTACKING_STATS)
+    df["pre_fotmob_possession_pct"] = avg_pct(PRETRANSFER_POSSESSION_STATS)
+
+    is_gk = df["position"] == "Goalkeeper"
+    defensive = pd.Series(np.nan, index=df.index)
+    defensive.loc[~is_gk] = avg_pct(PRETRANSFER_DEFENSIVE_OUTFIELD_STATS).loc[~is_gk]
+    defensive.loc[is_gk] = avg_pct(PRETRANSFER_DEFENSIVE_GK_STATS).loc[is_gk]
+    df["pre_fotmob_defensive_pct"] = defensive
+
+    for comp, flag in zip(["rating", "attacking", "defensive", "possession"], PRETRANSFER_FOTMOB_HAS_DATA_FLAGS):
+        df[flag] = df[f"pre_fotmob_{comp}_pct"].notna().astype(int)
+    return df
+
+
+def impute_pretransfer_fotmob_composites(df, medians):
+    """~35-45% of transfers have no pre-transfer FotMob match for a given bucket - filled with that bucket's population median (`medians`, fit on whichever population df was drawn from) rather than dropped, alongside the has_pre_*_data flags so the model can learn to discount an imputed placeholder."""
+    df = df.copy()
+    for feat in PRETRANSFER_FOTMOB_COMPOSITES:
+        df[feat] = df[feat].fillna(medians[feat])
+    return df
 
 NUMERIC_FEATURES = [
     "age_at_transfer", "height_vs_position",
     "pre_apps", "pre_minutes", "pre_goals_p90", "pre_ga_p90", "pre_mins_per_app",
     "log_transfer_fee", "log_value_before", "fee_to_value_ratio", "club_quality_ratio",
     "log_from_club_value", "log_to_club_value",
-] + PRETRANSFER_FOTMOB_FEATURES + [HAS_PRETRANSFER_FOTMOB_FEATURE]
+] + PRETRANSFER_FOTMOB_COMPOSITES + PRETRANSFER_FOTMOB_HAS_DATA_FLAGS
 # Tried adding pre_ga_p90_vs_league / log_from_league_baseline /
 # log_to_league_baseline (the same league-adjustment used in the success
 # score label) as model inputs too - tested empirically against several
@@ -86,13 +207,13 @@ POSITION_CONDITIONAL_FEATURES = [
     "age_at_transfer", "pre_apps", "pre_minutes",
     "pre_goals_p90", "pre_ga_p90", "pre_mins_per_app",
     "log_value_before", "log_from_club_value", "log_to_club_value", "club_quality_ratio",
-] + PRETRANSFER_FOTMOB_FEATURES
-# A striker's typical tackles/90 is nothing like a centre-back's (and vice
-# versa for xG/90) - same reasoning as pre_goals_p90 above, even more
-# pronounced here since several of these (saves, tackles) are near-zero
-# outside their natural position. HAS_PRETRANSFER_FOTMOB_FEATURE is NOT
-# here - coverage odds don't meaningfully depend on position, so the flat
-# reference (~0.6-0.7, i.e. "usually available") is the right comparison.
+]
+# PRETRANSFER_FOTMOB_COMPOSITES is deliberately NOT here, unlike the raw
+# stats it replaced: a percentile-within-position feature is already
+# position-relative by construction (its distribution has the same ~50
+# median regardless of which position's rows it came from), so the flat
+# reference_values median below is already the right "typical" comparison -
+# no position-conditional lookup needed for these specifically.
 
 
 def add_derived_features(df):
@@ -105,7 +226,6 @@ def add_derived_features(df):
     df["foot"] = df["foot"].fillna("unknown")
     df["from_domestic_competition_id"] = df["from_domestic_competition_id"].fillna("unknown")
     df["to_domestic_competition_id"] = df["to_domestic_competition_id"].fillna("unknown")
-    df[HAS_PRETRANSFER_FOTMOB_FEATURE] = df["pre_fotmob_rating"].notna().astype(int)
     return df
 
 
@@ -130,25 +250,6 @@ def add_height_vs_position(df, position_means):
     return df
 
 
-def impute_pretransfer_fotmob(df, medians):
-    """
-    ~35-45% of transfers have no pre-transfer FotMob match (an
-    uncovered origin league, or a real coverage gap even within a
-    covered one - same ceilings as the post-transfer side, see README).
-    Filling with a population median (rather than dropping those rows,
-    which would sacrifice a third-plus of the training set for a still-
-    valuable feature set) alongside HAS_PRETRANSFER_FOTMOB_FEATURE lets
-    the model learn to discount an imputed placeholder instead of
-    trusting it as a real "average" performance. `medians` is fit on
-    whichever population df was drawn from, same fit-on-train/apply-to-
-    test discipline as position_height_means above.
-    """
-    df = df.copy()
-    for feat in PRETRANSFER_FOTMOB_FEATURES:
-        df[feat] = df[feat].fillna(medians[feat])
-    return df
-
-
 def main():
     """
     Load the processed transfers, fit a GradientBoostingRegressor on
@@ -166,16 +267,18 @@ def main():
     df = add_derived_features(df)
     # height_vs_position isn't computed yet (needs a fitted position-mean -
     # see add_height_vs_position), so dropna against its source column
-    # instead. pre_fotmob_* features are excluded entirely - missing rows
-    # get imputed (see impute_pretransfer_fotmob), not dropped.
+    # instead. The FotMob composites/flags are excluded entirely - missing
+    # rows get imputed (see impute_pretransfer_fotmob_composites), not
+    # dropped, and aren't computed yet at this point anyway (that needs a
+    # fitted percentile table - see build_pretransfer_percentile_tables).
     required = [
         f for f in NUMERIC_FEATURES
-        if f != "height_vs_position" and f not in PRETRANSFER_FOTMOB_FEATURES and f != HAS_PRETRANSFER_FOTMOB_FEATURE
+        if f != "height_vs_position" and f not in PRETRANSFER_FOTMOB_COMPOSITES and f not in PRETRANSFER_FOTMOB_HAS_DATA_FLAGS
     ] + ["height_in_cm"]
     df = df.dropna(subset=required + CATEGORICAL_FEATURES + [TARGET])
 
-    train = df[df["transfer_date"] < SPLIT_DATE]
-    test = df[df["transfer_date"] >= SPLIT_DATE]
+    train = df[df["transfer_date"] < SPLIT_DATE].copy()
+    test = df[df["transfer_date"] >= SPLIT_DATE].copy()
     print(f"Train: {len(train):,} transfers before {SPLIT_DATE}")
     print(f"Test:  {len(test):,} transfers on/after {SPLIT_DATE}")
 
@@ -187,10 +290,14 @@ def main():
     train = add_height_vs_position(train, position_height_means)
     test = add_height_vs_position(test, position_height_means)
 
-    # Same fit-on-train discipline for the pre-transfer FotMob medians.
-    pretransfer_fotmob_medians = {feat: float(train[feat].median()) for feat in PRETRANSFER_FOTMOB_FEATURES}
-    train = impute_pretransfer_fotmob(train, pretransfer_fotmob_medians)
-    test = impute_pretransfer_fotmob(test, pretransfer_fotmob_medians)
+    # Same fit-on-train discipline for the pre-transfer FotMob percentile
+    # tables and composite medians.
+    pretransfer_tables = build_pretransfer_percentile_tables(train)
+    train = compute_pretransfer_fotmob_composites(train, pretransfer_tables)
+    test = compute_pretransfer_fotmob_composites(test, pretransfer_tables)
+    pretransfer_composite_medians = {feat: float(train[feat].median()) for feat in PRETRANSFER_FOTMOB_COMPOSITES}
+    train = impute_pretransfer_fotmob_composites(train, pretransfer_composite_medians)
+    test = impute_pretransfer_fotmob_composites(test, pretransfer_composite_medians)
 
     X_train, y_train = train[NUMERIC_FEATURES + CATEGORICAL_FEATURES], train[TARGET]
     X_test, y_test = test[NUMERIC_FEATURES + CATEGORICAL_FEATURES], test[TARGET]
@@ -230,13 +337,10 @@ def main():
     position_height_means_full = df.groupby("position")["height_in_cm"].mean().to_dict()
     position_height_means_full["_default"] = float(df["height_in_cm"].mean())
     df = add_height_vs_position(df, position_height_means_full)
-    pretransfer_fotmob_medians_full = {feat: float(df[feat].median()) for feat in PRETRANSFER_FOTMOB_FEATURES}
-    # Snapshot before imputation - reference_values_by_position below needs
-    # each position's median computed over real known values only (median()
-    # skips NaN by default), not diluted by rows that are about to be
-    # filled with the flat population median (see impute_pretransfer_fotmob).
-    df_before_fotmob_impute = df.copy()
-    df = impute_pretransfer_fotmob(df, pretransfer_fotmob_medians_full)
+    pretransfer_tables_full = build_pretransfer_percentile_tables(df)
+    df = compute_pretransfer_fotmob_composites(df, pretransfer_tables_full)
+    pretransfer_composite_medians_full = {feat: float(df[feat].median()) for feat in PRETRANSFER_FOTMOB_COMPOSITES}
+    df = impute_pretransfer_fotmob_composites(df, pretransfer_composite_medians_full)
     X_all, y_all = df[NUMERIC_FEATURES + CATEGORICAL_FEATURES], df[TARGET]
     pipeline.fit(X_all, y_all)
 
@@ -277,18 +381,21 @@ def main():
     # POSITION_CONDITIONAL_FEATURES. height_vs_position doesn't need this -
     # it's already centered on its own position's average by construction
     # (see add_height_vs_position), so the flat reference_values median
-    # below (naturally close to 0) is the right comparison for it too.
-    # None (JSON null), not NaN, for a position with no real values at all
-    # for a given feature (e.g. pre_fotmob_saves for Attack - virtually no
-    # attacker has FotMob save data) - float("nan") isn't valid JSON and
-    # breaks serialization; app/main.py's explain_prediction treats a
-    # missing/None entry the same way (falls back to the flat reference).
+    # below (naturally close to 0) is the right comparison for it too. Not
+    # computed from a pre-imputation snapshot here (unlike the FotMob
+    # composites, which needed one) - none of POSITION_CONDITIONAL_FEATURES
+    # get touched by any imputation step, so `df` at this point already has
+    # only real values for all of them. None (JSON null), not NaN, for a
+    # position with no real values at all for a given feature - float("nan")
+    # isn't valid JSON and breaks serialization; app/main.py's
+    # explain_prediction treats a missing/None entry the same way (falls
+    # back to the flat reference).
     reference_values_by_position = {
         position: {
             f: (None if pd.isna(sub[f].median()) else float(sub[f].median()))
             for f in POSITION_CONDITIONAL_FEATURES
         }
-        for position, sub in df_before_fotmob_impute.groupby("position")
+        for position, sub in df.groupby("position")
     }
 
     # A €100m fee for a player already valued at €70m isn't remarkable -
@@ -365,12 +472,17 @@ def main():
             "league_success_baseline_to": league_success_baseline_to,
             "league_success_baseline_from": league_success_baseline_from,
             "league_fee_ratio_baseline_to": league_fee_ratio_baseline_to,
-            # Needed at serving time to fill in a hypothetical prediction's
-            # pre_fotmob_* features when the searched player has no recent
-            # FotMob match (an uncovered league, or a real coverage gap) -
-            # see app/main.py:build_feature_row.
-            "pretransfer_fotmob_medians": pretransfer_fotmob_medians_full,
-            "pretransfer_fotmob_features": PRETRANSFER_FOTMOB_FEATURES,
+            # Needed at serving time to turn a hypothetical prediction's raw
+            # pre_fotmob_* inputs into the 4 position-relative composites the
+            # model actually expects (pretransfer_percentile_tables for the
+            # per-stat/position lookup, pretransfer_fotmob_composite_medians
+            # for a bucket with no real data at all) - see
+            # app/main.py:build_feature_row.
+            "pretransfer_percentile_tables": pretransfer_tables_full,
+            "pretransfer_fotmob_composite_medians": pretransfer_composite_medians_full,
+            "pretransfer_fotmob_raw_stats": PRETRANSFER_FOTMOB_FEATURES,
+            "pretransfer_fotmob_composites": PRETRANSFER_FOTMOB_COMPOSITES,
+            "pretransfer_inverted_stats": list(PRETRANSFER_INVERTED_STATS),
         }, f, indent=2)
     print(f"Saved model + metadata to {MODEL_DIR}")
 
