@@ -1620,7 +1620,27 @@ def main():
     df["from_total_market_value"] = df["from_club_id"].map(club_value_proxy)
     df["to_total_market_value"] = df["to_club_id"].map(club_value_proxy)
 
-    df["fee_to_value_ratio"] = df["transfer_fee"] / df["market_value_in_eur"].clip(lower=1)
+    # value_before (fit/backward-looking valuation, falling back to
+    # market_value_in_eur only when that lookup fails - see above), not
+    # market_value_in_eur directly: this line divided by the raw column
+    # since the project's very first commit, before value_before's own
+    # fallback existed to make it reliable - never revisited once it did.
+    # market_value_in_eur alone is missing for 38.7% of transfers (a
+    # player who's since retired or left a tracked league has no current
+    # valuation), which silently propagated into fee_to_value_ratio being
+    # NaN for 3,456 of 8,358 transfers - not because the fee-vs-value ratio
+    # was unknowable (value_before has zero missing values and is exactly
+    # equal to market_value_in_eur whenever both are present, checked
+    # directly across every row where both exist), but because this line
+    # kept reading the less-complete of two columns holding the same
+    # number. train_model.py requires fee_to_value_ratio to be non-null
+    # for a row to enter training at all, so this alone was responsible
+    # for nearly the entire gap between the ~8,300 scored transfers and
+    # the ~4,900 the predict model actually trained on - and it was also a
+    # real train/serve mismatch: app/main.py's build_feature_row computes
+    # this same feature from value_before for every live prediction,
+    # different from what the model was ever trained on.
+    df["fee_to_value_ratio"] = df["transfer_fee"] / df["value_before"].clip(lower=1)
     df["club_quality_ratio"] = df["to_total_market_value"] / df["from_total_market_value"].clip(lower=1)
 
     valid = (

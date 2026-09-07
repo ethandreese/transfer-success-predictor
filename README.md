@@ -625,8 +625,8 @@ features (age, position, physical attributes, fee, market value, prior-year
 performance including FotMob rating/xG/xA/passing/defensive output, and
 origin/destination club & league strength) — nothing about what happened
 after the move. Evaluated on a temporal holdout (trained on
-transfers before mid-2023, tested on transfers since): **MAE ≈ 12.57 points**
-on the 0–100 scale, R² ≈ 0.156, vs. ≈14.4 MAE for always predicting the
+transfers before mid-2023, tested on transfers since): **MAE ≈ 12.40 points**
+on the 0–100 scale, R² ≈ 0.185, vs. ≈14.37 MAE for always predicting the
 average. That's a modest but real signal, and honestly weaker than scoring
 a fixed first year would give — predicting a player's *entire future stint*
 at a new club from pre-transfer stats alone is genuinely hard, since
@@ -1025,6 +1025,54 @@ because `build_feature_row` had been slicing its output down to just the
 model's input columns, discarding the raw `pre_fotmob_*` values the
 explanation needed to describe - fixed by keeping every column and
 letting `ColumnTransformer` select only the ones it needs, by name.
+
+**A one-line bug in `fee_to_value_ratio` was silently excluding 41% of
+the historical dataset from ever training the predict model at all -
+found by specifically going looking for exactly this kind of thing: the
+historical formula and the predict model have been changed independently
+across dozens of commits, and nothing had ever checked whether those
+changes stayed consistent with each other.** `scripts/build_dataset.py`
+computed it as `transfer_fee / market_value_in_eur` - `market_value_in_eur`
+(a player's *current* Transfermarkt valuation) is missing for 38.7% of
+historical transfers (a player who's since retired or left a tracked
+league has none), which silently produced a NaN `fee_to_value_ratio` for
+3,456 of 8,358 transfers. `train_model.py` requires every `NUMERIC_FEATURES`
+column to be non-null for a row to enter training at all, so this single
+column was almost the entire reason the model trained on ~4,900 rows
+instead of the ~8,300 actually scored (confirmed directly: the other four
+columns with any missing values combined account for fewer than 100 rows).
+It was also a genuine train/serve mismatch, not just a missing-data gap -
+`app/main.py`'s `build_feature_row` computes this same feature from
+`value_before` (market value *at the time of the transfer*) for every live
+prediction, a different quantity than what the model was ever trained on.
+
+`value_before` was the fix: zero missing values (it already falls back to
+`market_value_in_eur` itself when its own backward-looking valuation
+lookup fails - see `compute_value_growth_pct`'s docstring), and checked
+directly equal to `market_value_in_eur` in every one of the 5,125 rows
+where both are present, so switching the formula changes nothing for any
+row that already worked and only adds rows that were being thrown away
+for no real reason. This is presumably exactly how the two drifted apart:
+`fee_to_value_ratio` was written in the project's very first commit,
+before `value_before`'s own fallback existed to make it reliable, and
+nothing ever revisited it once `value_before` became the standard way
+every other feature in this codebase refers to "value at the time of the
+transfer."
+
+Retrained on the recovered dataset (7,808 of 8,358 transfers now usable,
+up from 4,895) and validated the same way every other change in this
+project has been: **MAE 12.65 → 12.40, R² 0.159 → 0.185** on the same
+temporal holdout, seed-stable (10 seeds: R² 0.181-0.190, std 0.003) rather
+than a lucky split. Also re-checked whether `max_depth=2`/
+`min_samples_leaf=10`/`subsample=0.8` - chosen specifically because the
+~3,000-row training set was too small for anything less constrained -
+still held now that training data has nearly doubled: tried `max_depth=3`,
+`min_samples_leaf=5`, `max_depth=4`, and no subsampling, all against the
+same 5-seed holdout, and the existing config still won every comparison
+(R² 0.186 vs. 0.162-0.184 for the alternatives) - the regularization
+choice holds up for reasons beyond the original small-training-set
+justification alone, so it was left unchanged rather than re-tuned on a
+premise that turned out not to be load-bearing.
 
 ## Pages
 
@@ -1869,7 +1917,10 @@ against the data rather than assuming they still held:
   updated to match once that gap opened up. Checked directly against
   `metadata.json`: `n_train` + `n_test` = 4,895, not 8,358. Fixed the
   claim to "~4,900" with a short clause explaining why it's smaller than
-  the full dataset, rather than just changing the number silently.
+  the full dataset, rather than just changing the number silently. (The
+  gap itself turned out to be a real, fixable bug, not an inherent
+  limitation - see the `fee_to_value_ratio` fix further up, which
+  recovered most of it; the homepage now says "~7,800" accordingly.)
 - `about.html` was missing a period ("real historical data Two different
   things live here") - a run-on sentence from what was almost certainly a
   copy-paste slip.
