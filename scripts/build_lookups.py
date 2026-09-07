@@ -13,6 +13,7 @@ import os
 import numpy as np
 import pandas as pd
 
+from build_dataset import load_appearances
 from fetch_fotmob_stats import LEAGUE_MAP
 
 RAW_DIR = os.environ.get(
@@ -104,11 +105,21 @@ def build_players_lookup():
     )
     players = players[players["market_value_in_eur"].fillna(0) >= MIN_MARKET_VALUE]
 
-    appearances = pd.read_csv(
-        os.path.join(RAW_DIR, "appearances.csv"),
-        usecols=["player_id", "player_club_id", "date", "goals", "assists", "minutes_played"],
-        parse_dates=["date"],
-    )
+    # load_appearances() (build_dataset.py), not a plain read_csv here - it
+    # applies data/manual_appearance_corrections.csv (a handful of away
+    # games misattributed to the home club in the raw dataset - see that
+    # function's docstring), a fix this script used to skip entirely since
+    # it re-reads appearances.csv independently rather than going through
+    # build_dataset.py. Checked directly whether that gap is currently
+    # live: re-ran the same detection scan (>=3 distinct clubs within any
+    # 30-day window) against just the last WINDOW_DAYS instead of the full
+    # historical range this file's own correction list was built from, and
+    # found only Africa Cup of Nations call-ups (a real gap in club
+    # appearances during international duty, not a misattributed one)
+    # triggering it - no live instance today, but nothing was stopping a
+    # future one from silently reaching recent_apps/recent_minutes here
+    # uncorrected the way historical scoring already guards against.
+    appearances = load_appearances()[["player_id", "player_club_id", "date", "goals", "assists", "minutes_played"]]
     window_start = REFERENCE_DATE - pd.Timedelta(days=WINDOW_DAYS)
     recent = appearances[
         (appearances["date"] >= window_start) & (appearances["date"] <= REFERENCE_DATE)

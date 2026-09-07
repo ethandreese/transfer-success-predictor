@@ -1126,6 +1126,46 @@ hypothetical prediction is inherently about *now*, so the flat "current"
 proxy `app/main.py` already reads via `clubs_lookup.csv` was always the
 right choice there, independent of this finding.
 
+**A third pass checked whether data-quality fixes added to one script
+ever failed to reach every other script that reads the same raw data -
+and found one real gap, plus two hypotheses that checked out fine.**
+`data/manual_appearance_corrections.csv` (a handful of away games
+misattributed to the home club in the raw dataset, found and fixed for
+historical scoring - see the data-quality pass under "Known limitations"
+below) is applied inside
+`build_dataset.py`'s own `load_appearances()`, but `build_lookups.py`
+re-reads `appearances.csv` directly for the live-prediction autofill's
+`recent_apps`/`recent_minutes`/etc. - a separate script that evolved
+independently and never picked up the same fix. Checked whether this
+currently matters: the two known-affected players' corrections are dated
+2018-2019, far outside any live 365-day "recent form" window, so today's
+`players_lookup.csv` is unaffected either way - but re-running the same
+detection scan the original fix used (>=3 distinct clubs within any
+30-day window), scoped to just the last 365 days instead of full history,
+found 3 players tripping the same signature. All 3 turned out to be real
+transfers combined with Africa Cup of Nations call-ups (international
+duty appearances carry no club_id at all, which the naive scan counts as
+a third "club") - not new misattribution bugs, so nothing live is broken
+today. Fixed anyway, since nothing was stopping a *future* real instance
+from reaching live predictions uncorrected the same way historical
+scoring already guards against it - `build_lookups.py` now imports and
+reuses `build_dataset.py`'s own `load_appearances()` (this project
+already has precedent for cross-script imports like this - see
+`fetch_current_fotmob_stats.py` importing from `fetch_fotmob_stats.py`)
+instead of re-reading the raw CSV a second, uncorrected way.
+
+Two related hypotheses were checked and found *not* to be gaps, worth
+recording so they don't get re-investigated later: `fetch_transfer_types.py`
+gathers its own candidate player list straight from raw `transfers.csv`,
+missing anyone whose only qualifying transfer came from
+`manual_transfers.csv` - but every manually-added row already carries its
+real fee directly (verified against Transfermarkt at the time it was
+added), so there's nothing for that script's own fee/type lookup to
+contribute for those specific rows regardless. `fetch_fotmob_stats.py`
+was the other candidate for this same class of gap, but already
+correctly concatenates `manual_transfers.csv` with the raw transfers
+before using it - no fix needed there.
+
 ## Pages
 
 - **`/`** — predict a hypothetical transfer: search a real player, pick a
