@@ -564,8 +564,44 @@ def load_clubs():
 def compute_club_value_proxy(players):
     """
     Approximate each club's overall squad strength as the sum of its
-    current players' market values. Used as a stand-in for "how big/rich is
-    this club" since clubs.csv's own total_market_value column is empty.
+    *current* players' market values - a single, dateless snapshot, same
+    problem `load_actual_sub_positions` documents for players.csv's own
+    sub_position: whatever the raw data says right now, applied identically
+    regardless of which transfer or era is being scored. Checked directly
+    that this is real, not hypothetical: RB Leipzig's 2014 transfer (Marvin
+    Compper, a newly-promoted 2.Bundesliga-era side) and their 2021 ones
+    (an established Champions League club) get the exact same
+    club_value_proxy - 699 of 701 clubs in the scored dataset get one
+    identical value no matter which year the transfer happened, since
+    clubs.csv's own total_market_value column is empty and this is the
+    only proxy available.
+
+    A dated fix was built and tested for this - reconstructing each club's
+    approximate roster from appearances.csv within a window of each
+    transfer's actual date, then summing each roster player's own
+    contemporaneous valuation (README has the full writeup; the
+    implementation itself was never committed, since it didn't ship).
+    It's a real, working, previously-missing signal - re-running it showed
+    Leipzig's value climbing sensibly from ~70M (just promoted, 2016) to
+    ~680M (established, 2021) instead of one flat number throughout - but
+    it made the *predict model* measurably worse on the same temporal
+    holdout, not better: R^2 0.185 -> 0.171 replacing this feature outright,
+    0.180 -> 0.175 adding it alongside this one rather than replacing it,
+    both checked across the same 10 seeds used everywhere else in this
+    project (not a lucky single split). The likely reason: because this
+    flat, current-only number repeats identically for every transfer
+    involving the same club, it functions as a de facto per-club identity
+    signal a tree ensemble can key off directly - closer to the target-
+    encoding idea already tried and rejected elsewhere in this project
+    (see README) than to an honest "value at the time" feature, and
+    apparently a more useful one for this specific predictive task despite
+    being less historically accurate. Kept the simpler, empirically-better
+    feature rather than the more correct one that measurably hurts
+    accuracy - this is used for a *live* prediction too (a hypothetical
+    transfer is inherently about *now*, so "current" is exactly right
+    there regardless of this finding - see app/main.py, which reads this
+    same proxy via clubs_lookup.csv), so nothing about how it's used
+    live needed to change either way.
     """
     proxy = (
         players.dropna(subset=["current_club_id"])

@@ -1074,6 +1074,58 @@ choice holds up for reasons beyond the original small-training-set
 justification alone, so it was left unchanged rather than re-tuned on a
 premise that turned out not to be load-bearing.
 
+**Continuing the search for the same class of bug turned up a second real
+one - club value's `from_total_market_value`/`to_total_market_value` also
+had a dateless-snapshot problem, exactly like the one already found and
+fixed for `sub_position` (see "Weights also vary by sub-position" above) -
+but fixing it made the predict model measurably worse, not better, and
+the fix was reverted after finding out why.** `compute_club_value_proxy`
+sums a club's *current* squad's market values - a single snapshot applied
+identically to every transfer regardless of year, since `clubs.csv`'s own
+`total_market_value` column is empty and this is the only proxy available
+at all. Checked directly: 699 of 701 clubs in the scored dataset get one
+identical value no matter which year the transfer happened - RB Leipzig's
+2014 transfer (Marvin Compper, joining a newly-promoted 2.Bundesliga-era
+side) and their 2021 ones (an established Champions League club) score
+with the exact same club value.
+
+Built and tested a real fix: reconstruct each club's approximate roster
+from `appearances.csv` within a window of each transfer's actual date,
+then sum each roster player's own contemporaneous valuation from
+`player_valuations.csv` (the same "nearest real valuation" idea
+`nearest_valuation` already uses for the transferred player, applied to
+their teammates too), falling back to the flat proxy when fewer than 8
+teammates could be identified and valued nearby. It worked exactly as
+intended - re-running it on Leipzig shows their value climbing sensibly
+from ~€70m (just promoted, 2016) to ~€680m (established, 2021) instead of
+one flat €584m throughout every transfer regardless of era - and recovers
+real, previously-invisible signal for 88% of clubs in the dataset (620 of
+701 now show more than one distinct value across their transfers, up from
+2).
+
+Retraining on the corrected feature made the model *worse*, not better,
+and by a real, seed-stable margin (10 seeds, same discipline as every
+other change here): **R² 0.185 → 0.171** replacing the flat proxy
+outright, **0.180 → 0.175** adding the dated version *alongside* the flat
+one rather than replacing it (so simply having both doesn't recover the
+loss either). The likely explanation: because the flat, current-only
+number repeats identically for every transfer involving the same club, it
+functions as a de facto per-club identity signal a tree ensemble can key
+off directly, closer to the target-encoding idea already tried and
+rejected earlier in this project (see "regularization" above) than to an
+honest "value at the time" feature - and, evidently, a more useful one for
+predicting *this specific label* than the historically accurate number is,
+despite - or perhaps because of - being less historically accurate.
+Reverted rather than shipped: kept the simpler, empirically-better flat
+proxy as the model feature (the roster-reconstruction code itself was
+never committed, since it didn't ship), exactly the same "measurably
+doesn't help, don't ship it" bar this project has applied to every other
+feature idea, including ones that look obviously more correct on paper.
+Nothing about the *live* prediction path changes either way - a
+hypothetical prediction is inherently about *now*, so the flat "current"
+proxy `app/main.py` already reads via `clubs_lookup.csv` was always the
+right choice there, independent of this finding.
+
 ## Pages
 
 - **`/`** — predict a hypothetical transfer: search a real player, pick a
