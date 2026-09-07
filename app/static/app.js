@@ -2,7 +2,26 @@ const state = {
   player: null,
   playerClub: null,
   club: null,
+  // The fee input's "real" value in EUR millions - the unit the backend
+  // always expects (see buildPayload-equivalent below) and the one every
+  // other currency conversion on the site works from. Kept separate from
+  // whatever the input currently *displays* (€/$/£, depending on the
+  // currency setting) so switching currency redisplays the same real fee
+  // in the new currency instead of reinterpreting the same digits as a
+  // different amount - the same behavior every other money value on the
+  // site already has via formatMoney, which this field previously didn't:
+  // its label hardcoded "(€m)" and its typed number was always sent as
+  // EUR regardless of the selected currency, silently wrong once the
+  // currency setting was anything but EUR.
+  feeEurMillions: 50,
 };
+
+/** Sync the fee field's label (currency symbol) and displayed value from `state.feeEurMillions` to the currently-selected currency - call after a currency change, or once at load if a non-EUR currency was already saved. */
+function updateFeeCurrencyDisplay(labelEl, inputEl) {
+  const symbol = CURRENCY_SYMBOLS[settings.currency];
+  labelEl.textContent = `Transfer fee (${symbol}m)`;
+  inputEl.value = Math.round(state.feeEurMillions * EXCHANGE_RATES[settings.currency] * 10) / 10;
+}
 
 /**
  * Map a searched player's recent_fotmob_* fields (players_lookup.csv, via
@@ -270,10 +289,20 @@ function renderPredictResult(data) {
   }).join("");
 }
 
+const feeLabel = document.querySelector('label[for="fee"]');
+const feeInput = document.getElementById("fee");
+updateFeeCurrencyDisplay(feeLabel, feeInput);
+// Keep state.feeEurMillions (the real, currency-independent value) in
+// sync with whatever the user types, converting from whichever currency
+// is currently displayed - see updateFeeCurrencyDisplay for the other
+// direction (a currency change redisplaying the same real fee).
+feeInput.addEventListener("input", () => {
+  const typed = parseFloat(feeInput.value);
+  state.feeEurMillions = Number.isNaN(typed) ? 0 : typed / EXCHANGE_RATES[settings.currency];
+});
+
 // Assemble a PredictRequest from the selected player/club plus the fee and
 // (editable) age fields, POST it to /api/predict, and render the result.
-// The fee input is always in EUR regardless of the currency setting (it
-// feeds the model directly) - only the displayed output is converted.
 document.getElementById("predict-btn").addEventListener("click", async () => {
   const errorBox = document.getElementById("error-box");
   errorBox.textContent = "";
@@ -295,7 +324,7 @@ document.getElementById("predict-btn").addEventListener("click", async () => {
     pre_goals_p90: state.player.recent_goals_p90,
     pre_ga_p90: state.player.recent_ga_p90,
     pre_mins_per_app: state.player.recent_mins_per_app,
-    transfer_fee: (parseFloat(document.getElementById("fee").value) || 0) * 1_000_000,
+    transfer_fee: state.feeEurMillions * 1_000_000,
     value_before: state.player.market_value_in_eur,
     from_domestic_competition_id: fromClub.domestic_competition_id || "unknown",
     to_domestic_competition_id: state.club.domestic_competition_id || "unknown",
@@ -322,11 +351,12 @@ document.getElementById("predict-btn").addEventListener("click", async () => {
 });
 
 // A settings change (currency, ...) doesn't change the underlying data,
-// just how it's displayed - reload the examples grid and, if a prediction
-// is already showing, re-render it from the cached response rather than
-// re-predicting.
+// just how it's displayed - reload the examples grid, redisplay the fee
+// input in the new currency, and, if a prediction is already showing,
+// re-render it from the cached response rather than re-predicting.
 document.addEventListener("settingschange", () => {
   loadExamples();
+  updateFeeCurrencyDisplay(feeLabel, feeInput);
   if (state.lastPredictData) renderPredictResult(state.lastPredictData);
 });
 

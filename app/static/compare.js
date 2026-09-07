@@ -42,7 +42,12 @@ const scenarios = {};
  */
 function setupScenario(key) {
   const col = document.querySelector(`.compare-col[data-scenario="${key}"]`);
-  const state = { player: null, playerClub: null, club: null };
+  // feeEurMillions is the fee input's "real" value in EUR millions - the
+  // unit the backend always expects - kept separate from whatever the
+  // input currently *displays* (€/$/£) so switching currency redisplays
+  // the same real fee rather than reinterpreting the same digits as a
+  // different amount (see app.js's identical state.feeEurMillions).
+  const state = { player: null, playerClub: null, club: null, feeEurMillions: 50 };
   scenarios[key] = state;
 
   const playerInput = col.querySelector(".player-search");
@@ -187,6 +192,22 @@ function setupScenario(key) {
     },
     (clubs) => state.player ? clubs.filter(c => c.club_id !== state.player.current_club_id) : clubs,
   );
+
+  // Keep the fee field's label/displayed value in sync with the selected
+  // currency - see the state.feeEurMillions comment above and app.js's
+  // identical updateFeeCurrencyDisplay for the full reasoning.
+  const feeLabel = col.querySelector('label[for="fee-input-' + key + '"]');
+  const feeInput = col.querySelector(".fee-input");
+  function updateFeeCurrencyDisplay() {
+    feeLabel.textContent = `Transfer fee (${CURRENCY_SYMBOLS[settings.currency]}m)`;
+    feeInput.value = Math.round(state.feeEurMillions * EXCHANGE_RATES[settings.currency] * 10) / 10;
+  }
+  updateFeeCurrencyDisplay();
+  feeInput.addEventListener("input", () => {
+    const typed = parseFloat(feeInput.value);
+    state.feeEurMillions = Number.isNaN(typed) ? 0 : typed / EXCHANGE_RATES[settings.currency];
+  });
+  document.addEventListener("settingschange", updateFeeCurrencyDisplay);
 }
 
 /** Assemble a PredictRequest body for one scenario from its selected player/club and the fee/age fields in that column. */
@@ -208,7 +229,7 @@ function buildPayload(key) {
     pre_goals_p90: state.player.recent_goals_p90,
     pre_ga_p90: state.player.recent_ga_p90,
     pre_mins_per_app: state.player.recent_mins_per_app,
-    transfer_fee: (parseFloat(col.querySelector(".fee-input").value) || 0) * 1_000_000,
+    transfer_fee: state.feeEurMillions * 1_000_000,
     value_before: state.player.market_value_in_eur,
     from_domestic_competition_id: fromClub.domestic_competition_id || "unknown",
     to_domestic_competition_id: state.club.domestic_competition_id || "unknown",

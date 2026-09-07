@@ -1843,6 +1843,49 @@ was verified live in the browser (keyboard-only selection, screen-reader-
 relevant ARIA state, the exclusion filter, and the reordered DOM), not
 just read off the diff.
 
+**A follow-up pass found one real functional bug and three stale-copy
+issues.** The functional one, reported directly: switching the currency
+setting on the Predict/Compare pages changed every *displayed* money value
+(via `formatMoney`) but not the transfer-fee *input* field - its label
+stayed hardcoded "(€m)" and, worse, whatever number was typed still got
+sent to the backend as raw EUR regardless of the selected currency, so a
+"$50m" typed while USD was selected was silently scored as €50m. Fixed by
+tracking each fee field's real value in EUR (`state.feeEurMillions` in
+`app.js`, one per scenario in `compare.js`) separately from whatever it
+*displays* - switching currency now redisplays the same real fee converted
+into the new currency (matching how every other money value on the site
+already behaves), and typing a new number converts it back to EUR against
+the currently-selected currency's rate before it's tracked.
+
+The three stale-copy issues, found by checking the homepage's own claims
+against the data rather than assuming they still held:
+
+- The homepage claimed the predict model is "trained on ~8,300 real
+  historical transfers" - true of the full scored dataset, but not of what
+  the model actually trains on. `train_model.py`'s `main()` drops any row
+  missing a required feature (recent form, market value, etc.) before
+  fitting, which the README's own technical section already correctly
+  documents ("~3,000 training rows") - the homepage copy just never got
+  updated to match once that gap opened up. Checked directly against
+  `metadata.json`: `n_train` + `n_test` = 4,895, not 8,358. Fixed the
+  claim to "~4,900" with a short clause explaining why it's smaller than
+  the full dataset, rather than just changing the number silently.
+- `about.html` was missing a period ("real historical data Two different
+  things live here") - a run-on sentence from what was almost certainly a
+  copy-paste slip.
+- The predict page's disclaimer read "Predicting a player's *entire*
+  tenure" with literal, unrendered asterisks - raw markdown pasted into
+  HTML instead of the `<em>entire</em>` the exact same word already gets
+  two paragraphs earlier on the same page. A user reading the disclaimer
+  saw asterisk characters, not italics.
+
+Also checked and found *not* stale, so left alone: `browse.html`/
+`loans.html`'s transfer/loan counts, `about.html`'s transfermarkt-datasets
+scale figures, the "2013–2026" date range, the GitHub README link, the
+exchange-rate comment's "checked" date, and - via a grep-based cross-check
+- every CSS class and JS function defined in the frontend has at least one
+real usage elsewhere (no dead code accumulated).
+
 ## Project layout
 
 ```
