@@ -1886,6 +1886,32 @@ exchange-rate comment's "checked" date, and - via a grep-based cross-check
 - every CSS class and JS function defined in the frontend has at least one
 real usage elsewhere (no dead code accumulated).
 
+**A dedicated pass over Browse and Loans specifically found `browse.js`/
+`loans.js` themselves clean (no drift between the two near-duplicate
+files, all hardcoded counts still accurate, the loan-scoring description
+paragraph still matches `loan_score_weights.json`) - but turned up a real,
+long-standing display bug in the league names both pages' filter dropdown
+pulls from.** `data/competitions_lookup.csv` (added in one commit,
+generated ad hoc with no script checked in to reproduce it, so it's never
+been touched since) stores names built by turning the raw dataset's URL
+slugs (e.g. `pko-bp-ekstraklasa`, `dfb-pokal`, `uefa-champions-league`)
+into display text - every hyphen became a space and every word got
+title-cased, which mangles any real acronym or genuinely-hyphenated name
+caught up in that transformation: "Pko Bp Ekstraklasa", "Supersport Hnl",
+"Uefa Champions League", "Dfb Pokal", "Fa Cup", "A League Men", and 13
+more, all visible directly in the Browse/Loans league filter and in any
+"why this score" league-context sentence that happens to mention one of
+them. Checked each one against the real organization/competition name
+before fixing it (not just re-capitalizing blindly) - fixed 18 entries to
+their real names (`PKO BP Ekstraklasa`, `SuperSport HNL`, `UEFA Champions
+League`, `DFB-Pokal` and `A-League Men` restoring the hyphen the slug-to-
+space conversion had dropped, `FA Cup`, `AFC Asian Cup`, `KNVB Beker`,
+`Liga MX Clausura`, etc.) via a precise id-matched edit, not a blanket
+re-casing pass that could just as easily introduce a different mistake.
+Pure data-file fix - no code change, no retraining, 102/102 tests pass
+(none hardcoded the broken names), and it improves this same league name
+everywhere it's shown, not just the Browse/Loans filters.
+
 ## Project layout
 
 ```

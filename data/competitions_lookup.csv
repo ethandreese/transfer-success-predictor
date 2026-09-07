@@ -1,9 +1,9 @@
 competition_id,name,country_name
 A1,Bundesliga,Austria
-AFAC,Afc Asian Cup,
-AFCN,Africa Cup Of Nations,
+AFAC,AFC Asian Cup,
+AFCN,Africa Cup of Nations,
 ARG1,Torneo Apertura,Argentina
-AUS1,A League Men,Australia
+AUS1,A-League Men,Australia
 BE1,Jupiler Pro League,Belgium
 BESC,Volkswagen Supercup,Belgium
 BPO4,Jupiler Pro League Relegation Play Offs,Belgium
@@ -11,20 +11,20 @@ BRA1,Campeonato Brasileiro Serie A,Brazil
 C1,Super League,Switzerland
 CDR,Copa Del Rey,Spain
 CIT,Italy Cup,Italy
-CL,Uefa Champions League,
-CLQ,Uefa Champions League Qualifying,
+CL,UEFA Champions League,
+CLQ,UEFA Champions League Qualifying,
 COPA,Copa America,
-DFB,Dfb Pokal,Germany
+DFB,DFB-Pokal,Germany
 DFL,Franz Beckenbauer Supercup,Germany
 DK1,Superliga,Denmark
 DKP,Oddset Pokalen,Denmark
-ECLQ,Uefa Conference League Qualifying,
+ECLQ,UEFA Conference League Qualifying,
 EJPL,Jupiler Pro League Playoff I,Belgium
-EL,Uefa Europa League,
-ELQ,Uefa Europa League Qualifying,
+EL,UEFA Europa League,
+ELQ,UEFA Europa League Qualifying,
 ES1,Laliga,Spain
-EURO,Uefa Euro,
-FAC,Fa Cup,England
+EURO,UEFA Euro,
+FAC,FA Cup,England
 FIWC,World Cup,
 FR1,Ligue 1,France
 FRCH,Trophee Des Champions,France
@@ -34,15 +34,15 @@ GR1,Super League 1,Greece
 GRP,Kypello Elladas,Greece
 IT1,Serie A,Italy
 JAP1,J1 League,Japan
-KR1,Supersport Hnl,Croatia
+KR1,SuperSport HNL,Croatia
 L1,Bundesliga,Germany
-MEX1,Liga Mx Clausura,Mexico
+MEX1,Liga MX Clausura,Mexico
 MLS1,Major League Soccer,United States
 NL1,Eredivisie,Netherlands
-NLP,Knvb Beker,Netherlands
+NLP,KNVB Beker,Netherlands
 NLSC,Johan Cruijff Schaal,Netherlands
 NO1,Eliteserien,Norway
-PL1,Pko Bp Ekstraklasa,Poland
+PL1,PKO BP Ekstraklasa,Poland
 PO1,Liga Portugal,Portugal
 POBE,Jupiler Pro League Europe Play Offs,Belgium
 POSU,Supercup Candido De Oliveira,Portugal
@@ -56,11 +56,11 @@ SC1,Scottish Premiership,Scotland
 SCI,Supercoppa Italiana,Italy
 SE1,Allsvenskan,Sweden
 SER1,Super Liga Srbije,Serbia
-SFA,Scottish Fa Cup,Scotland
+SFA,Scottish FA Cup,Scotland
 SUC,Supercopa,Spain
 TR1,Super Lig,Türkiye
 TS1,Chance Liga,Czech Republic
-UCOL,Uefa Conference League,
+UCOL,UEFA Conference League,
 UKR1,Premier Liga,Ukraine
 UKRP,Ukrainian Cup,Ukraine
-USC,Uefa Super Cup,
+USC,UEFA Super Cup,
