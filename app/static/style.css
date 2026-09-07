@@ -227,6 +227,13 @@ h2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1.25rem;
+  /* Without this, CSS Grid's default (stretch) forces every cell in a row
+     to the same height - so selecting a player (whose .field grows once
+     its chip appears) also stretches the untouched "Destination club"
+     field beside it, leaving a blank gap under it that looks like it
+     reacted to a selection it never got. align-items: start lets each
+     field size to its own content instead. */
+  align-items: start;
 }
 
 @media (max-width: 720px) {
@@ -508,6 +515,7 @@ button.predict-btn:disabled {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 2rem;
+  align-items: start; /* same reasoning as .form-grid above */
 }
 
 @media (max-width: 720px) {
