@@ -1166,6 +1166,34 @@ was the other candidate for this same class of gap, but already
 correctly concatenates `manual_transfers.csv` with the raw transfers
 before using it - no fix needed there.
 
+**A fourth pass, looking specifically at the two independently-maintained
+weight files, found one real cross-wiring: the loan pipeline's early
+position-validity filter checked positions against `POSITION_WEIGHTS`
+(the *permanent-transfer* weight keys) instead of `LOAN_POSITION_WEIGHTS`,
+even though `finish_loan_dataset` right below it correctly uses the loan
+version for the actual weight lookup.** Currently harmless purely by
+coincidence - both `score_weights.json` and `loan_score_weights.json`
+happen to define the exact same 4 top-level position keys (Attack/
+Midfield/Defender/Goalkeeper) today, checked directly - but the filter
+had no business depending on that coincidence holding forever, especially
+given the two files get hand-edited independently and often (this whole
+investigation exists because of exactly that pattern). Fixed to reference
+`LOAN_POSITION_WEIGHTS` explicitly. Re-ran the full pipeline to confirm:
+byte-identical output, exactly as expected for two currently-equal key
+sets, so this was pure correctness/future-proofing, not a live bug.
+
+Also checked and found solid, not gaps: `WINDOW_DAYS`/`PRE_WINDOW_DAYS`
+(the "365 days" definition of "recent") is defined separately in four
+scripts (`build_dataset.py`, `build_lookups.py`,
+`fetch_current_fotmob_stats.py`, `fetch_pretransfer_fotmob_stats.py`) but
+each of the FotMob ones explicitly comments that it matches its
+Transfermarkt-appearances counterpart - already cross-referenced
+carefully when written, not an oversight. `REFERENCE_NOW`/`REFERENCE_DATE`
+(build_dataset.py/build_lookups.py's respective "today") are identically
+defined, just named differently - harmless as long as both scripts run
+within the same calendar day, which the documented run order already
+assumes.
+
 ## Pages
 
 - **`/`** — predict a hypothetical transfer: search a real player, pick a

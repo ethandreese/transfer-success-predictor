@@ -1451,7 +1451,14 @@ def prepare_loans(players, clubs, appearances, valuations, team_games):
         # like any other real data gap. Never surfaced before the
         # appearances.csv-vs-transfers.csv backfill (data/manual_transfers.csv)
         # widened the candidate pool enough to actually include one.
-        & df["position"].isin(POSITION_WEIGHTS)
+        #
+        # LOAN_POSITION_WEIGHTS, not POSITION_WEIGHTS - this is the loan
+        # pipeline (finish_loan_dataset below correctly uses the loan
+        # version for the actual weight lookup; this early filter had used
+        # the permanent-transfer one instead, harmless only because the two
+        # files currently define the exact same 4 position keys - a coincidence
+        # this line shouldn't have been relying on).
+        & df["position"].isin(LOAN_POSITION_WEIGHTS)
     )
     return df[valid].copy()
 
