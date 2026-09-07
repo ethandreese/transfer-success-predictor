@@ -56,36 +56,105 @@ function setupScenario(key) {
     document.getElementById("compare-btn").disabled = !ready;
   }
 
-  /** Debounced search-as-you-type dropdown for one input, scoped to this scenario's column (same pattern as app.js's setupAutocomplete, duplicated here since each compare column needs its own independent instance). */
-  function wireAutocomplete(input, list, endpoint, renderLabel, onSelect) {
+  /**
+   * Debounced search-as-you-type dropdown for one input, scoped to this
+   * scenario's column (same pattern as app.js's setupAutocomplete,
+   * duplicated here since each compare column needs its own independent
+   * instance). `filterResults` (optional) can drop items from the raw API
+   * response before they're shown.
+   *
+   * Keyboard-navigable (ArrowUp/Down, Enter, Escape) with the standard
+   * ARIA combobox pattern (role="combobox"/"listbox"/"option",
+   * aria-activedescendant) - see app.js's setupAutocomplete for why this
+   * matters (previously mouse/click only, so a keyboard-only or screen-
+   * reader user couldn't select a player or club here at all). Uses
+   * `list.id` (set in compare.html) to build unique option ids, since this
+   * function is keyed by element reference, not a single page-wide id.
+   */
+  function wireAutocomplete(input, list, endpoint, renderLabel, onSelect, filterResults) {
     let debounceTimer = null;
+    let items = [];
+    let highlighted = -1;
+
+    input.setAttribute("role", "combobox");
+    input.setAttribute("aria-autocomplete", "list");
+    input.setAttribute("aria-expanded", "false");
+    input.setAttribute("aria-controls", list.id);
+    list.setAttribute("role", "listbox");
+
+    function closeList() {
+      list.classList.remove("open");
+      input.setAttribute("aria-expanded", "false");
+      input.removeAttribute("aria-activedescendant");
+      highlighted = -1;
+    }
+
+    function setHighlight(i) {
+      highlighted = i;
+      [...list.children].forEach((child, idx) => child.classList.toggle("highlighted", idx === i));
+      if (i >= 0) {
+        input.setAttribute("aria-activedescendant", `${list.id}-opt-${i}`);
+        list.children[i].scrollIntoView({ block: "nearest" });
+      } else {
+        input.removeAttribute("aria-activedescendant");
+      }
+    }
+
+    function selectItem(i) {
+      const item = items[i];
+      if (!item) return;
+      onSelect(item);
+      input.value = renderLabel(item);
+      closeList();
+    }
+
     input.addEventListener("input", () => {
       clearTimeout(debounceTimer);
       const q = input.value.trim();
       if (q.length < 2) {
-        list.classList.remove("open");
+        items = [];
+        closeList();
         return;
       }
       debounceTimer = setTimeout(async () => {
         const res = await fetch(`${endpoint}?q=${encodeURIComponent(q)}`);
-        const items = await res.json();
+        const results = await res.json();
+        items = filterResults ? filterResults(results) : results;
         if (!items.length) {
-          list.classList.remove("open");
+          closeList();
           return;
         }
-        list.innerHTML = items.map((item, i) => `<div data-idx="${i}">${renderLabel(item)}</div>`).join("");
+        list.innerHTML = items.map((item, i) =>
+          `<div id="${list.id}-opt-${i}" role="option" data-idx="${i}">${renderLabel(item)}</div>`
+        ).join("");
         list.classList.add("open");
+        input.setAttribute("aria-expanded", "true");
+        setHighlight(-1);
         [...list.children].forEach((child, i) => {
-          child.addEventListener("click", () => {
-            onSelect(items[i]);
-            list.classList.remove("open");
-            input.value = renderLabel(items[i]);
-          });
+          child.addEventListener("click", () => selectItem(i));
+          child.addEventListener("mouseenter", () => setHighlight(i));
         });
       }, 200);
     });
+
+    input.addEventListener("keydown", (e) => {
+      if (!list.classList.contains("open")) return;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setHighlight(Math.min(highlighted + 1, items.length - 1));
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setHighlight(Math.max(highlighted - 1, 0));
+      } else if (e.key === "Enter" && highlighted >= 0) {
+        e.preventDefault();
+        selectItem(highlighted);
+      } else if (e.key === "Escape") {
+        closeList();
+      }
+    });
+
     document.addEventListener("click", (e) => {
-      if (e.target !== input) list.classList.remove("open");
+      if (e.target !== input) closeList();
     });
   }
 
@@ -105,6 +174,9 @@ function setupScenario(key) {
     },
   );
 
+  // Excludes the selected player's own current club - a "transfer" to the
+  // club a player is already at isn't a real scenario, and the model has
+  // no way to flag that for you (see app.js's identical guard).
   wireAutocomplete(
     clubInput, clubList, "/api/clubs/search",
     (c) => c.name,
@@ -113,6 +185,7 @@ function setupScenario(key) {
       col.querySelector(".club-chip").innerHTML = `<span class="selected-chip">${c.name}</span>`;
       updateCompareButton();
     },
+    (clubs) => state.player ? clubs.filter(c => c.club_id !== state.player.current_club_id) : clubs,
   );
 }
 

@@ -276,7 +276,8 @@ h2 {
   font-size: 0.9rem;
 }
 
-.autocomplete-list div:hover { background: var(--border); }
+.autocomplete-list div:hover,
+.autocomplete-list div.highlighted { background: var(--border); }
 
 .selected-chip {
   display: inline-block;

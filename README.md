@@ -1791,6 +1791,58 @@ happened to look like signal, not a sign anything broke.
   than computed per-season, so a league that got notably more/less
   attacking over that time isn't captured precisely.
 
+**A frontend pass turned up real usability gaps the backend work this far
+hadn't touched.** Clicking through every page (desktop, mobile, light
+theme) surfaced four:
+
+- The player/club search on the Predict and Compare pages - the only way
+  to use the site's core feature - was mouse-only. `setupAutocomplete`
+  (`app.js`) and `wireAutocomplete` (`compare.js`) wired a `click` handler
+  on each suggestion and nothing else: no arrow-key navigation, no
+  Enter-to-select, no ARIA roles at all. A keyboard-only or screen-reader
+  user could type a query and see nothing they could act on. Fixed by
+  adding the standard combobox pattern to both (they're separate, already-
+  duplicated implementations, not shared code - see `wireAutocomplete`'s
+  own comment) - ArrowUp/Down moves a tracked highlight, Enter selects it,
+  Escape closes the list, and `role="combobox"`/`"listbox"`/`"option"` plus
+  `aria-activedescendant` give a screen reader something to announce.
+  Verified directly: a real `keydown` event with `key: "Enter"` (exactly
+  what a physical Enter press produces) selects the highlighted item,
+  updates the chip, and closes the dropdown - confirmed via direct event
+  dispatch after the browser-automation tool's own synthetic key-press
+  simulation turned out not to reproduce a real Enter key faithfully for
+  this input (ArrowDown worked through the same tool without issue).
+- `compare.html`'s 8 inputs (player/club/fee/age × two columns) had no
+  `id` at all, so their visually-adjacent `<label>` text was never
+  programmatically linked to the field it labeled - a screen reader
+  announces these as unlabeled. The main Predict page's `index.html` did
+  this correctly from the start; Compare just never got it, likely because
+  duplicating a plain `id` across two columns isn't valid HTML and nobody
+  went back to give each column's copy its own suffixed one. Fixed by
+  giving every field a unique `-a`/`-b` id and pointing its label's `for`
+  at it (`wireAutocomplete` already used element references, not ids, for
+  its own logic, so this was purely additive).
+- The compare page rendered its "Option B scores 3.3 points higher than
+  Option A" conclusion *above* the two score cards and their breakdowns -
+  a reader saw the punchline before either number it was based on. Fixed
+  by moving `#compare-delta` below `.compare-results-grid` in
+  `compare.html` (purely a markup reorder - `compare.js` addresses both by
+  id, so nothing else needed to change).
+- Nothing stopped - or even flagged - "predicting" a transfer to a
+  player's own current club. Selecting Jude Bellingham (Real Madrid) with
+  Real Madrid as the destination returned a real-looking score (74.3) with
+  no indication the scenario itself doesn't make sense. Fixed by excluding
+  a selected player's `current_club_id` from their own destination-club
+  search results (`filterResults` on `app.js`'s `setupAutocomplete`,
+  mirrored in `compare.js`'s `wireAutocomplete`) - the option simply
+  doesn't appear, rather than appearing and silently producing a
+  meaningless prediction.
+
+No backend/model change - 102/102 tests pass unaffected, and every fix
+was verified live in the browser (keyboard-only selection, screen-reader-
+relevant ARIA state, the exclusion filter, and the reordered DOM), not
+just read off the diff.
+
 ## Project layout
 
 ```

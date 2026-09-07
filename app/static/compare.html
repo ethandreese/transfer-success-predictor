@@ -13,7 +13,7 @@
   <meta name="twitter:title" content="Compare Transfers - Transfer Success Predictor" />
   <meta name="twitter:description" content="Compare two hypothetical football transfers side by side." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="stylesheet" href="/style.css?v=23" />
+  <link rel="stylesheet" href="/style.css?v=24" />
 </head>
 <body>
   <header>
@@ -34,48 +34,48 @@
         <div class="compare-col" data-scenario="a">
           <h2>Option A</h2>
           <div class="field">
-            <label>Player</label>
-            <input class="player-search" type="text" placeholder="Search a player" autocomplete="off" />
-            <div class="autocomplete-list player-list"></div>
+            <label for="player-search-a">Player</label>
+            <input id="player-search-a" class="player-search" type="text" placeholder="Search a player" autocomplete="off" />
+            <div class="autocomplete-list player-list" id="player-list-a"></div>
             <div class="player-chip"></div>
           </div>
           <div class="field">
-            <label>Destination club</label>
-            <input class="club-search" type="text" placeholder="Search a club" autocomplete="off" />
-            <div class="autocomplete-list club-list"></div>
+            <label for="club-search-a">Destination club</label>
+            <input id="club-search-a" class="club-search" type="text" placeholder="Search a club" autocomplete="off" />
+            <div class="autocomplete-list club-list" id="club-list-a"></div>
             <div class="club-chip"></div>
           </div>
           <div class="field">
-            <label>Transfer fee (&euro;m)</label>
-            <input class="fee-input" type="number" min="0" step="0.5" value="50" />
+            <label for="fee-input-a">Transfer fee (&euro;m)</label>
+            <input id="fee-input-a" class="fee-input" type="number" min="0" step="0.5" value="50" />
           </div>
           <div class="field">
-            <label>Age at transfer</label>
-            <input class="age-input" type="number" min="15" max="42" step="0.1" />
+            <label for="age-input-a">Age at transfer</label>
+            <input id="age-input-a" class="age-input" type="number" min="15" max="42" step="0.1" />
           </div>
         </div>
 
         <div class="compare-col" data-scenario="b">
           <h2>Option B</h2>
           <div class="field">
-            <label>Player</label>
-            <input class="player-search" type="text" placeholder="Search a player" autocomplete="off" />
-            <div class="autocomplete-list player-list"></div>
+            <label for="player-search-b">Player</label>
+            <input id="player-search-b" class="player-search" type="text" placeholder="Search a player" autocomplete="off" />
+            <div class="autocomplete-list player-list" id="player-list-b"></div>
             <div class="player-chip"></div>
           </div>
           <div class="field">
-            <label>Destination club</label>
-            <input class="club-search" type="text" placeholder="Search a club" autocomplete="off" />
-            <div class="autocomplete-list club-list"></div>
+            <label for="club-search-b">Destination club</label>
+            <input id="club-search-b" class="club-search" type="text" placeholder="Search a club" autocomplete="off" />
+            <div class="autocomplete-list club-list" id="club-list-b"></div>
             <div class="club-chip"></div>
           </div>
           <div class="field">
-            <label>Transfer fee (&euro;m)</label>
-            <input class="fee-input" type="number" min="0" step="0.5" value="50" />
+            <label for="fee-input-b">Transfer fee (&euro;m)</label>
+            <input id="fee-input-b" class="fee-input" type="number" min="0" step="0.5" value="50" />
           </div>
           <div class="field">
-            <label>Age at transfer</label>
-            <input class="age-input" type="number" min="15" max="42" step="0.1" />
+            <label for="age-input-b">Age at transfer</label>
+            <input id="age-input-b" class="age-input" type="number" min="15" max="42" step="0.1" />
           </div>
         </div>
       </div>
@@ -84,7 +84,6 @@
       <div class="error-box" id="error-box"></div>
 
       <div class="result" id="result">
-        <div class="compare-delta" id="compare-delta"></div>
         <div class="compare-results-grid">
           <div class="compare-result-col" id="result-a">
             <h2>Option A</h2>
@@ -111,6 +110,10 @@
             </div>
           </div>
         </div>
+        <!-- Below the two score cards, not above - readers should see both
+             numbers and their breakdowns before the "in conclusion" delta
+             sentence, not the punchline first. -->
+        <div class="compare-delta" id="compare-delta"></div>
         <p class="disclaimer">
           Both predictions carry the same uncertainty as a single prediction. Typical
           error is about 15 points on this 0&ndash;100 scale. Treat a close comparison as
@@ -120,7 +123,7 @@
     </section>
   </main>
 
-  <script src="/settings.js?v=23"></script>
-  <script src="/compare.js?v=23"></script>
+  <script src="/settings.js?v=24"></script>
+  <script src="/compare.js?v=24"></script>
 </body>
 </html>
