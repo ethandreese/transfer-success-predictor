@@ -1912,6 +1912,35 @@ Pure data-file fix - no code change, no retraining, 102/102 tests pass
 (none hardcoded the broken names), and it improves this same league name
 everywhere it's shown, not just the Browse/Loans filters.
 
+**`about.html` - the page whose entire job is describing "how the numbers
+are actually computed" - had two claims that didn't match what the
+scoring code actually does.** Checked every sentence against
+`score_weights.json`/`build_dataset.py` rather than trusting the prose:
+
+- Its list of what a historical score blends named perf level/change,
+  value growth, playing time, and fee-vs-value, plus FotMob stats "where
+  available" - and skipped `resale_profit` entirely, a real, weighted
+  component (8% of every position's score - see `score_weights.json`)
+  that's just as conditional as the FotMob stats already called out ("when
+  a real next sale exists to judge that by" - `has_resale_data` requires a
+  later transfer with a real, nonzero fee). Checked directly: 25% of
+  scored transfers have it, not a rare edge case. Added it to the list.
+- "Only transfers with enough playing time on both sides of the move are
+  scored" is true for permanent transfers but not loans - checked directly
+  against `build_dataset.py`'s loan pipeline, which applies the minimum-
+  appearances bar to the *pre*-loan window only and deliberately has none
+  for the loan window itself (its own comment: filtering loans by how much
+  they played *during* the loan would hide exactly the loans that didn't
+  deliver game time, the very outcome the loan score exists to capture).
+  Reworded to state the real, asymmetric rule instead of the tidier but
+  inaccurate symmetric one.
+
+Both were content gaps present since the page was written, not drift from
+something once-accurate - found by checking the prose against the code
+that actually computes each number, the same discipline applied to every
+other page this pass. Pure copy fix, no code/data change; 102/102 tests
+pass unaffected.
+
 ## Project layout
 
 ```

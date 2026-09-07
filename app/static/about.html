@@ -56,7 +56,8 @@
         A historical transfer's score blends several ingredients: how well the player
         performed relative to their league's average, how their performance changed from
         before the move, how much their market value grew, how much they actually played,
-        whether the fee looked reasonable in hindsight, and, where available,
+        whether the fee looked reasonable in hindsight, whether the club later resold them
+        for a profit (when a real next sale exists to judge that by), and, where available,
         detailed FotMob stats (attacking output, defending, possession, overall rating).
         The exact weighting shifts by position: a striker's score leans heavily on goal
         involvement, a centre-back's leans on defending, and a goalkeeper's is judged almost
@@ -88,8 +89,12 @@
         The underlying data is the <a href="https://github.com/dcaribou/transfermarkt-datasets" target="_blank" rel="noopener">transfermarkt-datasets</a>
         project (~50k players, ~175k transfers, ~1.9M appearances), supplemented with
         detailed match stats pulled from FotMob for the leagues and seasons it covers.
-        Only transfers with enough playing time on both sides of the move are scored, so
-        this skews toward established first-team players rather than fringe squad moves.
+        Every transfer needs a real track record before the move to be scored - a minimum
+        number of appearances at the old club - which skews the whole dataset toward
+        established first-team players rather than fringe squad moves. Permanent transfers
+        also need a minimum of playing time after the move; loans deliberately don't, since
+        whether the loan delivered game time at all is usually the central question it gets
+        judged on.
       </p>
       <p>
         The full technical writeup (every scoring decision, known limitation, and bug
