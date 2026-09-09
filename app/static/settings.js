@@ -111,6 +111,61 @@ function convertMoneyInText(text) {
   return text.replace(/€([\d.]+)m/g, (match, amount) => formatMoney(parseFloat(amount) * 1_000_000));
 }
 
+/**
+ * Wire a modal backdrop for keyboard/screen-reader use: Tab/Shift+Tab cycle
+ * only through the modal's own focusable elements (without this, the page
+ * behind a "modal" dialog - nav links, table rows - is still reachable by
+ * Tab even though it's visually covered), opening moves focus onto the
+ * modal's close button (the one element guaranteed to exist before any
+ * async content loads), and closing restores focus to whatever triggered
+ * the modal instead of dropping it back to <body>. Call once per modal at
+ * page load, then use the returned open()/close() in place of toggling
+ * "open" on the backdrop directly.
+ */
+function makeModalAccessible(backdrop) {
+  let opener = null;
+
+  function focusableElements() {
+    return [...backdrop.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')]
+      .filter(el => el.offsetParent !== null && !el.disabled);
+  }
+
+  backdrop.addEventListener("keydown", (e) => {
+    if (e.key !== "Tab") return;
+    const focusable = focusableElements();
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  });
+
+  return {
+    // A no-op when already open, not just an idempotent re-add of the
+    // "open" class - browse.js/loans.js call open() again to refresh an
+    // already-open card's content on a settings change (currency, theme),
+    // which would otherwise yank focus back to the close button and
+    // overwrite `opener` with whatever was focused in the Settings modal
+    // at that moment.
+    open() {
+      if (backdrop.classList.contains("open")) return;
+      opener = document.activeElement;
+      backdrop.classList.add("open");
+      backdrop.querySelector(".modal-close")?.focus();
+    },
+    close() {
+      backdrop.classList.remove("open");
+      opener?.focus();
+      opener = null;
+    },
+  };
+}
+
 /** Build and insert the settings gear button + its modal into the page. Call once, after the DOM is ready. */
 function injectSettingsUI() {
   const btn = document.createElement("button");
@@ -124,9 +179,9 @@ function injectSettingsUI() {
   backdrop.className = "modal-backdrop";
   backdrop.id = "settings-modal-backdrop";
   backdrop.innerHTML = `
-    <div class="modal-box">
+    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
       <button class="modal-close" id="settings-modal-close" aria-label="Close">&times;</button>
-      <h2>Settings</h2>
+      <h2 id="settings-modal-title">Settings</h2>
       <div class="field">
         <label for="currency-select">Currency</label>
         <select id="currency-select">
@@ -159,12 +214,11 @@ function injectSettingsUI() {
   document.getElementById("theme-select").value = settings.theme;
   document.getElementById("page-size-select").value = String(settings.pageSize);
 
-  const open = () => backdrop.classList.add("open");
-  const close = () => backdrop.classList.remove("open");
-  btn.addEventListener("click", open);
-  document.getElementById("settings-modal-close").addEventListener("click", close);
-  backdrop.addEventListener("click", (e) => { if (e.target === backdrop) close(); });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+  const modal = makeModalAccessible(backdrop);
+  btn.addEventListener("click", modal.open);
+  document.getElementById("settings-modal-close").addEventListener("click", modal.close);
+  backdrop.addEventListener("click", (e) => { if (e.target === backdrop) modal.close(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") modal.close(); });
 
   document.getElementById("currency-select").addEventListener("change", (e) => {
     settings.currency = e.target.value;

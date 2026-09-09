@@ -1194,6 +1194,54 @@ defined, just named differently - harmless as long as both scripts run
 within the same calendar day, which the documented run order already
 assumes.
 
+**A follow-up accessibility pass covered the two pages the original one
+(above) never reached.** That pass audited Predict and Compare; Browse and
+Loans - the two pages built around a keyboard-only-hostile pattern of their
+own, a clickable table row that opens a detail modal - hadn't had the same
+look. Checked directly and confirmed real:
+
+- The table rows themselves were mouse-only. `browse.js`/`loans.js` wired
+  a `click` handler on each `<tr>` and nothing else - no `tabindex`, no
+  `role`, no keyboard handler - so a keyboard-only user could reach the
+  table via Tab but had no way to actually open a row's detail card, the
+  only way to see a transfer's or loan's full score breakdown. Fixed by
+  giving each row `tabindex="0"`, `role="button"`, a descriptive
+  `aria-label`, and an Enter/Space `keydown` handler alongside the
+  existing click one, plus a `:focus` outline in `style.css` so the
+  keyboard focus target is visible (the row already had `cursor: pointer`
+  for the mouse case, nothing for the keyboard one).
+- None of the site's three modals - the Browse/Loans detail-card popup and
+  the Settings gear-icon modal used on every page - were real dialogs to
+  assistive tech: no `role="dialog"`/`aria-modal`, no focus moved into the
+  modal on open, no focus trap (Tab could reach the nav links and table
+  rows behind a visually-open modal), and no focus restored to whatever
+  opened it on close. Fixed with one small shared helper,
+  `makeModalAccessible` (added to `settings.js`, which every page already
+  loads before its own script - see that file's own header comment on why
+  it's the shared, cross-page file), reused for all three modals rather
+  than writing the same focus-trap logic three times: it moves focus to
+  the modal's close button on open, remembers what was focused before so
+  Escape/close can restore it, and cycles Tab/Shift+Tab only through the
+  modal's own focusable elements.
+- One real interaction with existing behavior, caught before it shipped:
+  `browse.js`/`loans.js` already call `showCard()` again to refresh an
+  *already-open* card in place when a setting (currency, theme) changes,
+  without moving focus - naively calling the new `open()` unconditionally
+  from there would have yanked focus back to the card's close button on
+  every currency toggle, including while the user was still interacting
+  with the Settings modal itself. Made `open()` a no-op when the modal is
+  already open, so only a genuine new open (clicking or Enter/Space-ing a
+  row) moves focus.
+
+Verified live, not just read off the diff: keyboard-only Enter on a table
+row opens the card and moves focus to its close button; Shift+Tab from
+that close button wraps to the modal's true last focusable element (not
+just back to itself) when the content has more than one, confirmed on
+both the card modal and the Settings modal (4 focusable fields); Escape
+closes and returns focus to the row or gear button that opened it; and
+changing currency while a card is open still refreshes its content
+without moving focus. 102/102 tests pass unaffected (no backend change).
+
 ## Pages
 
 - **`/`** — predict a hypothetical transfer: search a real player, pick a

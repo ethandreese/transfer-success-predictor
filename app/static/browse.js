@@ -1,4 +1,5 @@
 const state = { offset: 0, total: 0, openCard: null };
+const cardModal = makeModalAccessible(document.getElementById("card-modal-backdrop"));
 
 /** Green/amber/red for a 0-100 score, shared by every score display on the page. */
 function scoreColor(score) {
@@ -60,7 +61,7 @@ async function loadTable() {
     tbody.innerHTML = `<tr><td colspan="9">No transfers match these filters.</td></tr>`;
   } else {
     tbody.innerHTML = data.results.map(r => `
-      <tr data-player-id="${r.player_id}" data-transfer-date="${r.transfer_date}">
+      <tr data-player-id="${r.player_id}" data-transfer-date="${r.transfer_date}" tabindex="0" role="button" aria-label="View transfer details: ${r.name} to ${r.to_club}">
         <td>${r.name}</td>
         <td>${r.position}</td>
         <td>${r.from_club} &rarr; ${r.to_club}</td>
@@ -74,6 +75,11 @@ async function loadTable() {
     `).join("");
     [...tbody.querySelectorAll("tr")].forEach(row => {
       row.addEventListener("click", () => {
+        showCard(row.dataset.playerId, row.dataset.transferDate);
+      });
+      row.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        e.preventDefault();
         showCard(row.dataset.playerId, row.dataset.transferDate);
       });
     });
@@ -174,10 +180,9 @@ function renderBreakdown(breakdown) {
 /** Open the modal and fetch+render the full transfer card for one clicked table row, via /api/transfers/detail. Remembers the open card (state.openCard) so a currency/theme change can refresh it in place. */
 async function showCard(playerId, transferDate) {
   state.openCard = { playerId, transferDate };
-  const backdrop = document.getElementById("card-modal-backdrop");
   const content = document.getElementById("card-modal-content");
   content.innerHTML = "Loading...";
-  backdrop.classList.add("open");
+  cardModal.open();
   try {
     const res = await fetch(`/api/transfers/detail?player_id=${playerId}&transfer_date=${transferDate}`);
     if (!res.ok) throw new Error("Could not load this transfer.");
@@ -202,7 +207,7 @@ async function showCard(playerId, transferDate) {
 /** Close the transfer-card modal. */
 function closeCard() {
   state.openCard = null;
-  document.getElementById("card-modal-backdrop").classList.remove("open");
+  cardModal.close();
 }
 
 // Close the modal via the X button, a click on the dimmed backdrop (but not
