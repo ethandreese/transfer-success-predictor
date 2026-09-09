@@ -1367,6 +1367,45 @@ switch above:
 Kept plain Ridge unchanged. No code or model-artifact change from this
 pass.
 
+**Looked for new feature ideas beyond the existing column set next -
+some external research plus a full inventory of the raw dataset's unused
+columns turned up a few candidates, and the most promising one (the
+destination club's league form/position at signing) tested clean but
+negative.** A few ideas were dead ends purely from a data-availability
+standpoint, worth recording so they aren't re-investigated later:
+`contract_expiration_date` and `international_caps`/`international_goals`
+in `players.csv` are both *current* values tied to the player's *current*
+club/career-to-date, not dated to any specific past transfer - there's no
+way to recover "years left on their contract" or "caps earned" as of an
+old transfer from this dataset, the same dateless-snapshot problem
+`club_value_proxy` hit earlier, but with no reconstructable alternative
+this time (unlike club value, there's no per-date contract or caps
+history anywhere in the raw data to rebuild from).
+
+The one candidate that was both genuinely dated (not a snapshot) and
+fully buildable from already-local data - the destination club's league
+position/form at the moment of signing, from `club_games.csv`'s
+per-game `own_position` (backward as-of join on the transfer date, 120-day
+tolerance) - was built and tested properly, not just estimated:
+
+- **Season-long table position** (normalized 0-1 via `competitions.csv`'s
+  `total_clubs`, so leagues of different sizes are comparable): 85.8%
+  coverage after merging onto the real training data, but essentially no
+  effect - mean R² 0.2046 → 0.2053 across the same 5 temporal splits used
+  throughout this investigation, better on 3 splits, tied on 1, *worse*
+  on 1. Not a real signal, just noise.
+- **Recent form instead of season-long standing** (points-per-game over
+  the trailing 5 league games - a genuinely different "hot/cold streak"
+  signal a squad-value feature can't see at all) - worse coverage (50.7%,
+  needing several recent games within a tight window) and no improvement
+  at all (mean R² 0.2046 → 0.2045).
+
+Likely explanation: `club_quality_ratio`/`log_to_club_value` (squad
+market value) already capture most of "how good is this club" that
+matters here, and a specific moment's league position is a noisier,
+more volatile read on the same underlying thing rather than new
+information. Not shipped - no code or data change from this pass.
+
 ## Pages
 
 - **`/`** — predict a hypothetical transfer: search a real player, pick a
