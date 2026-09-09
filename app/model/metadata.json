@@ -30,8 +30,8 @@
     "to_domestic_competition_id"
   ],
   "target": "success_score",
-  "test_mae": 12.4,
-  "test_r2": 0.185,
+  "test_mae": 12.26,
+  "test_r2": 0.211,
   "baseline_mae": 14.37,
   "n_train": 5912,
   "n_test": 1896,

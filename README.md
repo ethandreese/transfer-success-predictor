@@ -620,13 +620,13 @@ scores well; someone who falls far short of even the regressed expectation
 badly. This is what pushed Haaland's "performance change" from the 30th
 percentile to the 96th without touching genuine busts like Sancho.
 
-**Model.** A gradient-boosted regressor trained on pre-transfer-only
+**Model.** A ridge-regularized linear regression trained on pre-transfer-only
 features (age, position, physical attributes, fee, market value, prior-year
 performance including FotMob rating/xG/xA/passing/defensive output, and
 origin/destination club & league strength) — nothing about what happened
 after the move. Evaluated on a temporal holdout (trained on
-transfers before mid-2023, tested on transfers since): **MAE ≈ 12.40 points**
-on the 0–100 scale, R² ≈ 0.185, vs. ≈14.37 MAE for always predicting the
+transfers before mid-2023, tested on transfers since): **MAE ≈ 12.26 points**
+on the 0–100 scale, R² ≈ 0.211, vs. ≈14.37 MAE for always predicting the
 average. That's a modest but real signal, and honestly weaker than scoring
 a fixed first year would give — predicting a player's *entire future stint*
 at a new club from pre-transfer stats alone is genuinely hard, since
@@ -1241,6 +1241,90 @@ both the card modal and the Settings modal (4 focusable fields); Escape
 closes and returns focus to the row or gear button that opened it; and
 changing currency while a card is open still refreshes its content
 without moving focus. 102/102 tests pass unaffected (no backend change).
+
+**A "check the backend for gaps" pass turned up nothing new in the scoring
+pipeline itself - every weight file still sums to exactly 1.0, every
+`nearest_valuation` call site uses matching windows, `train_model.py`'s
+serving-time reference tables are deliberately refit on the full dataset
+after an honest train-only holdout eval - so the search moved to the
+predict model's own algorithm, which had never been questioned as a
+category, only tuned within it.** One real fix came out of the backend
+pass itself: `/api/players/search` and `/api/clubs/search`'s `limit` query
+param had no bound at all, unlike `/api/transfers`/`/api/loans`'s [1, 100]
+clamp - not reachable through the UI (the autocomplete fetch never sends a
+`limit`), but nothing stopped `limit=999999999` from dumping the entire
+players/clubs lookup table back. Clamped both to [1, 50].
+
+**The predict model's algorithm itself was replaced - `GradientBoostingRegressor`
+for a plain `Ridge` regression - a bigger accuracy jump than any single
+feature or hyperparameter change found so far, and the biggest surprise of
+this investigation.** Benchmarked the deployed GBR config against several
+tree-based alternatives (`HistGradientBoostingRegressor`, `RandomForestRegressor`,
+`ExtraTreesRegressor`, and GBR variants shallower/deeper/more-or-less
+regularized than the deployed one) on the identical feature set and
+temporal holdout - none beat the deployed config, some by a wide margin
+(RandomForest/ExtraTrees landed around R² 0.11-0.12). A plain `Ridge`
+beat all of them, including the deployed GBR, by more than any of those
+tree variants differed from each other: **MAE 12.40 → 12.26, R² 0.185 →
+0.211**. Unregularized OLS landed at essentially the same R² as tuned
+Ridge, which is itself informative - regularization barely matters here,
+meaning the signal in this feature set really is close to linear, and a
+tree ensemble's extra flexibility was fitting noise rather than real
+curvature on a training set this size (5,912-7,808 rows depending on the
+split).
+
+Checked hard before trusting a result this surprising:
+
+- **Not an alpha-tuning fluke.** Ridge beat the GBR across the entire
+  alpha range tested (0.3-30), not at one lucky value.
+- **A real flaw in the first version of this result, caught before
+  shipping it:** unregularized one-hot league dummies gave leagues with
+  2-9 training rows (Norway, Serbia, Romania) wildly inflated coefficients
+  (+21.96 for one) - the model memorizing those specific rows' targets,
+  not learning a real per-league effect, and a live-prediction stability
+  risk for any hypothetical transfer touching one of those leagues. Fixed
+  with `OneHotEncoder(min_frequency=30, handle_unknown="infrequent_if_exist")`
+  instead of hand-rolling a bucketed category column - sklearn folds any
+  origin/destination league under 30 training rows into one shared
+  "infrequent" bucket internally, so `app/main.py`'s serving code needed
+  zero changes (the raw league id keeps flowing through every existing
+  display/explanation code path unchanged; only the model's own one-hot
+  columns are affected). Costs at most ~0.002 R² on any split tested,
+  often nothing, and brought every coefficient into a plausible range
+  (largest magnitude dropped from +21.96 to -11.8, for the Premier
+  League - hundreds of training rows behind it, not 2). Same
+  "don't trust a baseline from too few examples" bar
+  `MIN_LEAGUE_SAMPLE`/`MIN_FOTMOB_LEAGUE_BASELINE_ROWS` already apply
+  elsewhere in this codebase, just applied to the model's own dummies.
+- **Checked across 5 different temporal split dates** (2022-01-01 through
+  2024-01-01), not just the one `SPLIT_DATE` the deployed model reports -
+  Ridge has no random seed of its own to vary the way the GBR's
+  seed-stability was checked (5-10 seeds, see above), so varying the split
+  itself is the equivalent robustness check. Ridge won every single one,
+  by 0.017-0.041 R² each time - never once lost, and never close.
+- **Tried blending** Ridge with the old GBR in case the two had
+  complementary signal - a promising-looking peak at one specific blend
+  weight on the original single holdout turned out to be mild tuning-on-
+  the-test-set (picking the best weight *after* seeing test performance on
+  that exact split): re-checked with a fixed 50/50 blend across the same 5
+  splits, it beat plain Ridge on 4 of them by a small margin and lost on
+  the 5th. Not a reliable win, and not worth shipping two models (double
+  the serialization/prediction cost, a muddier swap-based explanation) for
+  that. Kept plain Ridge.
+
+Model artifact size dropped from 237KB to under 8KB as a side effect (a
+linear model's coefficients vs. 300 serialized decision trees) - not the
+point, but a nice one. `app/main.py` needed no changes at all: every
+serving-time function (`explain_prediction`'s leave-one-out feature swaps,
+`predict_marginalized_recent_performance`'s batched averaging,
+`find_comparables`'s separate nearest-neighbors index) calls
+`pipeline.predict()` generically and doesn't care what's inside it.
+Verified live through the real UI (not just raw API calls): a full
+player-search → club-search → predict flow on the Predict page, plus a
+hypothetical prediction specifically targeting one of the now-bucketed
+rare leagues (Eliteserien/Norway) to confirm the explanation still shows
+the real league name with a sane, non-wild contribution rather than
+anything leaking the internal "infrequent" bucketing. 102/102 tests pass.
 
 ## Pages
 
