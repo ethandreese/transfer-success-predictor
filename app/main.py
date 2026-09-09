@@ -1313,6 +1313,7 @@ def search_players(q: str, limit: int = 10):
     """
     if len(q) < 2:
         return []
+    limit = max(1, min(limit, 50))
     mask = players_df["_name_fold"].str.contains(fold_accents(q), na=False, regex=False)
     rows = players_df[mask].head(limit).drop(columns=["_name_fold"])
     numeric_cols = [c for c in rows.columns if c.startswith("recent_fotmob")] + RECENT_PERFORMANCE_COLUMNS
@@ -1328,6 +1329,7 @@ def search_clubs(q: str, limit: int = 10):
     """Accent-insensitive substring search over clubs_lookup.csv, for the destination-club autocomplete."""
     if len(q) < 2:
         return []
+    limit = max(1, min(limit, 50))
     mask = clubs_df["_name_fold"].str.contains(fold_accents(q), na=False, regex=False)
     rows = clubs_df[mask].head(limit).drop(columns=["_name_fold"])
     return rows.fillna("").to_dict(orient="records")
