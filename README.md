@@ -1326,6 +1326,47 @@ rare leagues (Eliteserien/Norway) to confirm the explanation still shows
 the real league name with a sane, non-wild contribution rather than
 anything leaking the internal "infrequent" bucketing. 102/102 tests pass.
 
+**A follow-up pass looked specifically for what a linear model gives up
+relative to the tree ensemble it just replaced, and mostly came back
+empty.** Ridge can only let `position` shift the score's *intercept* (its
+one-hot dummy), not the *slope* of a numeric feature the way a tree's
+splits implicitly could - e.g. whether `pre_ga_p90` matters as much for a
+defender as an attacker. Tried, on the same 5-split harness as the model
+switch above:
+
+- **Explicit position × feature interaction terms**, for the numeric
+  features the codebase already flags as position-conditional
+  (`POSITION_CONDITIONAL_FEATURES`) - the one candidate that helped at
+  all: tied or beat plain Ridge on every one of the 5 splits (mean R²
+  0.205 → 0.207), never lost. Not shipped anyway - the gain is an order of
+  magnitude smaller than the Ridge switch itself (+0.002-0.004 vs.
+  +0.02-0.04 per split), while the implementation cost is much higher:
+  roughly doubles the feature count and, unlike that switch, would need
+  real changes to `app/main.py`'s `build_feature_row`/`explain_prediction`
+  to compute and explain the interaction terms at serve time, not just a
+  `train_model.py`-only change. Same bar the rejected league-baseline
+  features didn't clear earlier in this project.
+- A quadratic `age_at_transfer` term (a peak-age curve) - worse than
+  plain Ridge on every split, alone or combined with the interaction
+  terms above.
+- A degree-2 polynomial expansion (squares + pairwise products) of 5
+  curated "core" numeric features - worse on every split at every
+  regularization strength tried, despite Ridge's own regularization
+  presumably keeping the extra terms in check.
+- `HuberRegressor` (robust loss, downweights outlier residuals) -
+  essentially identical to plain Ridge, no real gain - the target isn't
+  heavy-tailed enough for robust loss to earn its complexity here.
+- `KernelRidge` and `SVR` with an RBF kernel - genuinely nonlinear
+  alternatives, tried specifically to see if *some* form of nonlinearity
+  could beat both the linear model and the tree ensemble. Neither came
+  close: every hyperparameter combination tried landed well below Ridge
+  (R² as low as -1.0 for an over-fit `KernelRidge` gamma), consistent
+  with the earlier finding that this training set is too small and noisy
+  for extra model flexibility to pay for itself.
+
+Kept plain Ridge unchanged. No code or model-artifact change from this
+pass.
+
 ## Pages
 
 - **`/`** — predict a hypothetical transfer: search a real player, pick a
