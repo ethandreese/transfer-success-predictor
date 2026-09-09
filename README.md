@@ -1406,6 +1406,41 @@ matters here, and a specific moment's league position is a noisier,
 more volatile read on the same underlying thing rather than new
 information. Not shipped - no code or data change from this pass.
 
+**The remaining three ideas from the same brainstorm were built and
+tested too, closing out the "new data/features" investigation - all
+three came back negative.** Same 5-split harness, same discipline:
+
+- **Manager tenure at the destination club** (days since the last
+  managerial change before the transfer, reconstructed from
+  `club_games.csv`'s per-game `own_manager_name` - genuinely dated, not
+  a snapshot): 87.5% coverage, but flat - mean R² 0.2046 → 0.2047,
+  better on one split, worse on two, indistinguishable from noise.
+- **Reconstructed destination-squad age/nationality mix** (who actually
+  played for the club in the 45 days before the transfer, rebuilt from
+  `game_lineups.csv` + each player's fixed birthdate/citizenship -
+  deliberately avoiding `clubs.csv`'s own current-only squad columns,
+  which can't be dated to a past transfer at all): 52.0% coverage, and
+  actively worse on every single split (mean R² 0.2046 → 0.2031). A
+  45-day lineup window is a noisy way to estimate "the squad" - cup
+  rotation, injuries, and fixture congestion all inject variance that
+  isn't really about the destination club's character, and whatever
+  real signal is in there is likely already redundant with
+  `club_quality_ratio`/`log_to_club_value`.
+- **Nationality/cultural fit** (does the player's citizenship match the
+  destination country - simple boolean, 99.1% coverage, 37.3% same-country
+  rate among known values): the only one of the three that never lost on
+  any split, but the gain (mean R² 0.2046 → 0.2052) is smaller than the
+  position-interaction terms from the earlier model-improvement pass,
+  which were themselves already judged too small to justify their
+  implementation cost. Same call here, for the same reason.
+
+Every idea from the original brainstorm has now been either built and
+tested (this entry, the destination-club-form entry above, and the
+model's own algorithm/feature-interaction pass earlier) or ruled out
+on data-availability grounds alone (contract length, international caps
+- see above). None produced a gain worth shipping. Closing this
+investigation here - no code or data change.
+
 ## Pages
 
 - **`/`** — predict a hypothetical transfer: search a real player, pick a
