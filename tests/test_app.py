@@ -335,6 +335,34 @@ def test_players_search_sends_null_not_zero_for_uncovered_league_players():
     assert matches[0]["recent_minutes"] is None
 
 
+def test_players_search_limit_is_clamped():
+    """
+    limit is a raw client-supplied query param with no FastAPI-level bound
+    (unlike /api/transfers'/loans' limit, which clamp to [1, 100]) - an
+    oversized value must still cap at 50 rather than dumping the whole
+    lookup table, and a non-positive one must still return at least 1 row
+    rather than pandas' .head(0)/.head(-n) surprise.
+    """
+    res = client.get("/api/players/search", params={"q": "an", "limit": 999_999})
+    assert res.status_code == 200
+    assert len(res.json()) <= 50
+
+    res = client.get("/api/players/search", params={"q": "an", "limit": -5})
+    assert res.status_code == 200
+    assert len(res.json()) == 1
+
+
+def test_clubs_search_limit_is_clamped():
+    """Same clamp as test_players_search_limit_is_clamped, for the other unbounded search endpoint."""
+    res = client.get("/api/clubs/search", params={"q": "an", "limit": 999_999})
+    assert res.status_code == 200
+    assert len(res.json()) <= 50
+
+    res = client.get("/api/clubs/search", params={"q": "an", "limit": -5})
+    assert res.status_code == 200
+    assert len(res.json()) == 1
+
+
 def test_clubs_search_is_accent_insensitive():
     """Searching 'atletico' should still find the accented 'Atlético'."""
     res = client.get("/api/clubs/search", params={"q": "atletico"})

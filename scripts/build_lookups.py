@@ -13,7 +13,7 @@ import os
 import numpy as np
 import pandas as pd
 
-from build_dataset import load_appearances
+from build_dataset import compute_club_value_proxy, load_appearances
 from fetch_fotmob_stats import LEAGUE_MAP
 
 RAW_DIR = os.environ.get(
@@ -70,13 +70,12 @@ def build_clubs_lookup():
     players = pd.read_csv(
         os.path.join(RAW_DIR, "players.csv"),
         usecols=["current_club_id", "market_value_in_eur"],
-    ).dropna(subset=["current_club_id"])
-    proxy = (
-        players.groupby("current_club_id")["market_value_in_eur"]
-        .sum()
-        .rename("club_value_proxy")
     )
-    proxy.index = proxy.index.astype(int)
+    # compute_club_value_proxy (build_dataset.py), not a second, independent
+    # groupby-sum here - this app/main.py-facing proxy and the training-data
+    # one must stay the same computation, not two hand-copies that happen to
+    # agree today (same precedent as load_appearances() above).
+    proxy = compute_club_value_proxy(players)
     clubs["club_value_proxy"] = clubs["club_id"].map(proxy).fillna(0)
     clubs = clubs[clubs["club_value_proxy"] > 0].sort_values(
         "club_value_proxy", ascending=False
