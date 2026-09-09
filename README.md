@@ -1441,6 +1441,46 @@ on data-availability grounds alone (contract length, international caps
 - see above). None produced a gain worth shipping. Closing this
 investigation here - no code or data change.
 
+**One last check before closing the data investigation entirely: could
+more raw *data* (not just more features from the same data) help,
+either a bigger/newer version of the existing dataset or something from
+outside it?** Two dead ends and two real-but-uncertain options, checked
+directly rather than assumed:
+
+- A newer version of the packaged Kaggle dataset exists (679 vs. the
+  677 this project pins) - downloaded and compared row-by-row across
+  every core file (`transfers.csv`, `players.csv`, `appearances.csv`,
+  `player_valuations.csv`, `games.csv`): identical row counts
+  everywhere. A housekeeping republish, not new data.
+- Extending `MIN_DATE` further back than 2013 to add more historical
+  transfers doesn't work either - `appearances.csv`, the backbone of
+  both the label and most features, has essentially no rows before
+  2012 (a handful, then a hard jump to 71,688 in 2012 alone). 2013
+  isn't an arbitrary conservative cutoff, it's close to the actual
+  floor of what the raw data supports; transfers from further back
+  would just fail the existing appearance-count filters anyway.
+- Genuinely external sources were considered too, following up on the
+  "press citations/social buzz" idea from the earlier research pass.
+  Wikipedia's official pageviews API (confirmed working, not a scrape)
+  could proxy a player's public profile/hype at transfer time - a real,
+  novel signal orthogonal to every on-pitch stat here - but only covers
+  data from mid-2015 onward and needs real player-to-article matching
+  work. Transfermarkt's own injury history was considered too (a
+  genuinely new durability/fitness-risk dimension nothing here
+  captures), but unlike the transfer-history endpoint this project
+  already uses, there's no equivalent JSON API for it - confirmed
+  directly, it's a fully rendered HTML page, meaning real scraping
+  rather than the polite JSON-fetch pattern every existing script
+  follows. FBref/Understat were ruled out without building anything -
+  their advanced stats mostly overlap with what FotMob already
+  supplies here.
+
+Neither external option was built - both are real, uncertain-payoff
+engineering projects (a new fetch script, new caching, new matching
+logic) on a model this whole investigation has shown to be noise-limited
+by dataset size, not obviously starved for a specific missing signal.
+Stopping the data-acquisition line of investigation here.
+
 ## Pages
 
 - **`/`** — predict a hypothetical transfer: search a real player, pick a
