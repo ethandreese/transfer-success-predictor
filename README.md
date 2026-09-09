@@ -6,2398 +6,9 @@ Predicts how a football (soccer) transfer is likely to go, trained on real
 historical transfer data rather than hand-picked examples like Haaland→City
 or Dembélé→Barça.
 
-## How it works
-
-**Data.** [`dcaribou/transfermarkt-datasets`](https://github.com/dcaribou/transfermarkt-datasets)
-(mirrored on Kaggle as [`davidcariboo/player-scores`](https://www.kaggle.com/datasets/davidcariboo/player-scores)),
-~50k players, ~175k transfers, ~1.9M appearances, ~656k market valuations.
-
-**Success score (the training label, 0–100).** For each transfer, computed
-from data that only exists *after* the move — and measured over the
-player's **entire tenure** at the new club (from the transfer until their
-next departure, or "now" if they're still there), not just year one. A
-fixed first-year window either unfairly penalizes a slow starter who took
-time to adapt, or misses someone who started hot and faded once the
-honeymoon period ended.
-
-Ten sub-metrics, each converted to a percentile rank across the dataset
-(so no single stat's raw scale dominates), then blended with **weights that
-vary by position** (see `data/score_weights.json`):
-
-- **performance level** — goal contributions per 90 minutes at the new
-  club *relative to the actual league average for that position* (see
-  below), ranked *within the player's position group* (comparing a
-  striker's output to the whole dataset, mostly defenders and keepers,
-  made every decent attacker look elite and barely separated "good" from
-  "Haaland"). Whenever FotMob has an attacking-bucket score for the same
-  transfer (the common case — see **attacking** below), this doesn't count
-  as an *eleventh* independent signal on top of it: the two measure the
-  same underlying thing, so they're folded into one combined bucket
-  (`fold_perf_level_into_attacking` in `scripts/build_dataset.py`) instead
-  of double-counting goal-based output. Performance level only stands
-  alone, at its own weight, when FotMob has nothing for that transfer —
-  older transfers and leagues FotMob's coverage doesn't reach that far
-  back (see **Known limitations**) still get judged on it either way.
-- **performance change** — improved or declined vs. their league-relative
-  level before the move, also position-ranked
-- **market value growth** — blends two different views of growth, each
-  independently percentile-ranked against the whole dataset: growth
-  *relative to the player's own pre-transfer value* (a cheap breakout
-  signing wins big here — €5m to €20m is 4×) and the *absolute euro gain*
-  (a marathon-sized fee can still win here on a comparatively modest ratio
-  — €75m to €110m is "only" 1.47× but a real €35m paper gain). Ratio alone
-  systematically buried already-expensive transfers: Moisés Caicedo's
-  peak value at Chelsea (€75m → €110m, nearly recouping his world-record
-  €116m fee) scored a mediocre 65 on ratio alone, since the bigger the
-  starting value the harder it is to move the ratio at all — a signing
-  the club could clearly sell at close to no loss was scoring the same as
-  a middling outcome. Blended 80/20 toward the absolute-gain view (not an
-  even split), this puts Caicedo at 90.5. That 80/20 weighting - not
-  50/50 - came out of checking a transfer the packaged dataset can't
-  actually score (Cristiano Ronaldo's 2009 Man Utd → Real Madrid move
-  predates the appearances data the pipeline depends on, so this was a
-  by-hand check using his real, publicly known numbers): his real
-  €60m → €120m growth is a huge, near-maxed absolute gain (99th
-  percentile) but only a 2.0x ratio (75th percentile, since the dataset's
-  ratio distribution is dominated by cheap breakout signings going
-  4-10x+) - an even 50/50 blend let the ratio half drag an
-  already-elite, already-expensive player down to 87 despite the
-  absolute side being essentially maxed out, purely because ratio math
-  structurally can't reward someone who was already highly valued to
-  begin with. 80/20 reflects that a fixed euro amount of value created is
-  closer to the real signal of interest than a ratio that's mostly a
-  function of how cheap the starting point happened to be.
-  Each of those two views is itself an 80/20 blend of growth to the
-  *peak* value reached during the tenure and growth to the value near
-  the end of it, leaning heavily toward peak — end-value alone unfairly
-  reads a long, valuable career as a decline, since even the best
-  players' market value falls with age by the time they eventually leave
-  (Heung-min Son joined Tottenham valued at ~€16m, peaked at €90m
-  mid-tenure, and was worth only ~€20m a decade later when he left — his
-  value_growth score is 93, not a mediocre one, because it's judged
-  mostly on the €90m peak he reached, not the €20m he'd fallen to by the
-  time he left), while peak alone would ignore a real late-tenure
-  collapse (injury, loss of form). The heavy lean toward peak (rather
-  than an even split) is also because end-of-tenure value already has
-  its own dedicated signal elsewhere in the score - `resale_profit`, what
-  the club actually realized when they sold the player, when that's
-  known - so leaning value_growth itself more toward peak avoids doubly
-  punishing a decline off a peak that resale_profit already accounts for
-  on its own terms.
-- **playing time** — blends two signals: 60% percent of the *team's actual
-  games* played during the tenure (from `games.csv`/`club_games.csv` — the
-  club's full match schedule across all competitions, not just games the
-  player featured in), 40% raw appearance count. The percentage catches
-  injuries/rotation that a raw count hides — Dembélé made 185 appearances
-  for Barcelona over 6 years (a big number on its own), but that's only
-  57% of the 327 games Barcelona actually played in that span, versus
-  Haaland at 83% for Man City. Raw count is kept alongside it so a long,
-  genuinely sustained career at the club still counts for something beyond
-  the percentage alone. Weighted meaningfully higher for goalkeepers
-  (17%, vs. 10-11% for outfielders) — a club fields exactly *one*
-  starting keeper, so whether a signing actually won that job is an
-  unusually clean, binary signal, unlike an outfield rotation slot where
-  a squad player can have real value without ever being first-choice.
-- **value for money** — performance level vs. what was paid *relative
-  to the player's market value at the time* (comparing fees to the whole
-  dataset's fee distribution made any nine-figure move look "expensive"
-  even when it was a bargain for that specific player). Weighted flat
-  10% for every position (see **Weights** below). Paying up to 1.3x a
-  player's pre-transfer value counts as a completely normal premium and
-  gets zero fee penalty — the dataset's own median fee/value ratio is
-  0.62x and the 75th percentile is only 1.17x, so a modest premium is
-  common, not some rare extreme, and clubs routinely pay one for
-  transfers that still work out fine. Only the ~19% of transfers that
-  actually exceed 1.3x get penalized at all, and only relative to *each
-  other* — not the whole dataset, which would otherwise still let a fee
-  just barely over the line land in roughly the same bad percentile as a
-  genuinely enormous overpay (see `compute_fee_penalty_pct` in
-  `scripts/build_dataset.py` for why a plain scaled/clipped ratio fed
-  into one global percentile rank doesn't actually achieve this: rank
-  only depends on relative order, so scaling or clipping the ratio
-  before ranking leaves an above-threshold transfer's rank essentially
-  unchanged — splitting into two separate populations is what actually
-  makes the difference). The "performance" side of this comparison isn't
-  just performance level, either — it's a weighted blend of *every*
-  on-pitch quality signal already computed for the transfer (performance
-  level, attacking, defensive, possession, rating), weighted the same
-  way the rest of the score already weights them for that specific
-  position/sub-position (see `value_for_money_performance_proxy` in
-  `scripts/build_dataset.py`). Performance-level-alone started out fine
-  for attackers but was a real problem for defense-oriented roles: goal
-  contributions are meaningless for goalkeepers (82% have exactly 0 in
-  the tenure window, all tied at the same percentile regardless of how
-  well they actually played) and barely correlated with actual defensive
-  quality even when nonzero — checked directly, goal contributions vs.
-  the defensive component correlate at just 0.01 for centre-backs, and
-  are *negative* for full-backs and defensive midfielders (-0.14 to
-  -0.18). Using it as "performance" for those rows wasn't measuring
-  performance at all; it silently collapsed value for money into "was
-  the fee reasonable" alone. Blending in attacking/defensive/possession/
-  rating, each weighted by how much that role's own score already leans
-  on it, fixed that without hardcoding a list of positions — a
-  Centre-Back's "performance" here leans on the defensive component the
-  way a winger's leans on attacking/performance level, automatically,
-  because that's how their weight profiles already differ. A component
-  missing for a given row (no FotMob data for that bucket) just drops
-  out of the blend and the rest are renormalized, same pattern used
-  everywhere else in the score.
-
-  **Value for money's weight itself now scales with tenure length**, the
-  same mechanism and reasoning as `resale_profit` below (see
-  `compute_value_for_money_weight` in `scripts/build_dataset.py`): whether
-  the fee looked reasonable at signing time is close to the whole story
-  for a short spell, and fades toward irrelevant for a long, clearly
-  successful career - every other tenure-long component in the score
-  (performance level, rating, playing time, ...) has already thoroughly
-  answered "did the club get their money's worth" by the time a signing
-  has spent a decade at the club, independent of what the specific fee
-  premium was at the time. Marc-André ter Stegen (12.2-year Barcelona
-  tenure, still there) is the clearest real case: value for money now
-  counts for just 2% of his score, down from a flat 10%. Uses tenure
-  length alone as the signal, not an explicit "were they good" gate -
-  same choice `resale_profit` already makes, for the same reason: "doing
-  really well" is already what performance/rating/playing_time measure
-  over that same tenure, so gating on performance again here would be
-  redundant and would require picking an arbitrary "how good is good
-  enough" threshold the rest of the score deliberately avoids. Decays
-  slower than `resale_profit` (3-year vs. 2-year `decay_years`) since
-  "was the fee worth it" plausibly stays a live question a little longer
-  than "how the eventual resale went": a few months' tenure → ~14%
-  weight, ~2 years → ~8.7%, 6 years → ~3.8% (see
-  `value_for_money_weight_curve` in `data/score_weights.json`).
-- **four FotMob-derived components** (each only when FotMob has that
-  specific bucket's tenure stats — see below), kept as four separate
-  scores rather than blended into one, so a player's actual profile
-  survives into the score instead of getting smoothed away — an
-  attack-minded fullback and a purely defensive one could land on the same
-  *blended* number despite having very different games. Each is
-  percentile-ranked *within position group*, like performance level:
-  - **rating** — FotMob's own per-match rating, averaged across the
-    tenure. The one component goalkeepers get a real, direct quality
-    signal from — every other non-FotMob component either doesn't apply to
-    them (performance level/change) or is a financial/availability proxy
-    (value growth, playing time, value for money). Weighted flat 20% for
-    every position except the four outfield defensive sub-positions (see
-    **Weights also vary by sub-position** below, where it's 30%) — it's
-    the same metric regardless of role, unlike attacking/defensive/
-    possession, which are literally different stats depending on position.
-  - **attacking** — goals, expected goals (xG), expected assists (xA), and
-    chances created per 90, all averaged together, *then averaged again
-    with performance level* whenever both are known for the transfer (see
-    **performance level** above) — goal contributions already banked and
-    the underlying attacking process (xG, chances created) are related
-    enough that keeping them fully independent double-counted the same
-    signal. Zero weight for goalkeepers.
-  - **defensive** — tackles, interceptions, clearances, and recoveries per
-    90 for outfielders; saves per 90, save percentage, and goals conceded
-    per 90 (inverted, since fewer is better) for goalkeepers — genuinely
-    different stat pools, not a shared one, since neither set means
-    anything for the other position.
-  - **possession** — accurate passes per 90 and successful dribbles per
-    90. Dribbles are grouped here rather than under attacking because
-    they're fundamentally about ball-carrying and retention under
-    pressure — a possession skill, even though a dribble can also lead
-    directly to a chance. Matches how e.g. FBref categorizes take-ons
-    under "Possession" rather than "Shooting" or "Passing".
-- **resale profit** (weight varies by tenure length, only when known —
-  see below) — did the buying club later resell the player for more than
-  they paid? A real, distinct signal from sporting performance: a
-  decent-but-unspectacular player who's later flipped for a profit is a
-  good outcome for the club even if he was never a star there.
-
-Weights: attackers lean heavily on performance (16%/8%) since goal
-contributions are a real, differentiating signal for them (only 5% have
-zero goal contributions in a given window). That signal gets progressively
-less reliable for midfielders (11% zero) and defenders (21% zero), and is
-essentially meaningless for goalkeepers (nearly all have exactly 0 goals +
-assists both before and after a move — no *Transfermarkt* column captures
-clean sheets, saves, or defensive actions). So performance weight shrinks
-from 24% combined (attackers) to 0% (goalkeepers), shifted into
-attacking/defensive/possession instead, whose combined weight grows from
-18% (attackers, a minor signal on top of real goal data) up to 42%
-(goalkeepers, almost entirely defensive since shot-stopping is
-essentially the job and attacking is zeroed out entirely) as goal
-contributions become less meaningful.
-
-**value_growth (15%), value_for_money (10%), and rating (20%) are flat
-across every position, unlike everything else above.** (value_for_money's
-10% here is still its flat-by-*position* reference value only - see
-above for how its actual weight now separately varies by *tenure length*,
-the same way resale_profit's flat 8% reference value already does.)
-value_growth and
-value_for_money are each computed as a single percentile rank across the
-*whole* dataset with no position grouping at all (unlike perf_level,
-defensive, etc., which are ranked within position) — there's no
-football-role reason for a defender's market-value growth or fee
-justification to be weighted differently from an attacker's, since
-nothing about how either number is computed treats positions
-differently. rating is flat for a different reason: it's the same metric
-(FotMob's overall per-match quality score) for every player regardless
-of role, unlike attacking/defensive/possession, which are literally
-different underlying stats depending on position — and, being an outside
-rating service's own judgment of the player's *overall* performance
-rather than one specific facet of it, it captures a lot a stat line
-alone can't (positioning, decision-making, composure). All three used to
-vary by position (value_growth 15/15/18/15%, value_for_money
-20/22/22/25%, rating 2/3/4/7% for Attack/Midfield/Defender/Goalkeeper) —
-that spread was really just leftover perf_level weight parked somewhere
-convenient as goal contributions became less meaningful for a position,
-not a deliberate choice, so it's been moved into
-attacking/defensive/possession instead. value_for_money went through a
-second cut after that: even flat, 20% was still a lot of weight riding
-on one fee-vs-performance metric, so it's now flat 10% instead, with the
-other 10% also routed into attacking/defensive/possession,
-proportionally per position, same mechanism as the original flattening.
-rating went the opposite direction, twice — first up to a flat 10%, then
-up again to a flat 20%, on the reasoning above that a holistic per-match
-rating deserves more than a token weight. Both rating moves are the one
-exception to the attacking/defensive/possession routing: they come
-entirely out of perf_level/perf_delta/playing_time instead (scaled down
-proportionally, preserving their relative ratio to each other),
-specifically so rating's growing weight wouldn't dilute the role-specific
-tuning attacking/defensive/possession carry — see **Weights also vary by
-sub-position** below for that tuning. A side effect worth knowing: for
-positions where that funding bloc was already small (Centre-Back and
-full-back especially), perf_level/perf_delta/playing_time are now down
-to single-digit percentages each - William Saliba's Centre-Back weights,
-for example, spend just 1%/1%/3% on them combined.
-
-**Resale profit is only counted when known**, which is deliberately rare:
-only ~25% of transfers have a genuine subsequent sale for a recorded fee
-(up from ~17% once loans were pulled out of the transfer chain, and as
-high as ~31% before the transfer backfill's departure-fix batches added
-thousands of "Retired"/"Without Club" closures that end a tenure without
-ever being resold - see **Known limitations** below). A still-at-the-club player,
-or one whose next move is a real free transfer or a loan (see "Loan spells
-are scored separately" below — loans can no longer land here at all, now
-that they're detected and pulled out of the chain before this is
-computed), isn't penalized for something that hasn't happened yet; those
-cases are treated as *unknown* rather than guessed at
-as a loss either way. When it's unknown, resale profit's weight is
-dropped and the other five weights are renormalized to still sum to 1,
-rather than filling in a fabricated "neutral" score for data that doesn't
-exist. When it *is* known, it's a real signal: Randal Kolo Muani joined
-Frankfurt from Nantes for free and was sold on to PSG for €95m about 14
-months later — a textbook example of a transfer that looks fine on the
-pitch but was primarily a business win.
-
-**Resale profit's weight scales with tenure length**, from ~20% for a
-transfer of a few months down to ~2% for a decade-long career (see
-`resale_weight_curve` in `data/score_weights.json`: `min + (max - min) *
-exp(-tenure_years / decay_years)`, landing around the old flat 8% at the
-curve's ~2-year reference point). A quick flip weights the eventual sale
-price heavily, since making money on the resale is often close to the
-point of a short-term deal. A long career barely moves regardless of how
-the sale eventually went, because the club already extracted years of
-on-pitch value from the player having played there — Heung-min Son was
-bought for ~€30m and eventually sold for less, a resale loss on paper,
-but after a decade of service that loss counts for only ~2% of his score
-(75.6 overall). The "why this score" breakdown states this explicitly whenever
-it applies, e.g. *"counts for only 3% of the score here — after a
-6.0-year tenure the club already got most of its value..."*
-
-**Loans are detected and excluded from the transfer score, then scored
-separately.** The packaged Transfermarkt dataset has no loan/permanent flag
-at all — its upstream ETL parses every non-numeric fee string (including
-"loan transfer", "End of loan", and "Loan fee: €X") down to a flat `0`,
-identical to a genuine free transfer, so a loan spell was originally
-getting judged with `success_score` as if a club had chosen to buy the
-player outright. Fixed by re-fetching each player's real transfer history
-from transfermarkt's own live `transferHistory` API
-(`scripts/fetch_transfer_types.py`), which still carries that distinction
-in its raw fee text, and using it to classify every transfer as
-paid/free/loan/unknown (cached in `data/raw/transfer_types_cache.csv`).
-Loan rows are dropped before `tenure_end`/`next_transfer_fee` are computed
-in `load_transfers()`, which fixes two things at once: the loan spell no
-longer scores as a permanent move, and a loan-out interruption in the
-middle of a permanent tenure (join → loan elsewhere → return → eventual
-sale) no longer cuts that tenure short or gets mistaken for the eventual
-resale. Concretely: 55,433 of the ~159k candidate transfers (2013–2026)
-are loans - more than a third - and removing them shrank the final scored
-transfer set from 7,264 to 5,062, since a fair number of those old rows
-were really a loan's tenure being measured, or a permanent tenure getting
-cut short at a loan-out date that no longer applies.
-
-**Loan spells are scored separately, on a different formula
-(`data/loan_score_weights.json`), not folded into the same score.** A loan
-isn't a permanent-transfer decision, so it's judged on different terms: no
-*value for money* or *resale profit* component (most loans carry no real
-fee, and a loan doesn't end in a sale of its own), and *playing time*
-weighted much more heavily than in the permanent score — whether the loan
-actually delivered game time is usually the central question it gets
-judged on, independent of how well the player performed when they did
-play. Unlike the permanent-transfer pipeline, a loan spell with zero
-post-loan appearances is *kept*, not filtered out — a player who was sent
-out and never played is a real (bad) outcome the Loans tab exists to
-surface, not missing data. 3,199 loan spells (of ~28k candidates) are
-scored this way - see `/loans.html`. perf_level/perf_delta/value_growth/
-playing_time are still ranked within the loans population only, not mixed
-with permanent-transfer norms - a loan's much shorter window makes raw
-appearance counts and value growth genuinely incomparable in scale to a
-permanent tenure's. The four FotMob components (rating/attacking/
-defensive/possession - see below) are the exception: they're ranked
-against transfers and loans *combined* (see `attach_fotmob_components` in
-`scripts/build_dataset.py`) - about 39% of loans end up with a usable
-score in at least one bucket (lower than permanent transfers' 67%, since a
-loan spell is usually a shorter tenure for a less-established player, so
-it clears FotMob's per-category minutes thresholds less often), but a
-given rating/tackles-per-90/etc. now means the same percentile whether
-it's shown on a loan card or a permanent-transfer one.
-
-**The rating/attacking/defensive/possession components come from FotMob,
-not Transfermarkt.** The packaged Transfermarkt dataset has no column at
-all for defense-specific output — no tackles, clean sheets, saves, or any
-other defensive stat — so `scripts/fetch_fotmob_stats.py` (optional, like
-`fetch_transfer_types.py`) separately pulls FotMob's public season stat
-leaderboards (rating, goals/xG/xA, tackles/interceptions/clearances/
-recoveries, passes, saves, etc.) for the 23 leagues that appear as a
-transfer destination, and stitches each transfer's *entire tenure* into
-`data/raw/fotmob_stats_cache.csv`, the same tenure-window philosophy as the
-rest of the score. Two problems had to be solved to make that stitching
-correct, not just plausible:
-
-- *Multi-season tenures.* FotMob only exposes whole-season leaderboards, so
-  a multi-year tenure needs several seasons combined — rate stats
-  (rating, per-90 numbers) are minutes-weighted averages across the
-  seasons used, count stats are summed.
-- *Same-league, mid-season moves.* FotMob attributes a player's entire
-  season total to whichever club they're registered at when fetched, not
-  split by stint — confirmed on real cases, e.g. Marc Guéhi's 19 Jan 2026
-  Crystal Palace → Man City move showing a near-full season of minutes
-  under Man City, most of which were actually played for Palace. This only
-  contaminates a same-*league* move made mid-season (a cross-league
-  arrival's "before" stats live in an entirely different league's
-  leaderboard, so they can't leak in) — the contaminated join season is
-  excluded from the stitched aggregate whenever it applies, verified
-  correct on real cases like Virgil van Dijk's January 2018
-  Southampton → Liverpool move (2017/18 correctly excluded, the other 9
-  seasons stitched together).
-
-**Each raw FotMob stat is league-adjusted before it's ranked, the same
-idea `perf_level` already applies to goal contributions.** Playing style
-genuinely differs by league in ways that show up directly in these raw
-counts, independent of quality: centre-backs in Bundesliga/Ligue 1/
-Denmark average measurably more tackles+interceptions+clearances+
-recoveries per 90 than centre-backs in Premier League/La Liga (a ~20-point
-gap in average `defensive_pct` before this was added — a more
-transition-heavy, higher-turnover style of play generates more defensive
-actions per player, it doesn't mean the players are better). Two real Arsenal
-centre-backs made this concrete: Gabriel and William Saliba both scored
-in the 30s on `defensive_pct` despite being well-regarded starters,
-because every FotMob-derived stat was being ranked against centre-backs
-in every league combined, with no adjustment for how many raw defensive
-actions a given league's style tends to produce.
-`compute_fotmob_league_baselines` in `scripts/build_dataset.py` fixes
-this — for each (league, position) and each raw stat, it computes a
-minutes-weighted average across the FotMob sample itself (not the full
-`appearances.csv` the goal-contribution baseline uses, since these stats
-only exist for the ~5,700 transfers/loans FotMob was matched to — well-
-covered leagues like the Premier League get a stable baseline from 100+
-matched centre-backs alone, thin ones fall back to the position-wide
-average). Each row's raw stat is then compared against that baseline as
-a plain difference ("N more/fewer than the league average"), not a ratio
-like `perf_level` uses — several of these stats are negative by
-construction (`fotmob_goals_conceded_inv`) or already a percentage
-(`fotmob__save_percentage`), where a ratio's sign and scale get
-confusing, while an offset works the same way for all of them. After
-this fix, average `defensive_pct` across the top 12 leagues by matched
-centre-back count clusters tightly around 50 (49–57, one 61 outlier in a
-thin 23-player sample) instead of spanning 39–60.
-
-Matching a FotMob player onto a Transfermarkt one is also harder than it
-sounds — neither site exposes the other's player id, and club names often
-share no text in common at all ("Man City"/"Manchester City", "PSG"/"Paris
-Saint-Germain", "Copenhagen"/the Danish spelling "København", which was
-initially a real bug: the accent-stripping step only handled letters that
-decompose into base+diacritic, so `ø` was being silently dropped instead of
-transliterated). A small number of these are handled with an explicit
-alias table per league, found by inspecting real unmatched rows rather than
-guessed at up front — building one for all 23 leagues wasn't attempted,
-since inspecting our own data showed the same club can appear under several
-different short names even within one league (Bundesliga transfers use
-both "Dortmund" and "Bor. Dortmund" for the same club).
-
-FotMob's coverage has two real ceilings, not effort problems: nothing
-before a league-specific season, and Ukraine's Premier League
-specifically, where FotMob's own league page exposes only 5 basic stat
-categories (goals, assists, goals+assists, yellow/red cards) — nothing
-that overlaps what any of these four components actually need, so it's a
-genuine, permanent 0% for that one league.
-
-**The season-start ceiling varies far more than "a range" suggests.**
-Measured directly from `data/raw/fotmob_season_cache/`: the big five
-(Premier League, Serie A, Bundesliga, Ligue 1, LaLiga) start 2016/2017,
-Norway's Eliteserien and Sweden's Allsvenskan go back to 2013/2014, but
-several destination leagues with real transfer volume in this dataset
-start much later — Russia's Premier League only from 2019/2020, Greece's
-Super League 1 not until 2021/2022 — and the newest-added leagues
-(Serbia, Romania) don't start until 2025/2026, though those two barely
-register as transfer destinations in this dataset. This isn't a matching-algorithm weakness for the leagues it does hit
-hard, it's a volume effect: Greece and Russia's overall FotMob match
-rate (31% and 44% respectively, across permanent transfers and loans
-combined) dropped sharply once the transfer backfill (see **Known
-limitations** below) added thousands of older transfers dating back to
-2013 for leagues whose FotMob coverage only starts in 2019/2020
-(Russia) or 2021/2022 (Greece) - the matcher itself isn't any weaker
-there, there's just proportionally far more pre-coverage history to
-miss now. Overall, 67% of scored permanent transfers (39% of loans) end
-up with a usable score in *at least one* of the four buckets — coverage
-varies by bucket for permanent transfers (rating 54%, attacking 67%,
-defensive 57%, possession 57%; rating specifically seems to need more
-minutes/matches than the others to qualify on FotMob's side). Each bucket's weight is dropped independently for a row missing
-it, and the other weights renormalized, the same pattern already used for
-`resale_profit` - so a transfer can show, say, attacking and possession
-but not rating and defensive, and the score still sums to the same 0-100
-scale.
-
-**Norway and Sweden were silently getting the wrong season's stats
-entirely, not just missing data.** Auditing match rates per league (the
-same exercise that explained Greece/Russia above) turned up something
-different for these two: unlike every other league in `LEAGUE_MAP`,
-FotMob identifies an Eliteserien/Allsvenskan season by a single calendar
-year ("2020") rather than the split-year format ("2020/2021") every other
-league here uses, matching their Mar-Nov calendar-year football season
-instead of the rest of Europe's Aug-May one. Passing our usual
-"YYYY/YYYY+1" label as the season parameter for these two didn't error -
-FotMob's API silently fell back to its *current* season instead - so
-every cached "season" from 2013/2014 through 2026/2027 for Norway was
-returning the exact identical 21-player Rosenborg roster, confirmed
-directly by diffing the cached files. A transfer that matched under this
-bug wasn't just missing data, it was worse - scored against whichever
-season happened to be current when the cache was built, not its actual
-tenure. Fixed in `fotmob_season_param()` (`scripts/fetch_fotmob_stats.py`)
-by converting to Nordic single-year identifiers for just these two
-leagues; re-fetching from scratch showed real coverage only starts 2017
-(calendar year) for both, not 2013 as the corrupted data had implied.
-Rebuilding `transfers_processed.csv`/`loans_processed.csv` and retraining
-on the corrected labels changed 703 of 5,062 permanent-transfer scores -
-almost all a sub-0.2-point ripple from renormalized percentile ranks
-across the whole population, but the dozen actual Norway/Sweden rows
-moved by real amounts in both directions (e.g. Pontus Jansson's Malmö
-score +15.9, Lasse Berg Johnsen's -4.9) - a genuine correction, not a
-one-directional "more data is better" bump.
-
-**These four components are ranked against transfers and loans combined,
-unlike everything else in either formula.** Every other percentile here -
-performance level, value growth, playing time, resale profit for
-transfers; the loan equivalents - is deliberately kept within its own
-population, because the underlying raw numbers genuinely aren't on the
-same scale: a loan's few months can't rack up the same raw appearance
-count or market-value swing as a multi-year permanent tenure, so mixing
-them would bias both directions. rating/attacking/defensive/possession
-don't have that problem - they're per-90 rates (or, for rating, a plain
-average), already normalized for how long the tenure was, so a loan
-spell and a permanent tenure with genuinely identical on-pitch output
-land on the same percentile rather than two different ones just because
-of which pool happened to rank them. Combining also gives thinner slices
-(goalkeepers especially) a bigger, more stable reference population than
-either pool alone. `attach_fotmob_components` in `scripts/build_dataset.py`
-does this: it merges FotMob stats onto both transfers and loans, then
-runs the percentile ranking once across the combined set before handing
-each its own slice back.
-
-**Weights also vary by sub-position within each broad position, not just
-by the four broad positions above.** A Defensive Midfielder and an
-Attacking Midfielder both get the broad "Midfield" weights above by
-default, which weight attacking output far too heavily for a player
-whose job is mostly disruption and progression, not goals — Moisés
-Caicedo (Brighton → Chelsea, a genuine defensive-midfield profile: 69th
-percentile on defending, 65th on possession, but only 29th on attacking
-output) scored a 62.1 under the broad Midfield weights despite that
-being a clearly strong defensive-midfield tenure. `data/score_weights.json`'s
-`_sub_positions` (and `data/loan_score_weights.json`'s equivalent) give
-a handful of sub-positions their own weight row instead — Defensive
-Midfield, Attacking Midfield, Left/Right Midfield, Centre-Back, Left/
-Right-Back, Left/Right Winger — each shifting weight out of
-perf_level/perf_delta/attacking (the same "attacking output" bloc
-`fold_perf_level_into_attacking` already folds into one number) and into
-defensive/possession for a defense-oriented role, or the other way for
-an attack-oriented one. With the Defensive Midfield weights, Caicedo's
-score becomes 72.1. Central Midfield, Centre-Forward, Second Striker,
-and Goalkeeper have no override — either that already IS the broad
-default's implicit profile, the position has no sub-split at all
-(Goalkeeper), or the sample is too thin in this dataset for a confident
-opinion (Second Striker: ~300 players total, before any transfer/
-appearance filters even apply) — those fall back to the broad position's
-row unchanged. **Percentile ranking itself is untouched by any of
-this** — a Centre-Back is still ranked against every Defender, not just
-other Centre-Backs, so the comparison population stays large and stable;
-only the weights applied to an already-computed percentile differ by
-sub-position.
-
-**The four outfield defensive sub-positions (Defensive Midfield,
-Centre-Back, Left-Back, Right-Back) weight `rating` at 30% instead of
-the usual flat 20%, funded entirely from `defensive`** (23/29/26/26% down
-to 13/19/16/16%, plus the broad Defender fallback row 23%→13%). Checked
-directly against the real dataset: `rating` correlates with
-`success_score` far more strongly than the `defensive` bucket does for
-every one of these roles (0.84–0.86 vs. 0.50–0.58) — a gap that doesn't
-exist for attacking positions (`attacking` correlates as well as or
-better than `rating` there, 0.79–0.91) or goalkeepers (saves/goals-
-conceded correlates nearly as well as `rating`, 0.73 vs. 0.80). So this
-is specifically an outfield-defender pattern, not a general "rating is
-undervalued everywhere" one: raw tackle/interception/clearance/recovery
-counting rewards a high-volume, ball-winning style and says little about
-the positioning and game intelligence that let a genuinely elite
-defender avoid needing to make those actions as often in the first
-place — something a holistic per-match rating captures far better.
-Motivated by checking real elite ball-playing defensive
-midfielders/centre-backs (Declan Rice, Rodri) whose FotMob rating sits
-consistently far ahead of their raw defensive-stat percentile: Rice's
-Arsenal move moved from 77.5 to 82.1, Rodri's Man City move from 78.0 to
-81.4. Not a one-directional bump, though - Rodri's earlier, less-heralded
-Atlético move barely moved at all (81.4 → 81.3), since that specific
-transfer's rating percentile isn't actually ahead of its defensive one.
-
-**`data/loan_score_weights.json` got the same fix, checked the same way.**
-Rating correlates with `loan_success_score` more strongly than `defensive`
-for all four outfield defensive sub-positions in the loan dataset too
-(0.67–0.77 vs. 0.29–0.52 — noisier than the permanent-transfer numbers
-since loan-specific FotMob coverage is thinner, but the same gap), so
-`rating` moved 20%→30% there as well, funded from `defensive` (17/24/22/22%
-down to 7/14/12/12%, plus the broad Defender fallback row 15%→5%). Central,
-Attacking, Left, and Right Midfield were checked in both datasets and did
-*not* show the pattern — `rating`'s edge over `attacking` was small and
-`rating` already carried more weight than `attacking`, so those rows were
-left alone.
-
-**The sub-position used for this is not the one in the packaged
-`players.csv`.** That column is a single, undated label — whatever
-Transfermarkt currently lists for a player, the same value regardless of
-which transfer or era is being scored, so a player who changed roles
-over their career (central midfield early on, pushed into a more
-defensive role later) gets every older transfer judged against today's
-label instead of the one they actually held at the time. `game_lineups.csv`
-(3.18M rows, one per (game, player), covering both `starting_lineup` and
-`substitutes` rows) has the sub-position a player was actually fielded
-in for every specific match, so `load_actual_sub_positions` in
-`scripts/build_dataset.py` takes each player's single most-common
-fielded sub-position across their entire lineup history and uses that
-instead — still a career-wide summary, not a per-tenure one (a per-tenure
-version would need to filter to each transfer's specific window, which
-gets thin fast for short tenures and loans), but a real, dated one
-rather than a today-only snapshot. The two disagree more than you'd
-expect: for players with a real sample (≥10 lineup appearances),
-`players.csv`'s label matches the position they were actually fielded in
-most often only 74.7% of the time, and about a quarter of players never
-settle into one dominant role at all (under 70% of their own lineup
-appearances at their single most-common position). A player with no
-`game_lineups.csv` rows at all falls back to `players.csv`'s own label.
-
-**League-adjusted performance.** Goal contributions are judged against how
-hard it actually is to score in that specific league, not the whole
-dataset. For each (league, position) pair we compute the average goal
-contributions/90 across *all* appearances in that league (not just our
-~8,300 filtered transfers — this uses the full ~1.9M-appearance dataset, so
-even leagues with few transfers in our sample get a stable baseline). A
-player's raw output is then expressed as a multiple of that baseline (e.g.
-"2.2x the league average") before being percentile-ranked. Concretely:
-Bundesliga attackers average 0.54 goal contributions/90 across the whole
-dataset, Premier League attackers average 0.48 — moving from one to the
-other is a real step up in difficulty, and the score now reflects that.
-This is what fixed Haaland's Dortmund→Man City score initially looking too
-low: his raw output dipped slightly (1.39→1.07 per 90), but relative to
-each league's baseline he stayed just as dominant (2.6x→2.2x), which the
-formula now credits instead of penalizing.
-
-**Performance change vs. expectation, not raw delta.** Even with league
-adjustment, comparing a player's league-relative level *before* the move to
-*after* the move (a raw difference) still unfairly penalizes players who
-were already near the top: someone at 2.6x their league's average has far
-more room to fall than to rise, so almost any real outcome short of getting
-*even better* reads as "decline" — even though everyone that dominant tends
-to pull back toward the pack somewhat (regression to the mean), and that
-pullback isn't really a sign the move went badly. So instead of a raw
-difference, "performance change" fits a simple regression of post-transfer
-level on pre-transfer level (per position, across the dataset) and measures
-the *residual* — did the player end up better or worse than what's
-statistically typical for someone who started at their level? A player who
-pulls back by exactly the expected amount scores neutrally; someone who
-beats that expectation (Haaland: expected ~1.3x, actually stayed at 2.2x)
-scores well; someone who falls far short of even the regressed expectation
-(Sancho at Man Utd: expected ~1.2x, actually fell to 0.7x) still scores
-badly. This is what pushed Haaland's "performance change" from the 30th
-percentile to the 96th without touching genuine busts like Sancho.
-
-**Model.** A ridge-regularized linear regression trained on pre-transfer-only
-features (age, position, physical attributes, fee, market value, prior-year
-performance including FotMob rating/xG/xA/passing/defensive output, and
-origin/destination club & league strength) — nothing about what happened
-after the move. Evaluated on a temporal holdout (trained on
-transfers before mid-2023, tested on transfers since): **MAE ≈ 12.26 points**
-on the 0–100 scale, R² ≈ 0.211, vs. ≈14.37 MAE for always predicting the
-average. That's a modest but real signal, and honestly weaker than scoring
-a fixed first year would give — predicting a player's *entire future stint*
-at a new club from pre-transfer stats alone is genuinely hard, since
-multi-year outcomes depend heavily on injuries, tactics, and squad fit that
-no pre-transfer number can see. The app surfaces this error rate and a
-per-prediction "why this score" breakdown rather than presenting the number
-as gospel.
-
-**Height is fed in relative to its own position's average, not as a raw
-number.** Raw `height_in_cm` tested as a bigger model input than the
-`position` category itself (3.4% feature importance vs. 1.7% for all four
-position dummies combined), despite being far less informative on its
-own — it was mostly acting as a silent proxy for position/body-type (tall
-→ centre-back/striker/keeper) rather than earning its weight for the roles
-height genuinely matters for (aerial duels). Centering it on its own
-position's average (`height_vs_position` in `scripts/train_model.py`,
-e.g. "+8cm" for a striker taller than the typical striker) tested as a
-small but consistent improvement over both the raw value and dropping
-height outright — MAE 13.20 → 13.15, R² 0.086 → 0.089 on the same
-temporal holdout. A second idea tested alongside it — feeding in the
-average `success_score` of each transfer's k nearest historical
-neighbors, on the theory that "similar transfers tend to succeed/fail
-together" should be a real signal — did *not* hold up: results bounced
-non-monotonically with k (R² swung from 0.074 to 0.093 across k=5/15/30)
-and got worse, not better, once combined with the height fix, on a
-dataset this size (~3,000 training rows) too thin for that kind of
-neighbor-average feature to add signal rather than noise. Kept the
-height fix, dropped the neighbor-feature idea.
-
-**The model itself was under-regularized for a training set this small,
-and fixing that was a bigger win than any single feature.** The original
-config (`max_depth=3`, `learning_rate=0.05`, every row and every leaf
-size allowed) let individual trees fit noise in a ~3,000-row training
-set. A grid search against the same temporal holdout found a shallower,
-more constrained config — `max_depth=2`, `learning_rate=0.1`,
-`subsample=0.8` (each tree only sees a random 80% of rows - stochastic
-gradient boosting), `min_samples_leaf=10` — a real, seed-stable
-improvement (R² 0.086 → ~0.11 across 5 random seeds, checked
-specifically to rule out a lucky single run), not a one-off. Also tried
-and rejected: `HistGradientBoostingRegressor` and `RandomForestRegressor`
-as drop-in replacements (neither beat a well-tuned
-`GradientBoostingRegressor`), and a smoothed destination/origin-club
-historical-success-rate feature (target encoding), which looked
-promising in isolation but made things *worse* once combined with the
-other changes - a median of 5 transfers per club in the training data is
-too thin for even a shrinkage-smoothed per-club average to add real
-signal.
-
-**`sub_position` (e.g. Centre-Back vs. Winger, not just the 4 broad
-positions) is fed to the model as an additional category, alongside
-`position` rather than instead of it.** The score-formula side of the
-app already distinguishes these for weighting (see "Weights also vary by
-sub-position" above); the predict model didn't have access to that
-distinction at all before. Small additional gain on top of the
-regularization fix: MAE 13.00 → 12.93, R² 0.112 → 0.114. Autofilled from
-the searched player's own data (`players_lookup.csv` already carries it)
-- no new form field needed. A player missing it entirely (2 of ~8,600 in
-the lookup table) falls back to their broad position instead, the same
-"fall back to the broad category" pattern already used for sub-position
-weighting in the score formula.
-
-**The predict model's pre-transfer performance signal was, until this
-point, limited to Transfermarkt goal contributions alone (`pre_goals_p90`/
-`pre_ga_p90`) - the same rating/xG/xA/passing/defensive-actions data the
-historical score's post-transfer components already draw from was never
-available on the pre-transfer side, simply because the model predates the
-FotMob pipeline.** Filling that gap was the single biggest accuracy
-improvement found on the predict model: **MAE 12.93 → 12.34, R² 0.114 →
-0.175** on the same temporal holdout - checked directly against pure
-model-seed noise (10 seeds, R² 0.161-0.175) to confirm it's a real,
-stable gain, not a lucky run. Every individual bucket (rating, attacking,
-possession, defensive) beat the without-FotMob baseline on its own, and
-combining all of them kept helping - unlike most feature ideas tried
-elsewhere in this project, nothing here needed to be walked back.
-
-- `scripts/fetch_pretransfer_fotmob_stats.py` stitches each historical
-  transfer's *pre*-transfer year at the *old* club - the mirror image of
-  `scripts/fetch_fotmob_stats.py`'s post-transfer tenure stitching, reusing
-  its season-fetch/cache and club-matching machinery unchanged. No new
-  scraping was needed: it reads the same cached season leaderboards
-  already on disk, since 99.7% of origin leagues fall within the same
-  23-league set already covered for destinations (confirmed before
-  writing a line of this).
-- `scripts/fetch_current_fotmob_stats.py` does the equivalent for *live*
-  predictions - a snapshot of each `players_lookup.csv` player's last 365
-  days at their *current* club, autofilled into the predict form the same
-  way `recent_apps`/`recent_goals_p90`/etc. already are, no new form
-  field needed. Unlike the historical case there's no mid-season-move
-  contamination to guard against - FotMob already attributes a season to
-  whichever club a player is *currently* registered at, which is exactly
-  the club this script wants.
-- The predict model originally consumed these as **raw per-90 numbers**,
-  not the percentile-ranked, league-baseline-adjusted components the
-  historical score computes (`compute_fotmob_component_pcts`) - the
-  reasoning being that a tree ensemble can learn its own splits/
-  thresholds directly, so that machinery (built to combine components
-  onto one comparable 0-100 scale) wasn't needed here. That didn't hold
-  up once checked directly - see "The pre-transfer FotMob stats are now
-  fed to the model as position-relative percentiles" further below,
-  which replaces this with the same position-conditional approach the
-  historical score uses.
-- ~35-45% of transfers have no pre-transfer FotMob match (an uncovered
-  origin league, or a real coverage gap - same ceilings as the
-  post-transfer side). Missing values are median-imputed (fit-on-train
-  for the holdout eval, full-dataset for the deployed model, same
-  discipline as `height_vs_position`) rather than dropping those rows,
-  alongside a `has_pre_fotmob_data` flag so the model can learn to
-  discount an imputed placeholder instead of trusting it as real form.
-- Two related bugs turned up and were fixed while wiring this in: (1) a
-  GK-only stat (e.g. saves) has no real median at all for outfield
-  positions, and the leave-one-out explanation swap was feeding that
-  `NaN` straight into the model, crashing the request - fixed by falling
-  back to the flat (non-position-conditional) reference whenever the
-  position-specific one is missing; (2) `reference_values_by_position`
-  was originally computed *after* the median-imputation step above,
-  silently diluting each position's "typical" value with a chunk of
-  imputed population-median rows rather than reflecting only the real
-  observed ones - fixed by computing it from a pre-imputation snapshot
-  instead (`median()` skips real `NaN` on its own, once nothing has
-  overwritten it yet).
-
-**Explainability.** For known historical transfers, the app shows the
-actual 5-component breakdown above, each with the concrete underlying
-numbers (e.g. "0.92 goal contributions/90 at Barcelona, ranked vs. other
-attackers", "€33m → €60m market value"), not just a bare score. For a new
-hypothetical prediction (where there's no real post-transfer data yet), it
-shows each feature's contribution by comparing the prediction to what a
-"typical transfer" would score with that one feature swapped to its
-dataset median or mode — e.g. "35.1 yrs vs. a typical transfer's 25.4 yrs,
-lowering the score by 11.1 pts" — a simple, transparent stand-in for a
-proper SHAP explanation, with league codes and fees resolved to readable
-names/€m rather than raw feature values.
-
-**The "typical" reference for fee-related features is conditional on
-whether the transfer being explained is itself paid.** Over half of all
-transfers are free (an out-of-contract move or an academy graduate signing
-- a fundamentally different circumstance from an active paid deal), which
-drags the *overall* median transfer fee to €0. Comparing a real €50m fee
-against "a typical transfer's €0m" is misleading — it reads as if paying
-anything at all is unusual, rather than telling you whether €50m is high
-or low *among paid deals*. So log_transfer_fee and fee_to_value_ratio each
-have a second reference value computed only from transfers with a real fee
-(`reference_values_paid` in metadata.json, e.g. a typical paid fee is
-~€6m, a typical paid fee-to-value ratio is ~1.0x) — used instead of the
-overall reference whenever the transfer being explained has `transfer_fee
-> 0`. A genuinely free transfer still compares against the overall
-reference, which correctly reflects that being free is itself common. One
-side effect worth knowing: since paid-vs-paid variation is naturally
-smaller than paid-vs-free variation, transfer fee's contribution shrank
-and often no longer makes the top-5 explanation — that's the fix working
-as intended, not a regression.
-
-**Every "typical" reference is now contextual, not a single flat number
-for the whole dataset.** A flat average is a weak baseline for two
-reasons, both reported by hands-on use of the app: (1) it ignores
-position — an attacker's typical goal contributions (~0.47/90) look
-nothing like the whole population's (~0.20/90, dragged down by defenders
-and goalkeepers averaging near 0), so *every* attacker's performance
-looked artificially inflated against it, and vice versa for defenders; (2)
-for fee specifically, it ignores the player's own market value — a €100m
-fee for a player already valued at €70m is a modest ~1.4x premium, in
-line with what similarly-valued players go for, but comparing the raw
-€100m against a flat "typical paid fee" (~€6m, dragged down by many
-cheaper deals) made it look like a wild outlier regardless of context.
-Two fixes, both in `scripts/train_model.py`:
-
-- `reference_values_by_position` — the median of each position-sensitive
-  feature (age, height, appearances, minutes, goal rates, market values)
-  computed *within that position*, used instead of the flat median for
-  `position_conditional_features`. The explanation now says "vs. a typical
-  attacker's 0.47 per 90" instead of "vs. a typical transfer's 0.20 per
-  90".
-- `fee_regression` — a simple fit of `log(fee) ~ log(market value)` on
-  paid transfers, so the fee reference for any given prediction is "what's
-  typically paid for a player valued this highly" (e.g. ~€73m for a €70m
-  valuation) rather than one number for everyone. This is the same
-  regression-to-expectation pattern already used for the historical
-  "performance change" component (`compute_expected_post_performance`),
-  applied here to fee instead of performance.
-
-Concretely, for a €100m fee on a €70m-valued player, "Transfer fee" used
-to read "*vs. a typical transfer's €0m, raising the score by 7.5 pts*"
-(comparing against mostly-free transfers) and then, after the first fee
-fix, "*vs. a typical paid transfer's €6m, raising the score by 1.2 pts*"
-(comparing against a flat paid average) — both frame paying anything
-substantial as unusually large. It now reads "*vs. what's typically paid
-for a similarly-valued player: €72.7m, **lowering** the score by 1.2
-pts*" — correctly recognizing that €100m is a modest premium over a
-€70m valuation, not an outlier, and that paying somewhat above market
-rate for a player is if anything a mild risk factor rather than
-inherently a sign of a big, ambitious move.
-
-**A bare categorical swap ("Destination league: La Liga vs. a typical
-transfer's Premier League") reads as "moving to Spain is inherently
-better", with no hint of why — fixed for the features where that's
-actually misleading.** Checked directly: Premier League genuinely is the
-lowest-scoring major league in the historical data (48.4 average
-`success_score` vs. La Liga's 50.2, France's 51.9), but on-pitch
-components (attacking/defensive/possession/rating) are comparable across
-leagues - the gap is almost entirely `value_for_money`. Premier League
-clubs have historically paid a real, large fee premium over market value
-(mean fee/value 1.55x, 47% of paid deals exceeding the formula's 1.3x
-overpay line) vs. La Liga's 1.01x/21% - `value_for_money` is designed to
-penalize exactly that, deliberately, so this isn't a bug in the score
-(a club chronically overpaying is worse value even when the player
-performs fine) - it's the *explanation* that was misleading by omitting
-why. The "destination/origin league" explanation now appends the real
-historical average and, for the destination league specifically, the fee
-premium that drives it: *"Laliga vs. a typical transfer's Premier League
-— transfers to Laliga have historically averaged 50.3 vs. 48.4 for
-Premier League, largely reflecting fee premiums paid there (1.01x market
-value on average vs. 1.55x)"* (`league_context_note` in `app/main.py`,
-baselines computed in `scripts/train_model.py` and cached in
-`metadata.json`). A league with too few transfers to trust a stable
-average (`MIN_LEAGUE_SAMPLE = 15`) is left out of the baseline entirely
-rather than shown a noisy number - the explanation just falls back to
-the plain swing-only version for those. `fee_to_value_ratio` and
-`club_quality_ratio` got the same treatment on a smaller scale - a short
-appended clause explaining what the ratio means and, for
-`fee_to_value_ratio`, that the historical scoring only penalizes fees
-above ~1.3x market value, not any premium at all. `height_vs_position`'s
-explanation was also cleaned up - it used to read "+8cm vs. a typical
-transfer's +0cm" (technically correct but redundant, since the reference
-is 0 by construction), now reads "+8cm vs. the position average".
-
-**Three more explanation rows read as unexplained number comparisons even
-after the fixes above - origin/destination club value, position/
-sub-position, and foot.** All three could swing the score by several
-points with nothing but "X vs. a typical Y", the same gap the league fix
-above closed for leagues.
-
-- **Club value** (`log_to_club_value`/`log_from_club_value`) - "€900m vs.
-  a typical attacker's €172m" never said what a bigger squad valuation
-  actually buys a transfer. Checked directly against every success_score
-  component: of the four FotMob-derived buckets, `rating_pct` correlates
-  with destination club value far more than any other (r=0.29 vs. 0.23 for
-  attacking, 0.22 for possession, -0.07 for defensive) - moving to a
-  bigger-budget club doesn't uniformly help every component, the effect is
-  concentrated in post-move rating. Origin club value shows the same
-  pattern, weaker (r=0.19) - players already at a big club tend to keep
-  rating well after leaving it. Fit `rating_pct ~ log(club value)` on the
-  training data (`club_value_rating_regression` in metadata.json, the same
-  "fit a line, evaluate it at this transfer's own numbers" idea as
-  `fee_regression`) so the explanation can quote the actual percentile gap
-  implied by *this* prediction's specific values: *"€900.0m vs. a typical
-  attacker's €172.3m: moving to a squad valued this highly has historically
-  come with a stronger post-move rating - signings there average around
-  the 67th percentile, vs. the 55th percentile at a club valued like
-  €172.3m, likely reflecting the quality of teammates and system a
-  wealthier club can offer."* Suppressed (falls back to the plain swing)
-  when the two implied percentiles land within 4 points of each other -
-  not enough of a gap to say anything the swing itself doesn't already.
-- **Position / sub-position** - the reference value for any categorical
-  feature is the dataset's single most common category, so a bare "Attack
-  vs. a typical transfer's Defender" reads as "being an attacker instead
-  of a defender" causing the swing, no explanation attached. Unlike
-  league, there's no single verified mechanism here - checked directly
-  that real, if modest, baseline differences do exist by position (50.0
-  for goalkeepers to 54.6 for midfielders) and sub-position (50.4 for
-  centre-backs to 65.0 for second strikers), but nothing isolates *why*
-  (could be the historical formula's own per-position weighting, could be
-  market-evaluation differences, could be both) - so the note states the
-  real gap as a fact rather than inventing a cause: *"Attack transfers have
-  historically averaged 53.5 vs. 51.6 for Defender transfers - a real
-  baseline gap in this dataset, not a claim that one position is inherently
-  a better transfer bet."* A category too thin to trust a stable average
-  (same `MIN_LEAGUE_SAMPLE = 15` gate as the league baselines - e.g. the
-  2-row "Attack" sub-position) is left out of the baseline entirely.
-- **Foot** - the smallest and least explicable of the three: left-footed
-  transfers average 54.3, "both" 55.3, right-footed 52.4, a real gap with
-  no football mechanism found behind it despite looking. Rather than
-  invent one, the note says so plainly and hedges: *"left vs. a typical
-  transfer's right: Left-footed transfers have historically averaged 54.3
-  vs. 52.4 for Right-footed transfers - a small, real gap in the data with
-  no confirmed football mechanism behind it - worth reading skeptically."*
-
-(`category_baseline_note`/`club_value_rating_note` in `app/main.py`,
-baselines and the rating regression computed in `scripts/train_model.py`
-on the same filtered training data every other reference value uses.)
-
-**"Compare to similar transfers" already exists as a separate mechanism**
-(`find_comparables`, a nearest-neighbor lookup over the full feature
-space) and powers both the "most similar historical transfers" list and
-the predicted score's likely range — that part was already contextual by
-design. The reference-value work above fixes the *per-feature* SHAP-style
-breakdown specifically, which used flat dataset-wide statistics rather
-than the nearest-neighbor mechanism (using neighbors chosen by a feature
-to explain that same feature would be circular — the neighbors would
-already be similar on it by construction, trivializing the comparison).
-
-**The pre-transfer FotMob stats are grouped in the explanation the same
-way the historical score groups them (rating/attacking/defensive/
-possession), without changing what the model itself trains on.** At the
-time, the model still consumed all 12 raw per-90 stats separately - the
-reasoning being that a tree ensemble can learn more from ungrouped
-features than from a hand-aggregated percentile, so grouping was treated
-as purely an explanation-layer concern here. (That reasoning didn't
-survive contact with the position-weighting problem below - the model
-itself was later changed to consume the same 4 groups the explanation
-already displays, once it became clear "ungrouped" and "position-blind"
-were the same underlying issue.) What didn't hold up *first* was using
-that same ungrouped shape for the *explanation*:
-individually, correlated stats (xG/xA/chances-created all move together
-for the same player) understate each other in a one-at-a-time leave-one-
-out swap, and fragment FotMob's real combined signal - "the single
-biggest accuracy improvement found this project" - into up to 7 line
-items too small to ever make a top-5 explanation. Fixed by swapping each
-whole group to its reference values in one prediction (not one feature at
-a time) for the explanation only, reporting one combined contribution and
-a labeled bulleted breakdown (`explain_prediction`'s `stats` field, same
-`{"description", "stats"}` shape `describe_fotmob_component` already uses
-for the historical card) - "Recent attacking output: +3.1, raising the
-score by 3.1 pts" with xG/xA/chances-created bulleted underneath, instead
-of three separate barely-there line items. `rating` stays its own entry
-(nothing to combine it with); the two defensive variants (outfield
-tackles/interceptions/clearances/recoveries vs. a goalkeeper's saves/
-save%/goals-conceded) are combined into one swap group rather than picked
-by position, since whichever variant doesn't apply to a given player is
-already sitting at its imputed median and swapping it again changes
-nothing - only the *description* shows the position-relevant subset, so
-an outfield player's card never lists a nonsensical "0 saves/90".
-
-Building this surfaced a real, separate bug, not just a UX gap: an
-imputed pre_fotmob_* feature (~35-45% of predictions have no real value
-for a given stat) was being compared against the *position-conditional*
-reference median in the leave-one-out swap, while the actual value itself
-had been imputed with the *flat, all-position* median in
-`build_feature_row` - two different baselines compared against each
-other, manufacturing a real-looking contribution out of pure imputation
-artifact (caught directly: an attacker with zero real defensive FotMob
-data was showing a confident "+3.7 Recent defensive work", purely because
-the flat median for tackles/90 sits above the attacker-specific one).
-Fixed by threading through which pre_fotmob_* features were genuinely
-provided (`build_feature_row` now returns that set alongside the feature
-row) and forcing an imputed feature's reference to the exact same flat
-median it was imputed with, guaranteeing a true zero rather than a fake
-swing - `has_pre_fotmob_data` (previously its own confusing top-5 entry,
-a data-quality flag with no football meaning) is retired in favor of each
-group's own "no recent FotMob data available" messaging when none of its
-underlying stats are real.
-
-**The pre-transfer FotMob stats are now fed to the model as
-position-relative percentiles, not raw per-90 numbers - the raw-number
-design was never actually position-aware, unlike every other part of this
-project.** The historical score weights defensive/attacking/possession
-components differently per position (e.g. defensive weight 0.28 for
-Goalkeeper vs. 0.02 for Attack in `score_weights.json`), but the predict
-model's 12 raw FotMob stats sat on one shared scale for every position -
-nothing told it that 2.0 tackles/90 is unremarkable for a striker but
-excellent for a center-back, or that a goalkeeper's "0 expected-goals/90"
-reflects a stat that doesn't apply to the position, not poor attacking
-play. Checked directly with a synthetic-row diagnostic before changing
-anything: swinging tackles/90 across the four broad positions on the old
-model produced almost flat sensitivity regardless of position (it should
-swing hardest for defenders), attackers showed the *smallest* xG
-sensitivity of any position (backwards - it should be the largest), and
-swinging saves/90 for outfield positions produced negative, nonsensical
-contributions from data those positions have no real signal for.
-
-Fixed by replacing the 12 raw stats with 4 position-relative percentile
-composites - rating, attacking (xG/xA/chances-created), defensive
-(tackles/interceptions/clearances/recoveries for outfielders, saves/
-save%/goals-conceded for goalkeepers), and possession (accurate passes
-and successful dribbles per 90) - computed the same way the historical
-score's own `compute_fotmob_component_pcts` does: where a raw value falls
-(0-100) among same-position players, with breakpoints fit on the
-training split's own distribution (`np.percentile`, persisted to
-metadata.json) and applied via linear interpolation at serve time, the
-same fit-on-train/apply-to-test discipline used everywhere else in this
-project. Validated with a 5-seed A/B/C experiment before shipping:
-composites-only beat raw-only on both MAE and R² at every seed tried,
-while adding composites *alongside* the raw stats (rather than replacing
-them) gave no further benefit - a tree ensemble gets nothing extra from
-two redundant, correlated views of the same signal. Test MAE 12.73 →
-12.65, R² 0.148 → 0.159 on the same temporal holdout. Re-running the
-synthetic-row diagnostic against the new model confirms the original bug
-is actually fixed: position-irrelevant stats (saves for outfielders,
-tackles/xG for goalkeepers) now show exactly 0.0 sensitivity, and
-position-relevant stats swing in the correct direction for every
-position tested.
-
-This also simplified the explanation layer built above - since the 4
-composites *are* the groups (rating/attacking/defensive/possession) the
-leave-one-out swap already displayed, the group-swap-and-recombine logic
-collapsed into an ordinary single-feature swap like every other feature,
-with the raw stat values kept alongside purely for display (not fed to
-the model, just carried through `build_feature_row` so the bulleted
-breakdown can still show real numbers, e.g. "73rd percentile" rather than
-just the abstract composite). Two bugs turned up while wiring this in:
-(1) the swap for the single-stat rating composite initially crashed with
-a `KeyError`, since it has no `stats` bulleted-list entry the way the
-3-stat groups do - fixed by branching on stat count, the same single-vs-
-multi distinction `describe_fotmob_component` already uses for the
-historical card; (2) that same crash resurfaced after the first fix
-because `build_feature_row` had been slicing its output down to just the
-model's input columns, discarding the raw `pre_fotmob_*` values the
-explanation needed to describe - fixed by keeping every column and
-letting `ColumnTransformer` select only the ones it needs, by name.
-
-**A one-line bug in `fee_to_value_ratio` was silently excluding 41% of
-the historical dataset from ever training the predict model at all -
-found by specifically going looking for exactly this kind of thing: the
-historical formula and the predict model have been changed independently
-across dozens of commits, and nothing had ever checked whether those
-changes stayed consistent with each other.** `scripts/build_dataset.py`
-computed it as `transfer_fee / market_value_in_eur` - `market_value_in_eur`
-(a player's *current* Transfermarkt valuation) is missing for 38.7% of
-historical transfers (a player who's since retired or left a tracked
-league has none), which silently produced a NaN `fee_to_value_ratio` for
-3,456 of 8,358 transfers. `train_model.py` requires every `NUMERIC_FEATURES`
-column to be non-null for a row to enter training at all, so this single
-column was almost the entire reason the model trained on ~4,900 rows
-instead of the ~8,300 actually scored (confirmed directly: the other four
-columns with any missing values combined account for fewer than 100 rows).
-It was also a genuine train/serve mismatch, not just a missing-data gap -
-`app/main.py`'s `build_feature_row` computes this same feature from
-`value_before` (market value *at the time of the transfer*) for every live
-prediction, a different quantity than what the model was ever trained on.
-
-`value_before` was the fix: zero missing values (it already falls back to
-`market_value_in_eur` itself when its own backward-looking valuation
-lookup fails - see `compute_value_growth_pct`'s docstring), and checked
-directly equal to `market_value_in_eur` in every one of the 5,125 rows
-where both are present, so switching the formula changes nothing for any
-row that already worked and only adds rows that were being thrown away
-for no real reason. This is presumably exactly how the two drifted apart:
-`fee_to_value_ratio` was written in the project's very first commit,
-before `value_before`'s own fallback existed to make it reliable, and
-nothing ever revisited it once `value_before` became the standard way
-every other feature in this codebase refers to "value at the time of the
-transfer."
-
-Retrained on the recovered dataset (7,808 of 8,358 transfers now usable,
-up from 4,895) and validated the same way every other change in this
-project has been: **MAE 12.65 → 12.40, R² 0.159 → 0.185** on the same
-temporal holdout, seed-stable (10 seeds: R² 0.181-0.190, std 0.003) rather
-than a lucky split. Also re-checked whether `max_depth=2`/
-`min_samples_leaf=10`/`subsample=0.8` - chosen specifically because the
-~3,000-row training set was too small for anything less constrained -
-still held now that training data has nearly doubled: tried `max_depth=3`,
-`min_samples_leaf=5`, `max_depth=4`, and no subsampling, all against the
-same 5-seed holdout, and the existing config still won every comparison
-(R² 0.186 vs. 0.162-0.184 for the alternatives) - the regularization
-choice holds up for reasons beyond the original small-training-set
-justification alone, so it was left unchanged rather than re-tuned on a
-premise that turned out not to be load-bearing.
-
-**Continuing the search for the same class of bug turned up a second real
-one - club value's `from_total_market_value`/`to_total_market_value` also
-had a dateless-snapshot problem, exactly like the one already found and
-fixed for `sub_position` (see "Weights also vary by sub-position" above) -
-but fixing it made the predict model measurably worse, not better, and
-the fix was reverted after finding out why.** `compute_club_value_proxy`
-sums a club's *current* squad's market values - a single snapshot applied
-identically to every transfer regardless of year, since `clubs.csv`'s own
-`total_market_value` column is empty and this is the only proxy available
-at all. Checked directly: 699 of 701 clubs in the scored dataset get one
-identical value no matter which year the transfer happened - RB Leipzig's
-2014 transfer (Marvin Compper, joining a newly-promoted 2.Bundesliga-era
-side) and their 2021 ones (an established Champions League club) score
-with the exact same club value.
-
-Built and tested a real fix: reconstruct each club's approximate roster
-from `appearances.csv` within a window of each transfer's actual date,
-then sum each roster player's own contemporaneous valuation from
-`player_valuations.csv` (the same "nearest real valuation" idea
-`nearest_valuation` already uses for the transferred player, applied to
-their teammates too), falling back to the flat proxy when fewer than 8
-teammates could be identified and valued nearby. It worked exactly as
-intended - re-running it on Leipzig shows their value climbing sensibly
-from ~€70m (just promoted, 2016) to ~€680m (established, 2021) instead of
-one flat €584m throughout every transfer regardless of era - and recovers
-real, previously-invisible signal for 88% of clubs in the dataset (620 of
-701 now show more than one distinct value across their transfers, up from
-2).
-
-Retraining on the corrected feature made the model *worse*, not better,
-and by a real, seed-stable margin (10 seeds, same discipline as every
-other change here): **R² 0.185 → 0.171** replacing the flat proxy
-outright, **0.180 → 0.175** adding the dated version *alongside* the flat
-one rather than replacing it (so simply having both doesn't recover the
-loss either). The likely explanation: because the flat, current-only
-number repeats identically for every transfer involving the same club, it
-functions as a de facto per-club identity signal a tree ensemble can key
-off directly, closer to the target-encoding idea already tried and
-rejected earlier in this project (see "regularization" above) than to an
-honest "value at the time" feature - and, evidently, a more useful one for
-predicting *this specific label* than the historically accurate number is,
-despite - or perhaps because of - being less historically accurate.
-Reverted rather than shipped: kept the simpler, empirically-better flat
-proxy as the model feature (the roster-reconstruction code itself was
-never committed, since it didn't ship), exactly the same "measurably
-doesn't help, don't ship it" bar this project has applied to every other
-feature idea, including ones that look obviously more correct on paper.
-Nothing about the *live* prediction path changes either way - a
-hypothetical prediction is inherently about *now*, so the flat "current"
-proxy `app/main.py` already reads via `clubs_lookup.csv` was always the
-right choice there, independent of this finding.
-
-**A third pass checked whether data-quality fixes added to one script
-ever failed to reach every other script that reads the same raw data -
-and found one real gap, plus two hypotheses that checked out fine.**
-`data/manual_appearance_corrections.csv` (a handful of away games
-misattributed to the home club in the raw dataset, found and fixed for
-historical scoring - see the data-quality pass under "Known limitations"
-below) is applied inside
-`build_dataset.py`'s own `load_appearances()`, but `build_lookups.py`
-re-reads `appearances.csv` directly for the live-prediction autofill's
-`recent_apps`/`recent_minutes`/etc. - a separate script that evolved
-independently and never picked up the same fix. Checked whether this
-currently matters: the two known-affected players' corrections are dated
-2018-2019, far outside any live 365-day "recent form" window, so today's
-`players_lookup.csv` is unaffected either way - but re-running the same
-detection scan the original fix used (>=3 distinct clubs within any
-30-day window), scoped to just the last 365 days instead of full history,
-found 3 players tripping the same signature. All 3 turned out to be real
-transfers combined with Africa Cup of Nations call-ups (international
-duty appearances carry no club_id at all, which the naive scan counts as
-a third "club") - not new misattribution bugs, so nothing live is broken
-today. Fixed anyway, since nothing was stopping a *future* real instance
-from reaching live predictions uncorrected the same way historical
-scoring already guards against it - `build_lookups.py` now imports and
-reuses `build_dataset.py`'s own `load_appearances()` (this project
-already has precedent for cross-script imports like this - see
-`fetch_current_fotmob_stats.py` importing from `fetch_fotmob_stats.py`)
-instead of re-reading the raw CSV a second, uncorrected way.
-
-Two related hypotheses were checked and found *not* to be gaps, worth
-recording so they don't get re-investigated later: `fetch_transfer_types.py`
-gathers its own candidate player list straight from raw `transfers.csv`,
-missing anyone whose only qualifying transfer came from
-`manual_transfers.csv` - but every manually-added row already carries its
-real fee directly (verified against Transfermarkt at the time it was
-added), so there's nothing for that script's own fee/type lookup to
-contribute for those specific rows regardless. `fetch_fotmob_stats.py`
-was the other candidate for this same class of gap, but already
-correctly concatenates `manual_transfers.csv` with the raw transfers
-before using it - no fix needed there.
-
-**A fourth pass, looking specifically at the two independently-maintained
-weight files, found one real cross-wiring: the loan pipeline's early
-position-validity filter checked positions against `POSITION_WEIGHTS`
-(the *permanent-transfer* weight keys) instead of `LOAN_POSITION_WEIGHTS`,
-even though `finish_loan_dataset` right below it correctly uses the loan
-version for the actual weight lookup.** Currently harmless purely by
-coincidence - both `score_weights.json` and `loan_score_weights.json`
-happen to define the exact same 4 top-level position keys (Attack/
-Midfield/Defender/Goalkeeper) today, checked directly - but the filter
-had no business depending on that coincidence holding forever, especially
-given the two files get hand-edited independently and often (this whole
-investigation exists because of exactly that pattern). Fixed to reference
-`LOAN_POSITION_WEIGHTS` explicitly. Re-ran the full pipeline to confirm:
-byte-identical output, exactly as expected for two currently-equal key
-sets, so this was pure correctness/future-proofing, not a live bug.
-
-Also checked and found solid, not gaps: `WINDOW_DAYS`/`PRE_WINDOW_DAYS`
-(the "365 days" definition of "recent") is defined separately in four
-scripts (`build_dataset.py`, `build_lookups.py`,
-`fetch_current_fotmob_stats.py`, `fetch_pretransfer_fotmob_stats.py`) but
-each of the FotMob ones explicitly comments that it matches its
-Transfermarkt-appearances counterpart - already cross-referenced
-carefully when written, not an oversight. `REFERENCE_NOW`/`REFERENCE_DATE`
-(build_dataset.py/build_lookups.py's respective "today") are identically
-defined, just named differently - harmless as long as both scripts run
-within the same calendar day, which the documented run order already
-assumes.
-
-**A follow-up accessibility pass covered the two pages the original one
-(above) never reached.** That pass audited Predict and Compare; Browse and
-Loans - the two pages built around a keyboard-only-hostile pattern of their
-own, a clickable table row that opens a detail modal - hadn't had the same
-look. Checked directly and confirmed real:
-
-- The table rows themselves were mouse-only. `browse.js`/`loans.js` wired
-  a `click` handler on each `<tr>` and nothing else - no `tabindex`, no
-  `role`, no keyboard handler - so a keyboard-only user could reach the
-  table via Tab but had no way to actually open a row's detail card, the
-  only way to see a transfer's or loan's full score breakdown. Fixed by
-  giving each row `tabindex="0"`, `role="button"`, a descriptive
-  `aria-label`, and an Enter/Space `keydown` handler alongside the
-  existing click one, plus a `:focus` outline in `style.css` so the
-  keyboard focus target is visible (the row already had `cursor: pointer`
-  for the mouse case, nothing for the keyboard one).
-- None of the site's three modals - the Browse/Loans detail-card popup and
-  the Settings gear-icon modal used on every page - were real dialogs to
-  assistive tech: no `role="dialog"`/`aria-modal`, no focus moved into the
-  modal on open, no focus trap (Tab could reach the nav links and table
-  rows behind a visually-open modal), and no focus restored to whatever
-  opened it on close. Fixed with one small shared helper,
-  `makeModalAccessible` (added to `settings.js`, which every page already
-  loads before its own script - see that file's own header comment on why
-  it's the shared, cross-page file), reused for all three modals rather
-  than writing the same focus-trap logic three times: it moves focus to
-  the modal's close button on open, remembers what was focused before so
-  Escape/close can restore it, and cycles Tab/Shift+Tab only through the
-  modal's own focusable elements.
-- One real interaction with existing behavior, caught before it shipped:
-  `browse.js`/`loans.js` already call `showCard()` again to refresh an
-  *already-open* card in place when a setting (currency, theme) changes,
-  without moving focus - naively calling the new `open()` unconditionally
-  from there would have yanked focus back to the card's close button on
-  every currency toggle, including while the user was still interacting
-  with the Settings modal itself. Made `open()` a no-op when the modal is
-  already open, so only a genuine new open (clicking or Enter/Space-ing a
-  row) moves focus.
-
-Verified live, not just read off the diff: keyboard-only Enter on a table
-row opens the card and moves focus to its close button; Shift+Tab from
-that close button wraps to the modal's true last focusable element (not
-just back to itself) when the content has more than one, confirmed on
-both the card modal and the Settings modal (4 focusable fields); Escape
-closes and returns focus to the row or gear button that opened it; and
-changing currency while a card is open still refreshes its content
-without moving focus. 102/102 tests pass unaffected (no backend change).
-
-**A "check the backend for gaps" pass turned up nothing new in the scoring
-pipeline itself - every weight file still sums to exactly 1.0, every
-`nearest_valuation` call site uses matching windows, `train_model.py`'s
-serving-time reference tables are deliberately refit on the full dataset
-after an honest train-only holdout eval - so the search moved to the
-predict model's own algorithm, which had never been questioned as a
-category, only tuned within it.** One real fix came out of the backend
-pass itself: `/api/players/search` and `/api/clubs/search`'s `limit` query
-param had no bound at all, unlike `/api/transfers`/`/api/loans`'s [1, 100]
-clamp - not reachable through the UI (the autocomplete fetch never sends a
-`limit`), but nothing stopped `limit=999999999` from dumping the entire
-players/clubs lookup table back. Clamped both to [1, 50].
-
-**The predict model's algorithm itself was replaced - `GradientBoostingRegressor`
-for a plain `Ridge` regression - a bigger accuracy jump than any single
-feature or hyperparameter change found so far, and the biggest surprise of
-this investigation.** Benchmarked the deployed GBR config against several
-tree-based alternatives (`HistGradientBoostingRegressor`, `RandomForestRegressor`,
-`ExtraTreesRegressor`, and GBR variants shallower/deeper/more-or-less
-regularized than the deployed one) on the identical feature set and
-temporal holdout - none beat the deployed config, some by a wide margin
-(RandomForest/ExtraTrees landed around R² 0.11-0.12). A plain `Ridge`
-beat all of them, including the deployed GBR, by more than any of those
-tree variants differed from each other: **MAE 12.40 → 12.26, R² 0.185 →
-0.211**. Unregularized OLS landed at essentially the same R² as tuned
-Ridge, which is itself informative - regularization barely matters here,
-meaning the signal in this feature set really is close to linear, and a
-tree ensemble's extra flexibility was fitting noise rather than real
-curvature on a training set this size (5,912-7,808 rows depending on the
-split).
-
-Checked hard before trusting a result this surprising:
-
-- **Not an alpha-tuning fluke.** Ridge beat the GBR across the entire
-  alpha range tested (0.3-30), not at one lucky value.
-- **A real flaw in the first version of this result, caught before
-  shipping it:** unregularized one-hot league dummies gave leagues with
-  2-9 training rows (Norway, Serbia, Romania) wildly inflated coefficients
-  (+21.96 for one) - the model memorizing those specific rows' targets,
-  not learning a real per-league effect, and a live-prediction stability
-  risk for any hypothetical transfer touching one of those leagues. Fixed
-  with `OneHotEncoder(min_frequency=30, handle_unknown="infrequent_if_exist")`
-  instead of hand-rolling a bucketed category column - sklearn folds any
-  origin/destination league under 30 training rows into one shared
-  "infrequent" bucket internally, so `app/main.py`'s serving code needed
-  zero changes (the raw league id keeps flowing through every existing
-  display/explanation code path unchanged; only the model's own one-hot
-  columns are affected). Costs at most ~0.002 R² on any split tested,
-  often nothing, and brought every coefficient into a plausible range
-  (largest magnitude dropped from +21.96 to -11.8, for the Premier
-  League - hundreds of training rows behind it, not 2). Same
-  "don't trust a baseline from too few examples" bar
-  `MIN_LEAGUE_SAMPLE`/`MIN_FOTMOB_LEAGUE_BASELINE_ROWS` already apply
-  elsewhere in this codebase, just applied to the model's own dummies.
-- **Checked across 5 different temporal split dates** (2022-01-01 through
-  2024-01-01), not just the one `SPLIT_DATE` the deployed model reports -
-  Ridge has no random seed of its own to vary the way the GBR's
-  seed-stability was checked (5-10 seeds, see above), so varying the split
-  itself is the equivalent robustness check. Ridge won every single one,
-  by 0.017-0.041 R² each time - never once lost, and never close.
-- **Tried blending** Ridge with the old GBR in case the two had
-  complementary signal - a promising-looking peak at one specific blend
-  weight on the original single holdout turned out to be mild tuning-on-
-  the-test-set (picking the best weight *after* seeing test performance on
-  that exact split): re-checked with a fixed 50/50 blend across the same 5
-  splits, it beat plain Ridge on 4 of them by a small margin and lost on
-  the 5th. Not a reliable win, and not worth shipping two models (double
-  the serialization/prediction cost, a muddier swap-based explanation) for
-  that. Kept plain Ridge.
-
-Model artifact size dropped from 237KB to under 8KB as a side effect (a
-linear model's coefficients vs. 300 serialized decision trees) - not the
-point, but a nice one. `app/main.py` needed no changes at all: every
-serving-time function (`explain_prediction`'s leave-one-out feature swaps,
-`predict_marginalized_recent_performance`'s batched averaging,
-`find_comparables`'s separate nearest-neighbors index) calls
-`pipeline.predict()` generically and doesn't care what's inside it.
-Verified live through the real UI (not just raw API calls): a full
-player-search → club-search → predict flow on the Predict page, plus a
-hypothetical prediction specifically targeting one of the now-bucketed
-rare leagues (Eliteserien/Norway) to confirm the explanation still shows
-the real league name with a sane, non-wild contribution rather than
-anything leaking the internal "infrequent" bucketing. 102/102 tests pass.
-
-**A follow-up pass looked specifically for what a linear model gives up
-relative to the tree ensemble it just replaced, and mostly came back
-empty.** Ridge can only let `position` shift the score's *intercept* (its
-one-hot dummy), not the *slope* of a numeric feature the way a tree's
-splits implicitly could - e.g. whether `pre_ga_p90` matters as much for a
-defender as an attacker. Tried, on the same 5-split harness as the model
-switch above:
-
-- **Explicit position × feature interaction terms**, for the numeric
-  features the codebase already flags as position-conditional
-  (`POSITION_CONDITIONAL_FEATURES`) - the one candidate that helped at
-  all: tied or beat plain Ridge on every one of the 5 splits (mean R²
-  0.205 → 0.207), never lost. Not shipped anyway - the gain is an order of
-  magnitude smaller than the Ridge switch itself (+0.002-0.004 vs.
-  +0.02-0.04 per split), while the implementation cost is much higher:
-  roughly doubles the feature count and, unlike that switch, would need
-  real changes to `app/main.py`'s `build_feature_row`/`explain_prediction`
-  to compute and explain the interaction terms at serve time, not just a
-  `train_model.py`-only change. Same bar the rejected league-baseline
-  features didn't clear earlier in this project.
-- A quadratic `age_at_transfer` term (a peak-age curve) - worse than
-  plain Ridge on every split, alone or combined with the interaction
-  terms above.
-- A degree-2 polynomial expansion (squares + pairwise products) of 5
-  curated "core" numeric features - worse on every split at every
-  regularization strength tried, despite Ridge's own regularization
-  presumably keeping the extra terms in check.
-- `HuberRegressor` (robust loss, downweights outlier residuals) -
-  essentially identical to plain Ridge, no real gain - the target isn't
-  heavy-tailed enough for robust loss to earn its complexity here.
-- `KernelRidge` and `SVR` with an RBF kernel - genuinely nonlinear
-  alternatives, tried specifically to see if *some* form of nonlinearity
-  could beat both the linear model and the tree ensemble. Neither came
-  close: every hyperparameter combination tried landed well below Ridge
-  (R² as low as -1.0 for an over-fit `KernelRidge` gamma), consistent
-  with the earlier finding that this training set is too small and noisy
-  for extra model flexibility to pay for itself.
-
-Kept plain Ridge unchanged. No code or model-artifact change from this
-pass.
-
-**Looked for new feature ideas beyond the existing column set next -
-some external research plus a full inventory of the raw dataset's unused
-columns turned up a few candidates, and the most promising one (the
-destination club's league form/position at signing) tested clean but
-negative.** A few ideas were dead ends purely from a data-availability
-standpoint, worth recording so they aren't re-investigated later:
-`contract_expiration_date` and `international_caps`/`international_goals`
-in `players.csv` are both *current* values tied to the player's *current*
-club/career-to-date, not dated to any specific past transfer - there's no
-way to recover "years left on their contract" or "caps earned" as of an
-old transfer from this dataset, the same dateless-snapshot problem
-`club_value_proxy` hit earlier, but with no reconstructable alternative
-this time (unlike club value, there's no per-date contract or caps
-history anywhere in the raw data to rebuild from).
-
-The one candidate that was both genuinely dated (not a snapshot) and
-fully buildable from already-local data - the destination club's league
-position/form at the moment of signing, from `club_games.csv`'s
-per-game `own_position` (backward as-of join on the transfer date, 120-day
-tolerance) - was built and tested properly, not just estimated:
-
-- **Season-long table position** (normalized 0-1 via `competitions.csv`'s
-  `total_clubs`, so leagues of different sizes are comparable): 85.8%
-  coverage after merging onto the real training data, but essentially no
-  effect - mean R² 0.2046 → 0.2053 across the same 5 temporal splits used
-  throughout this investigation, better on 3 splits, tied on 1, *worse*
-  on 1. Not a real signal, just noise.
-- **Recent form instead of season-long standing** (points-per-game over
-  the trailing 5 league games - a genuinely different "hot/cold streak"
-  signal a squad-value feature can't see at all) - worse coverage (50.7%,
-  needing several recent games within a tight window) and no improvement
-  at all (mean R² 0.2046 → 0.2045).
-
-Likely explanation: `club_quality_ratio`/`log_to_club_value` (squad
-market value) already capture most of "how good is this club" that
-matters here, and a specific moment's league position is a noisier,
-more volatile read on the same underlying thing rather than new
-information. Not shipped - no code or data change from this pass.
-
-**The remaining three ideas from the same brainstorm were built and
-tested too, closing out the "new data/features" investigation - all
-three came back negative.** Same 5-split harness, same discipline:
-
-- **Manager tenure at the destination club** (days since the last
-  managerial change before the transfer, reconstructed from
-  `club_games.csv`'s per-game `own_manager_name` - genuinely dated, not
-  a snapshot): 87.5% coverage, but flat - mean R² 0.2046 → 0.2047,
-  better on one split, worse on two, indistinguishable from noise.
-- **Reconstructed destination-squad age/nationality mix** (who actually
-  played for the club in the 45 days before the transfer, rebuilt from
-  `game_lineups.csv` + each player's fixed birthdate/citizenship -
-  deliberately avoiding `clubs.csv`'s own current-only squad columns,
-  which can't be dated to a past transfer at all): 52.0% coverage, and
-  actively worse on every single split (mean R² 0.2046 → 0.2031). A
-  45-day lineup window is a noisy way to estimate "the squad" - cup
-  rotation, injuries, and fixture congestion all inject variance that
-  isn't really about the destination club's character, and whatever
-  real signal is in there is likely already redundant with
-  `club_quality_ratio`/`log_to_club_value`.
-- **Nationality/cultural fit** (does the player's citizenship match the
-  destination country - simple boolean, 99.1% coverage, 37.3% same-country
-  rate among known values): the only one of the three that never lost on
-  any split, but the gain (mean R² 0.2046 → 0.2052) is smaller than the
-  position-interaction terms from the earlier model-improvement pass,
-  which were themselves already judged too small to justify their
-  implementation cost. Same call here, for the same reason.
-
-Every idea from the original brainstorm has now been either built and
-tested (this entry, the destination-club-form entry above, and the
-model's own algorithm/feature-interaction pass earlier) or ruled out
-on data-availability grounds alone (contract length, international caps
-- see above). None produced a gain worth shipping. Closing this
-investigation here - no code or data change.
-
-**One last check before closing the data investigation entirely: could
-more raw *data* (not just more features from the same data) help,
-either a bigger/newer version of the existing dataset or something from
-outside it?** Two dead ends and two real-but-uncertain options, checked
-directly rather than assumed:
-
-- A newer version of the packaged Kaggle dataset exists (679 vs. the
-  677 this project pins) - downloaded and compared row-by-row across
-  every core file (`transfers.csv`, `players.csv`, `appearances.csv`,
-  `player_valuations.csv`, `games.csv`): identical row counts
-  everywhere. A housekeeping republish, not new data.
-- Extending `MIN_DATE` further back than 2013 to add more historical
-  transfers doesn't work either - `appearances.csv`, the backbone of
-  both the label and most features, has essentially no rows before
-  2012 (a handful, then a hard jump to 71,688 in 2012 alone). 2013
-  isn't an arbitrary conservative cutoff, it's close to the actual
-  floor of what the raw data supports; transfers from further back
-  would just fail the existing appearance-count filters anyway.
-- Genuinely external sources were considered too, following up on the
-  "press citations/social buzz" idea from the earlier research pass.
-  Wikipedia's official pageviews API (confirmed working, not a scrape)
-  could proxy a player's public profile/hype at transfer time - a real,
-  novel signal orthogonal to every on-pitch stat here - but only covers
-  data from mid-2015 onward and needs real player-to-article matching
-  work. Transfermarkt's own injury history was considered too (a
-  genuinely new durability/fitness-risk dimension nothing here
-  captures), but unlike the transfer-history endpoint this project
-  already uses, there's no equivalent JSON API for it - confirmed
-  directly, it's a fully rendered HTML page, meaning real scraping
-  rather than the polite JSON-fetch pattern every existing script
-  follows. FBref/Understat were ruled out without building anything -
-  their advanced stats mostly overlap with what FotMob already
-  supplies here.
-
-Neither external option was built - both are real, uncertain-payoff
-engineering projects (a new fetch script, new caching, new matching
-logic) on a model this whole investigation has shown to be noise-limited
-by dataset size, not obviously starved for a specific missing signal.
-Stopping the data-acquisition line of investigation here.
-
-## Pages
-
-- **`/`** — predict a hypothetical transfer: search a real player, pick a
-  destination club, see a predicted score, a likely range (min/max among
-  the 5 most similar real transfers, since a single point estimate
-  overstates how confident a R²≈0.10 model can be), a "why this score"
-  breakdown, and the nearest historical comparables.
-- **`/browse.html`** — every scored transfer (~8,300), filterable by
-  position and destination league, searchable by player/club name, sortable
-  by score/date/fee/age, paginated. Click any row to open that transfer's
-  full card (score + breakdown) in a modal.
-- **`/loans.html`** — every scored loan spell (~4,300), same browse/filter/
-  search/click-to-view-card experience as `/browse.html`, but scored on the
-  loan-specific formula above (no fee/resale rows in the breakdown, and
-  duration shown in months rather than years).
-- **`/compare.html`** — set up two hypothetical transfers side by side
-  (same player to two different clubs, or two different players entirely)
-  and see both predictions, ranges, and top factors together with the
-  point gap between them.
-
-## Known limitations
-
-**Data-quality pass summary** (see the detailed entries below for the full
-investigation trail on each): starting from the appearances.csv-vs-
-transfers.csv gap backfill, a systematic hunt for similar bugs found and
-fixed several real ones. Net effect on the visible dataset was small on
-purpose - this was overwhelmingly a correctness pass, not a coverage one:
-permanent transfers scored went 8,356 -> 8,358, loans stayed flat at 4,306,
-even though 3,025 newly-verified real transfers went into
-`data/manual_transfers.csv` (most don't clear the scoring bar - see below).
-What actually changed was how much of what the site was already showing
-was *wrong*:
-- **206 currently-scored tenures** had their final season's FotMob stats
-  silently contaminated by whatever club the player moved to *afterward*
-  (Memphis Depay's Barcelona tenure was carrying his Atlético Madrid
-  season) - the single largest fix, both in row count and in how wrong the
-  old numbers were.
-- **34 players** were showing a different real player's FotMob stats
-  outright (Mario Suárez showing Mauro Zárate's rating) from a fuzzy name
-  matcher that was far leakier than one known case; **9 confirmed**
-  cross-club mismatches (Manchester City ↔ Swansea City, Real Madrid ↔
-  Real Sociedad/Betis) from the identical flaw on the club side, covering
-  155 structurally at-risk club pairs league-wide.
-- **2 loans** had undercounted pre-tenure appearances from a home/away
-  attribution bug in `appearances.csv` - one was sitting exactly on the
-  `pre_apps >= 10` scoring threshold.
-- **2,195 players** had a latent sub-position miscalculation from a stray
-  lowercase label in `game_lineups.csv` - currently zero visible effect,
-  but real, and it will start mattering the moment an affected player's
-  transfer clears the scoring bar.
-
-The model's own test MAE moved from 12.60 to 12.73 (R^2 0.155 -> 0.148)
-across these fixes - not a regression. Some of what the wrong data was
-contributing was coincidental correlation attached to the wrong player or
-club; a model trained on the corrected data reading marginally "less
-accurate" by that metric is the expected result of removing noise that
-happened to look like signal, not a sign anything broke.
-
-- The base Transfermarkt dataset has no column for defense-specific output
-  (tackles, clean sheets, saves) - now substantially addressed by the four
-  FotMob-derived components for both permanent transfers and loans (see
-  above), but not fully: they only cover the 23 leagues FotMob was matched
-  against (loans into a handful of other leagues - Brazil, MLS, Saudi
-  Arabia, Argentina, and a few smaller ones, ~3.5% of loans - aren't in
-  that set at all), only from whatever season FotMob's own coverage
-  happens to start for that specific league (2013/2014 for the earliest
-  leagues, but not until 2019/2020 for Russia or 2021/2022 for Greece -
-  see "FotMob's coverage has two real ceilings" above for the full
-  per-league picture), and not at all for Ukraine's Premier League. About
-  33% of scored permanent transfers (61% of loans)
-  still have no FotMob data in any of the four buckets and fall back to
-  value growth, playing time, and value for money (plus perf_level/perf_delta
-  for the permanent score) carrying the position almost entirely, as
-  before - and even among covered transfers, individual buckets have
-  uneven coverage (rating 54%, attacking 67%, defensive 57%, possession
-  57% for permanent transfers), so it's common for a transfer or loan to
-  show some but not all four rows. Both figures dropped noticeably after
-  the transfer backfill (see below): the ~6,300-player backfill and its
-  follow-up fixes added thousands of transfers dating back to 2013,
-  many of them older than FotMob's coverage window for their
-  destination league, so the FotMob-matched share of the *whole*
-  dataset fell even though the same `scripts/fetch_fotmob_stats.py` re-fetch
-  (7,507 matched tenures, up from 5,705) matched every transfer FotMob
-  could possibly cover.
-- FotMob player/club matching relies on name/club text matching (no shared
-  id exists between the two sites), which is inherently approximate.
-  Verified well for a few high-volume leagues by hand (English club
-  abbreviations, then Ligue 1's "PSG"/"Stade Rennais" and Denmark's
-  "Copenhagen"/"København", found by inspecting real unmatched rows and
-  fixed with explicit aliases - see `scripts/fetch_fotmob_stats.py`), but
-  the other 20 leagues rely on a generic matcher only, so their match rate
-  is somewhat weaker and less scrutinized (e.g. Ligue 1 and Denmark were
-  both under 80% before their specific fixes landed; some other
-  unreviewed league likely has a similar gap sitting in it right now).
-  **The exact failure mode this warns about - a real player's tenure
-  showing a different real player's stats - was confirmed and fixed**:
-  Marc-André ter Stegen's card was missing goalkeeping stats entirely
-  despite a decade at Barcelona, traced to `find_fotmob_id()` resolving
-  him to Andreas Christensen (a different Barcelona player, fuzzy-name
-  ratio exactly 0.600) whenever his most-recent season had zero FotMob
-  presence and the code fell to a same-club fuzzy guess before ever
-  trying an exact match from an older season. Fixed by searching for an
-  exact identity match across *every* season first, and only fuzzy-
-  matching when that exact name never appears anywhere at all - checked
-  directly against the full dataset, this changed 72 transfers'
-  resolved identity, zero of them regressions (several previously-`None`
-  results turned out to be a *second* related bug: an exact name match
-  that failed the destination-club check - e.g. a player who'd already
-  transferred on by the time FotMob's coverage starts - was still being
-  fed into that season's fuzzy fallback as a "close" candidate, letting
-  an unrelated same-club player with a vaguely similar name win by
-  coincidence; ter Stegen/Christensen was exactly this shape). Ter
-  Stegen's tenure went from 5 stitched seasons (Christensen's, 4,497
-  minutes) to his own real 10 (25,623 minutes) once fixed.
-- Sub-position weighting (see above) uses each player's single most-common
-  fielded sub-position across their *entire* career in `game_lineups.csv`,
-  not the specific window of any one transfer's tenure — a player who
-  genuinely changed roles mid-career (moved from a wide role into central
-  midfield, say) has every one of their transfers weighted by whichever
-  role dominates their overall history, which may not be the role they
-  actually played during an older or shorter tenure. A small number of
-  players' most-common lineup entry is a generic legacy label
-  ("Midfield", "Attack", "Defender", not the granular sub-position
-  vocabulary) rather than a real sub-position — those fall back to the
-  broad position's weights like any other unmapped value, same as a
-  player with no `game_lineups.csv` rows at all.
-- Only transfers with ≥10 appearances in both the year before and the whole
-  tenure after are included (~8,300 of ~112k candidate permanent transfers,
-  once loans are excluded), which skews the training data toward
-  established first-team players rather than fringe moves. Loans are
-  covered separately (see `/loans.html`, ~4,300 of ~30k candidate loan
-  spells) with a looser bar — only the pre-loan side needs ≥10
-  appearances, not the loan itself.
-- The packaged `transfers.csv` itself has real gaps - a user noticed Eden
-  Hazard wasn't on the site at all despite his ~120m euro 2019 Chelsea ->
-  Real Madrid move being about as high-profile as this dataset gets.
-  Checked directly: he has zero rows in `transfers.csv` (by player_id and
-  by name), but the move is fully real - confirmed against Transfermarkt's
-  own club-level season pages and cross-checked with a screenshot of his
-  player-level transfer history. Checking further (every player's
-  `appearances.csv` club-change history against `transfers.csv`) turned up
-  thousands of similar gaps, spread across effectively every league -
-  too many, and too mixed with unrelated data-quality noise (some
-  `appearances.csv` club-history entries are themselves wrong, e.g. Bukayo
-  Saka's and Curtis Jones's include games for clubs they've never played
-  for), to backfill automatically with confidence. `data/manual_transfers.csv`
-  is a small, hand-verified supplement instead (each row checked against
-  Transfermarkt directly before being added, merged into the pipeline in
-  `_load_raw_candidate_transfers` so it flows through every downstream
-  step - appearance windows, FotMob matching, scoring - exactly like a
-  real `transfers.csv` row) - started with Hazard and Roberto Firmino's
-  2015 Hoffenheim -> Liverpool move, then extended to the 100 highest
-  market-value gaps from that appearances.csv-vs-transfers.csv check.
-  Verifying 100 candidates by hand doesn't scale, so each one was checked
-  through transfermarkt's own live `transferHistory` API instead (see the
-  loan-detection bullet below) - which turned out to matter twice over:
-  first, a lot of the "gaps" weren't real at all - 41 were already
-  correctly in `transfers.csv` under a `to_club_id` the appearances.csv
-  heuristic hadn't checked, and a further 40 had no matching real transfer
-  in transfermarkt's own history for that player at all (some of the
-  appearances.csv-misattribution problem above, e.g. Bukayo Saka's and
-  Curtis Jones's histories including games for clubs they've never played
-  for; some an internal reserve-team promotion mistaken for a market move,
-  e.g. Robin Le Normand's apparent Real Sociedad arrival was really a
-  promotion from Real Sociedad B). Second, a first pass used a self-hosted
-  copy of a different tool (github.com/felipeall/transfermarkt-api) that's
-  faster but can't distinguish "loan transfer" from "free transfer" in its
-  fee field - it would have added several of Patrick Bamford's loan spells
-  (loaned repeatedly by Chelsea before his real permanent departure) as if
-  they were permanent transfers, caught before anything was written by
-  re-running the whole batch through transfermarkt's transferHistory API
-  directly instead, which classifies fee text properly. Of 100 candidates,
-  16 came back genuinely real and missing; of those, only 2 (Emiliano
-  Sala's 2015 Bordeaux -> Nantes move, Ryan Mason's 2016 Spurs -> Hull
-  City move) actually show a score today, each needing its own real
-  subsequent departure added too so `tenure_end` doesn't default to
-  "today" for a player whose Transfermarkt market-value history has since
-  gone stale (same fix as Hazard/Firmino needed). The other 14 are correct
-  but score-less for now: most of those players' careers continued into a
-  club or league this dataset's `clubs.csv` doesn't cover at all (lower
-  divisions, leagues outside the tracked set), which a manual_transfers.csv
-  row alone can't fix - a real, separate coverage gap, not a bug in this
-  mechanism. The same batch's LOAN legs (the site has a Loans tab too,
-  which a permanent-only backfill would keep missing) were checked
-  separately - 12 distinct missing loan-start legs, verified the same way
-  and added with an explicit `transfer_type: loan` in
-  `manual_transfers.csv` so `load_loan_spells()` (not `load_transfers()`)
-  claims them. Only Emiliano Sala's early-career loan to Caen and Davide
-  Astori's loan to Roma actually score - the other 9 (mostly Patrick
-  Bamford's and Iuri Medeiros's loan spells, both loaned around
-  repeatedly as young/fringe players) correctly don't clear
-  `prepare_loans()`'s existing `pre_apps >= 10` bar, since not having an
-  established first-team baseline yet is often exactly *why* a player
-  gets loaned out in the first place - not a bug in the backfill.
-  Having proven the method out on those two batches, the remaining ~6,300
-  candidate players (~12,450 transitions) were run the same way as one
-  long batch job (resumable, checkpointed to CSV, ~0.3s between requests
-  out of courtesy to transfermarkt's servers - about an hour end to end):
-  9,575 came back genuinely real and missing (1,967 paid, 4,251 free,
-  2,668 loans, 689 unknown-fee), 2,875 correctly didn't (1,768 to a club
-  outside `clubs.csv`'s tracked set, 662 loan-end legs, 297 with no real
-  match, 91 already correct, 54 more internal-promotion cases, 3 exact
-  duplicates). Hit two more real bugs at this scale, both caught before
-  anything shipped: a malformed transfermarkt date ("2004-00-01", month
-  0 - a variant beyond the already-handled "0000-00-00" sentinel) crashed
-  the batch job outright, and a small number of `players.csv` rows use
-  the literal string "Missing" (not null) for an unrecorded position,
-  which `lookup_weights` had no fallback for - never surfaced before this
-  backfill widened the candidate pool enough to actually include one of
-  the ~1% of players it affects (both are `except`-guarded/filtered now).
-  Once merged in and rebuilt: **6,467 permanent transfers now score (up
-  from 5,066) and 3,868 loans (up from 3,201) - net +1,401 permanent and
-  +667 loans actually visible on the site**, a substantially better
-  yield than the 100-candidate batch's ~12-15% predicted, most likely
-  because that batch's market-value-first ordering skewed toward players
-  whose careers later continued into untracked leagues, which the full,
-  unordered population doesn't share to the same degree. Spot-checked
-  extensively before integrating: the 25 highest-value transfers found
-  this way are all famous, correctly-priced, real moves (Gareth Bale's
-  world-record ~101m euro move to Real Madrid among them), and a search
-  for the two failure patterns already found in the smaller batches
-  (reserve-team promotions via known naming conventions - Castilla,
-  Atlètic, Primavera, etc. - and duplicate candidates) turned up zero
-  further cases at the full scale. Gareth Bale's own Real Madrid move was
-  a case in point for a second, much bigger issue found right after: it
-  was correctly added by the batch above but still didn't score, for the
-  exact reason Hazard's and Firmino's original two rows needed a real
-  subsequent departure added (see above) - his real Real Madrid -> LAFC
-  free transfer wasn't in the data either, so `tenure_end` defaulted to
-  "today" and his (now career-over, so no-longer-updating) market value
-  was too stale to pass `value_after.notna()`. Checked how widespread
-  that specific pattern was among every row the backfill had added so
-  far, not just the fee/type verification already done: of the 3,334
-  backfilled candidates already clearing the appearance-count bar, 1,903
-  (~57%) were silently failing this exact way - almost the entire gap
-  between "passes the apps filter" and "actually scores". Re-ran the same
-  transferHistory-API method once more, this time fetching each affected
-  player's real subsequent move (skipping any loans in between, same
-  fold-back-into-the-same-tenure logic `load_transfers()` already uses)
-  instead of a new candidate transfer: 1,888 of 1,903 resolved (99.2% -
-  the remaining 15 genuinely have no recorded next move yet), pushing
-  permanent transfers from 6,467 to 8,297. The same check against the
-  *original* (non-backfilled) transfers.csv population found a much
-  smaller version of the same gap - 129 of 5,180 already-passing
-  candidates (~2.5%, mostly very recent 2024+ moves where transfers.csv's
-  last snapshot simply predates the player's next real move) - fixed the
-  same way, 111 of 129 resolved, for a final 8,356 permanent transfers.
-  A departure row is never itself scored (it exists purely to give
-  `tenure_end` something real to find), so unlike the primary candidate
-  rows it doesn't need its destination club to exist in `clubs.csv` -
-  "Retired" and "Without Club" (club_id 123/515) are real, frequently-used
-  pseudo-clubs in transfers.csv itself but aren't actually present as rows
-  in `clubs.csv`, which the first version of this departure-fetch script
-  wrongly treated as a skip reason before that was caught and relaxed.
-- The same "`tenure_end` defaults to today" mechanism above had a loan-
-  specific twin: `load_loan_spells()` computes a loan's `tenure_end` the
-  same shift-to-the-next-transfer way `load_transfers()` does, but every
-  loan-start row this backfill added was missing its own closing leg (the
-  "End of loan" return, or occasionally a loan-to-permanent conversion or
-  an early recall elsewhere) - `backfill_full.py`/the departure-fetch
-  script both deliberately skipped writing those as unneeded for
-  permanent-transfer scoring, not realizing loans needed them for a
-  different reason. Without it, a loan's tenure window ran past the real
-  loan end and on to whatever the player's *next* known transfer happened
-  to be, silently inflating both `tenure_days` and the "team's games
-  played during tenure" denominator - caught when a one-season loan
-  (Gareth Bale's 2020/21 spell at Tottenham) showed 32 of 101 team games
-  played (32%) instead of the real ~32 of 52 (62%), because his missing
-  2021 return to Real Madrid let the window run on for another 10 months
-  until his 2022 free transfer to LAFC. Fetched every affected player's
-  real closing leg the same way (`transferHistory` API, one request per
-  player): of 2,682 backfilled loan-start rows (1,936 unique players),
-  2,679 needed and got a closing leg added (the other 3 already had one on
-  record); across the full loan dataset this moved the median tenure from
-  something noticeably loan-atypical back down to 271 days (~9 months, a
-  normal single season) and the median percent of team games played to
-  61%. Loans passing the appearance filter grew from 3,971 to 4,306 as a
-  side effect - a tighter, correctly-bounded window changed which spells
-  clear `MIN_APPS_PER_WINDOW`/valuation-staleness checks in both
-  directions, not just Bale's.
-- Loan detection depends on a one-time batch fetch from transfermarkt's
-  live, unofficial `transferHistory` API (`scripts/fetch_transfer_types.py`)
-  — an undocumented endpoint, not a published third-party API, so it isn't
-  polled live and could break if transfermarkt changes it. About 98% of
-  candidate transfers match a fetched record by (player, date, clubs); the
-  rest (an unfetched player, or a rare club id the live API doesn't
-  resolve) default to "unknown" and are treated like any other permanent
-  transfer rather than being dropped, so a small number of undetected loans
-  may still be scored as permanent moves.
-- A loan with an option/obligation to buy that converts to a permanent deal
-  at the same club, without a separate recorded transfer event for the
-  conversion, is still scored as one continuous loan spell running through
-  to whatever transfer comes next - the permanent phase isn't split out and
-  scored on the permanent formula instead. A loan that sends the player
-  onward to a second loan club before they return, by contrast, is handled
-  correctly - each leg gets its own row and its own bounded window.
-- "Playing time" still keeps a 40% raw-count component alongside the
-  percent-of-games-played signal, so a longer tenure still has somewhat
-  more room to accumulate a high score than a short, excellent one — a
-  deliberate choice (sustained presence is itself part of "success"), but
-  worth knowing. The "games the team played" denominator counts all
-  competitions combined (league, domestic cup, continental) rather than
-  just league games, on the view that squad rotation happens across all of
-  them - but that also means the raw data has no way to tell "rested for a
-  cup game" apart from "actually unavailable"; `pct_team_games_played`
-  itself (shown to the user as "X% of team's games played") stays that raw,
-  undifferentiated ratio. The *score* no longer takes that ratio at face
-  value, though: `playing_time_pct` first forgives a normal amount of
-  missed games (`compute_playing_time_pct` in `scripts/build_dataset.py`,
-  saturating toward 10 games/season) before ranking, checked directly
-  against the dataset first - even clearly-elite players (top-10% on rating
-  or goal contributions) miss a median of ~12 team games a season across
-  all competitions, so treating every missed game as equally costly was
-  punishing normal rest right alongside real unavailability. A hard
-  "forgive up to N, then nothing" cutoff was tried first and rejected: it
-  fully forgives most of the dataset, so ~41% of transfers landed on an
-  identical tied 100% value, and percentile-ranking that tie cluster
-  actively hurt the players with the *best* availability (someone missing 2
-  games/season got diluted into the same bucket as someone who used the
-  full allowance) - the opposite of the intent. The saturating version
-  avoids that (share at ~100% barely moves, 0.9% -> 1.3%): N'Golo Kanté's
-  2015-16 Leicester title season (missed ~2 games/season) and Declan Rice's
-  Arsenal move (missed ~4/season) are now close to unaffected, while
-  players who were being penalized for genuinely normal rotation see a
-  real, modest gain. It still can't distinguish *why* games beyond the
-  normal allowance were missed (injury, loss of form, being dropped) -
-  only that missing meaningfully more than ~10/season starts counting
-  against the score again, same as before. Loans needed one extra guard
-  permanent transfers don't: some loans have no reliable
-  `team_games_in_tenure` at all (a genuine data gap - the parent club's
-  games during the loan window are missing from `games.csv` - not a real
-  "team barely played"; permanent transfers can't hit this since they
-  already require >= 10 real appearances in both windows). Forgiving
-  against a near-zero denominator would otherwise read "missed only 1
-  game" as almost fully forgiven and reward the data gap - checked
-  directly, this inflated some 0-appearance loans from the bottom of the
-  distribution to the ~55th percentile before the guard was added.
-  `compute_playing_time_pct` now requires at least 15 team games per
-  tenure-year (comfortably inside the gap between genuinely short loans
-  with real data, which annualize to 18-67 games/year, and the broken
-  rows, which annualize to under 16) before trusting the denominator at
-  all; rows below that skip forgiveness entirely.
-- Re-ran the appearances.csv-vs-transfers.csv cross-check above against the
-  now-backfilled data, to see whether it had been exhaustive: for every
-  player, find each place their appearances.csv club changes from one game
-  to the next, then check whether that (player, destination club) pair
-  exists anywhere in transfers.csv + `data/manual_transfers.csv` combined.
-  National-team call-ups show up as a "club change" too (a player's June
-  2026 World Cup squad, say) - filtered out by requiring both clubs be real
-  rows in clubs.csv, which dropped 3,900 of them, almost all clustered
-  right around the World Cup window. Of the 29,591 real club-to-club
-  transitions left, 2,028 (6.9%) still had no matching transfer record -
-  down sharply from "thousands, spread across every league" before the
-  backfill, but no longer spread evenly: it clusters hard in specific
-  leagues (Scotland - St. Mirren, Kilmarnock, Heart of Midlothian,
-  Motherwell, Celtic, Dundee; Ukraine - Chornomorets Odesa, Olimpik
-  Donetsk, Karpaty Lviv; a handful of Greek clubs too), a different and
-  more useful signal than the first pass's every-league noise. Verified the
-  same way as before (transfermarkt's live transferHistory API): 1,709
-  (84%) came back genuinely real, 287 matched no transfer at all in that
-  player's own transfermarkt history - spot-checked a sample and it's the
-  same appearances.csv-misattribution problem as Saka/Jones above (Wesley
-  Fofana's flagged Saint-Étienne -> Angers move, Nico Schlotterbeck's
-  flagged Werder Bremen spell, and Robin Le Normand's flagged Getafe/Real
-  Betis moves all fit no version of those players' real careers) - plus 29
-  duplicate candidates converging on the same real transfer and 3 more
-  reserve/youth-team promotions caught by a club-name pattern (Castilla,
-  Primavera, U19/U21/U23, etc). Two more bugs surfaced and fixed during
-  this pass: another instance of the malformed-date bug above (a fresh
-  "2009-00-01" this time, not a one-off), and the verification script's own
-  fee parser only recognized fee text starting with "EUR" - the live API
-  actually returns it with the literal "€" symbol ("€1.35m"), which had
-  been silently zeroing out every parsed fee until caught before anything
-  was written. Since each confirmed player's full transfer history was
-  already fetched, their next real move afterward (skipping over
-  intervening loans for a permanent transfer, same fold-back logic as
-  above) was pulled from the same response and added too, at no extra API
-  cost - so this batch doesn't ship the tenure_end bug the first one had to
-  discover after the fact. 1,313 such rows went in alongside the 1,712
-  primary ones, 3,025 total appended to `data/manual_transfers.csv`
-  (14,289 -> 17,314 rows). Rebuilding: permanent transfers clearing the
-  appearance-window filter grew from 8,356 to 8,523, but only 2 of the
-  1,712 primary candidates actually clear the market-value-freshness bar
-  too and show up scored - Paco Alcácer's 2016 Valencia -> Barcelona move
-  and David N'Gog's 2016 Stade Reims -> Panionios move - final count 8,358.
-  Loans stayed flat at 4,306 (17 of this batch's loans now score, offset by
-  17 previously-scoring rows whose tenure_end shifted once a teammate's
-  newly-added transfer became their real next-move anchor - `tenure_end` is
-  computed per player across every known transfer, so adding one real
-  transfer can silently recompute another). The tiny visible yield despite
-  84% of candidates being genuinely real matches the league clustering
-  above: Transfermarkt tracks market value for Scottish/Ukrainian/Greek
-  clubs far less consistently than for clubs.csv's core leagues, so most of
-  this batch fails `value_before.gt(0)`/`value_after.notna()` even with a
-  real, correctly-dated transfer record now in place. Retrained afterward:
-  test MAE 12.60 (baseline 14.36), R^2 0.155, in line with prior runs.
-- The 287 unresolved candidates from the pass above (no matching transfer in
-  that player's own transfermarkt history at all) turned out to share a
-  mechanism, not just noise: for some away fixtures, appearances.csv records
-  the *home* club as the player's own instead of their real (away) club -
-  confirmed directly against games.csv for the biggest offenders (Callumn
-  Morrison alone flagged 12 fictitious transitions - his row alternates
-  between Hearts, his real club, and that week's opponent, exactly tracking
-  Hearts' home/away fixture list). Checked how many of the 287 fit this
-  specific signature (the flagged transition's "new" club is the home side
-  of that exact game, the "old" club the away side): 124 (43%) do, and the
-  reverse direction (away shown instead of home) appears once in 287 -
-  a real, one-directional bug, not random noise, and not Scotland-specific
-  (SC1: 40, but also ES1: 23, L1: 13, FR1: 12, plus Champions/Europa League
-  and domestic cup fixtures). The other 163 don't fit and stay unexplained
-  (likely a mix of the reserve-team-promotion problem above and other
-  appearances.csv errors).
-
-  Since this is a bug in the packaged dataset rather than something specific
-  to these 287 flagged transitions, checked whether it reaches any
-  *currently scored* transfer or loan too, not just unresolved candidates:
-  scanned every player for 3+ distinct real clubs within any 30-day window
-  (real transfer rules can't produce that; this bug can) - national-team
-  call-ups have to be excluded first here, not just for the World Cup
-  filtering above, since a real transfer that happens to land right next to
-  an international break otherwise looks like exactly this signature (first
-  pass wrongly flagged Ademola Lookman, Evann Guessand, and Seko Fofana this
-  way - all three checked directly against games.csv and are clean, correct
-  transfers). 36 players have the real signature. Cross-referencing against
-  every row in transfers_processed.csv/loans_processed.csv found 14 of them
-  own 27 currently-scored rows between the two files - but owning *some*
-  erratic stretch in a career doesn't mean it touches the *specific*
-  transfer being scored, so each row's own scoring window (year-before for
-  the pre-window, transfer date through tenure_end for the post-window) was
-  checked against that player's actual anomalous date range. Only 2 of the
-  27 overlap: Nick Venema's 2019 Utrecht -> Almere City loan and Noa Lang's
-  2020 Ajax -> FC Twente loan, both in the pre-loan window specifically -
-  Venema's row on 2018-11-30 shows Excelsior Rotterdam (that day's home
-  club) instead of Utrecht, his real (away) side, and again on 2018-12-20
-  with Feyenoord Rotterdam; Lang's rows on 2019-03-17 and 2019-04-03 show AZ
-  Alkmaar and FC Emmen instead of Ajax, his real away side both times.
-
-  Small enough (2 rows, 4 appearance rows total) that an automated
-  correction pipeline isn't worth building - `data/manual_appearance_corrections.csv`
-  is a tiny, hand-verified list of (appearance_id, wrong_club_id,
-  correct_club_id) rows instead, same reasoning as manual_transfers.csv for
-  missing transfers, just for individual appearance rows. `load_appearances()`
-  applies it by appearance_id, only overwriting a row if its club_id still
-  matches what was verified at correction-write time (so a future upstream
-  dataset change can't get silently clobbered by a stale correction).
-  Effect: Venema's pre_apps went 17 -> 19 and Lang's 10 -> 12 (both were
-  undercounting his two real away starts) - Lang's case in particular had
-  been sitting exactly on the `pre_apps >= 10` bar before the fix, one data
-  error away from being wrongly excluded rather than just mis-scored.
-  Neither loan's score moved by more than 0.1 point once FotMob/percentile
-  ranking absorbed the corrected counts.
-- Went looking for a repeat of the ter Stegen/Christensen FotMob identity
-  bug above, since that class of bug (a real player's tenure silently
-  showing a different real player's stats) had only been checked once, a
-  while before this dataset roughly doubled in size. Re-ran `find_fotmob_id`
-  offline against every currently-matched transfer/loan using just the
-  local season cache (no live requests) and traced which pass (exact vs.
-  fuzzy) resolved each of the 8,167 matches: 562 came from the fuzzy
-  fallback. First check - recomputing each one's name-similarity ratio in
-  *both* directions, since `difflib`'s ratio isn't symmetric for different-
-  length strings - found one clear case: `get_close_matches` accepts a
-  candidate once its ratio clears 0.6 in the single direction it happens to
-  compute, and "blair alston" vs. "jamie hamilton" clears it that way (0.62)
-  while failing badly in reverse (0.31), two names with no real resemblance.
-  Shipped that fix, then went further before trusting "the other 561 are
-  fine": grouped every fuzzy match by the FotMob id it resolved to and
-  looked for the same id claimed by two different real Transfermarkt
-  players - a FotMob identity can't belong to two people, so any such
-  collision proves at least one side is wrong regardless of what its own
-  ratio says. Found 34, and the both-directions check above didn't catch
-  any of them: raw character-ratio similarity doesn't know a name is made
-  of discrete tokens, so two unrelated people sharing just a first name or
-  a generically-similar surname (Mario Suarez/Mauro Zarate, Cristian
-  Ansaldi/Cristian Zapata, Habib Diarra/Habib Diallo, Ben Johnson/Mikey
-  Johnston) can clear 0.6 *in both directions* purely on overall character
-  overlap. Every legitimate fuzzy match, by contrast, has the shorter
-  name's tokens wholly contained in the longer one's - a nickname (Bremer
-  standing in for "Gleison Bremer", Alisson for "Alisson Becker") or a
-  fuller name with an extra middle/second surname (Kerim Frei inside "Kerim
-  Frei Koyunlu") - never a same-length pair merely sharing one token. Real
-  fix: require that containment instead of trusting the raw ratio at all.
-  Checked directly: 32 of the 34 collisions resolve cleanly once applied
-  (the wrong side stops matching, the right side - the one with an exact
-  match elsewhere - is unaffected). The remaining 2 are a structurally
-  different problem no token rule can fix without cost: two players
-  (Aleksandr Tashaev, and a player Transfermarkt itself records with the
-  single-token name "Jordan") have no exact FotMob match anywhere, and a
-  bare single-word query trivially subsets into *any* longer name sharing
-  that word - rejecting single-token subset matches outright would also
-  discard every legitimate nickname case above (Bremer, Alisson, Hannibal,
-  Danilo, Fabiano, Reinildo, Willyan, Everton, Xavier, Cyriac all resolve
-  via exactly that one-token-into-a-longer-name shape), a worse trade for
-  two remaining unresolved players. Left as a known gap rather than papered
-  over. Re-ran `fetch_fotmob_stats.py` and `fetch_pretransfer_fotmob_stats.py`
-  (both share this function; the live-prediction-form autofill script,
-  `fetch_current_fotmob_stats.py`, shares it too but wasn't re-run this pass
-  since it doesn't feed any historical score) and rebuilt: FotMob coverage
-  dropped slightly as the wrong matches were removed rather than replaced
-  (permanent transfers 5,586 -> 5,353 matched, loans 1,665 -> 1,614) -
-  correctness over coverage, consistent with every other fix here. Retrained
-  afterward: test MAE 12.70 (was 12.60), R^2 0.151 (was 0.157) - a small,
-  expected step down, since some of what the wrong matches were
-  contributing was real correlation even though attached to the wrong
-  player. All 98 tests pass.
-- The player-identity fix above has an exact club-side counterpart:
-  `club_names_match`'s shared-significant-word tier (built to catch the
-  same club under a different name - "Bayern Munich" vs. FotMob's "Bayern
-  München" on the shared word "bayern") has no way to tell a genuinely
-  distinguishing word from a generic one shared by several real clubs in
-  the same league. Checked directly by building the real word/league
-  collision table from clubs.csv: 155 within-league club pairs share a
-  "significant" word - Spain's six "Real ___" clubs all share "real",
-  England's "___ City"/"___ Town" clubs all share "city"/"town", France's
-  "Stade ___" clubs share "stade" - and re-running the matcher offline
-  found this wasn't just theoretical: Manchester City was resolving to
-  Swansea City's stats, Real Madrid to Real Sociedad's or Real Betis's,
-  West Ham United to West Bromwich Albion's, and three Moscow-club and
-  Danish-"Boldklub"-club pairs to each other, all via one shared generic
-  word with nothing else in common. Fix: precompute, per competition_id,
-  which significant words are actually shared by 2+ different real clubs
-  in clubs.csv (grouped by club_id, not name text - clubs.csv itself
-  spells three of Russia's Moscow clubs "Moskva"/"Moskau" and one outright
-  in Cyrillic, so counting by name string first over-counted "Dinamo" and
-  "Spartak" as ambiguous too, caught by testing against clubs known to
-  need the tier - fixed by keying on club_id and folding transliteration
-  variants to one spelling via a small CLUB_WORD_SYNONYMS table before
-  counting) - the tier now requires a shared word that ISN'T on that
-  league's ambiguous list. Genuinely unique words still match fine (Bayern
-  Munich/München, Sporting CP/Lisbon, SC Braga/"Sporting Braga",
-  Aarhus GF/AGF Aarhus, Rapid Vienna/SK Rapid Wien). Two pairs lose
-  coverage rather than gaining a wrong answer: Russia's two real "Dinamo"
-  clubs (Moskva/Makhachkala) and two real "Spartak" clubs (Moskva/
-  Vladikavkaz) mean neither word alone is safe even after transliteration
-  normalization, so FK Dinamo Moskva vs. "Dinamo Moscow" (FotMob) now
-  correctly falls through to no-match instead of an unsafe guess - the
-  same "no match beats a wrong one" trade-off as every other fix here.
-  Re-ran both fetch scripts and rebuilt: permanent transfers with FotMob
-  coverage 5,353 -> 5,336, loans 1,614 -> 1,611 (small, expected -
-  removing wrong matches rather than replacing them). Retrained: test MAE
-  12.66, R^2 0.151, materially unchanged. All 98 tests pass.
-- The biggest FotMob-correctness bug this pass wasn't a name/club matching
-  problem at all - it was in the season-stitching logic the earlier ones
-  had no reason to touch. This file's own docstring already documents that
-  FotMob attributes a player's whole season to whichever club they're
-  registered at when fetched, not split by stint, and that
-  `run_league()` drops the join season from a tenure's aggregate whenever
-  the player arrived mid-season from another club in the same league
-  (Marc Guehi's Jan 2026 Crystal Palace -> Man City move showing a
-  near-full season under Man City, confirmed there). What that guard never
-  covered: the *other* end of the same mechanism. A player who **leaves**
-  mid-season for another club in the same league has their outgoing
-  tenure's own final season contaminated the identical way, once fetched
-  after that next move has happened. Checked directly: of every currently
-  FotMob-matched transfer/loan whose tenure ends mid-season with a
-  same-league next move on record, 206 of 259 had a last aggregated season
-  whose fotmob_team didn't even `club_names_match` the tenure's own
-  destination club - not a rare edge case, the dominant outcome once a
-  same-league next move exists. Real examples caught this way: Memphis
-  Depay's 2021-2023 Barcelona tenure was picking up his post-departure
-  Atlético Madrid season (rating swung from a contaminated 6.59 to his
-  real Barcelona 7.35), Danny Ings's Aston Villa tenure was picking up his
-  West Ham one, Alexander Isak's Newcastle tenure was picking up his
-  Liverpool one.
-
-  Fix mirrors the join-side guard exactly, from the other direction: a new
-  `NEXT_COMPETITION` lookup (built from transfers.csv + manual_transfers.csv
-  + clubs.csv, keyed by (player_id, tenure_end) - the same real "what did
-  this player do next" question the appearances.csv backfill work earlier
-  had to answer per-player, just precomputed for every tenure at once) says
-  what league the player's actual next transfer landed in; `run_league()`
-  now excludes the tenure's final season too whenever that next move was
-  intra-league and mid-season, the same way it already excluded the first
-  season for a mid-season arrival. Re-ran both fetch scripts and rebuilt:
-  permanent transfers with FotMob coverage 5,336 -> 5,307, loans 1,611 ->
-  1,571 (some tenures had *only* the now-excluded contaminated season to
-  draw from and lose FotMob data entirely rather than gain a wrong number -
-  the same "no match beats a wrong one" trade-off as every fix this
-  session). Retrained: test MAE 12.73, R^2 0.148, essentially unchanged.
-  All 98 tests pass.
-
-  `fetch_pretransfer_fotmob_stats.py`'s own contamination check turned out
-  already complete on inspection, not missing this same gap - its pre-
-  transfer window's one boundary that can land on a real transfer event is
-  the transfer_date itself (the departure this whole transfer already is),
-  which its existing `is_intra_league`/`contaminated` check handles; the
-  window's other edge is a fixed 365-day lookback with no transfer event to
-  land on. `fetch_current_fotmob_stats.py` (the live-prediction-form
-  autofill script) wasn't re-run or audited in this specific pass, same as
-  the last two fixes - it feeds no historical score - but see below, it got
-  its own audit right after.
-- `load_actual_sub_positions()` (see above) had its own small case-
-  sensitivity bug: 3,631 of `game_lineups.csv`'s rows record the broad
-  position as lowercase "midfield" instead of "Midfield" - the only such
-  case-duplicate among every position/sub-position label in that file.
-  Left unmerged, those votes fragment away from the properly-capitalized
-  bucket when picking each player's single most-common fielded position:
-  2,057 of the 2,195 affected players ended up with the literal string
-  "midfield" as their own returned value - harmless in itself, since
-  `lookup_weights` can't recognize that any more than it recognizes
-  "Midfield" (both fall back to the broad position's weights the same
-  way) - but for a handful of players enough of their real Midfield
-  appearances were siphoned into the lowercase bucket that a different,
-  less-common label won the count instead, including at least one real
-  reclassification into "Attacking Midfield" - a sub-position that *does*
-  carry its own distinct weight profile - instead of the generic Midfield
-  fallback the correctly-merged count actually supports. Fixed by folding
-  the lowercase variant into "Midfield" before counting. Currently zero
-  visible effect - none of the affected players are in today's scored
-  population, so `transfers_processed.csv`/`loans_processed.csv` come out
-  byte-identical after rebuilding - but a real, confirmed bug in the
-  lookup itself rather than a hypothetical one, the same reasoning as the
-  "Missing"-position fix above, and it will start mattering the moment an
-  affected player's transfer clears the scoring bar.
-- `fetch_current_fotmob_stats.py` (the live-prediction-form "recent form"
-  autofill, feeding `players_lookup.csv`'s `recent_fotmob_*` columns) was
-  explicitly *not* re-run alongside the three matching fixes above, since
-  it feeds no historical score - but it shares `find_fotmob_id` and
-  `club_names_match` with the two scripts that do, unchanged, so its
-  cached output was just as exposed to the same bugs. It was: last built
-  back when the *only* fix in place was the original ter Stegen/
-  Christensen one, so it still carried the asymmetric-ratio, token-
-  containment, and ambiguous-club-word bugs all fixed since. Re-running it
-  removed 327 of 4,576 cached players' matches outright, and - checked
-  directly - changed the value for precisely zero players who kept a
-  match, the same "remove the wrong answer, don't replace it with a
-  different guess" signature as every fix above. The removed sample reads
-  exactly like the earlier bug list: players at "Stoke City," "West Ham
-  United," "Manchester United," "Real Sociedad," "FK Dinamo Moskva" (twice)
-  - the same generic-word club collisions, now caught here too.
-
-  Rebuilding this exposed a real pipeline ordering wrinkle, not a new bug:
-  `fetch_current_fotmob_stats.py` reads each player's `current_club_name`
-  from `players_lookup.csv` itself (not the raw dataset directly), but
-  `players_lookup.csv` hadn't been rebuilt in about a year - so the first
-  pass would have queried FotMob against a year-stale set of "current"
-  clubs. Fixed by rebuilding in the right order (`build_lookups.py` first
-  for fresh `current_club_name`, then `fetch_current_fotmob_stats.py`,
-  then `build_lookups.py` again to merge the corrected stats in) rather
-  than patching around it. That full rebuild necessarily pulled in a
-  year's worth of unrelated, legitimate drift too - `age_now` shifting for
-  virtually every player, ~276 players' `current_club_name` reflecting a
-  real transfer since then, some incidental data-source corrections - all
-  expected from the underlying dataset simply being newer, not part of
-  this fix and not audited further here.
-- `scripts/build_lookups.py`'s `recent_apps`/`recent_minutes`/
-  `recent_goals_p90`/`recent_ga_p90`/`recent_mins_per_app` (the live-
-  prediction form's "recent performance" autofill) were blanket
-  `.fillna(0)` regardless of *why* a player had no matching appearance rows
-  in the trailing 365-day window - conflating "genuinely played 0 minutes"
-  (a real signal, e.g. a long injury at a tracked club) with "we have no
-  coverage of this player's current league at all". Found via a user
-  report: searching Messi (now at Inter Miami) or Son (LAFC) - both MLS,
-  not one of the 23 tracked leagues (`LEAGUE_MAP`) - autofilled 0 apps/0
-  minutes into the predict form, which the model then treated as this
-  player's genuine (terrible) recent form, and the explanation described a
-  real-looking "raising/lowering the score" swing for a value that was
-  actually just a data gap. Checked directly: 2,119 of 8,635 players in
-  `players_lookup.csv` (25%) were affected, concentrated in Brazil, MLS,
-  Mexico, Argentina, Saudi Arabia, Japan, Colombia, Australia, and South
-  Korea - every one of these already correctly shows no `recent_fotmob_*`
-  data (that pipeline already gates on `LEAGUE_MAP`), so the two data
-  sources disagreed on the exact same players. Fixed by gating the same
-  way: a player at a club outside `LEAGUE_MAP` gets real `NaN`, not a
-  computed-but-unreliable value (some had a handful of appearance rows from
-  the 2025 Club World Cup, a one-off tournament, not real ongoing coverage)
-  or a fabricated 0; `search_players()` now sends that through as JSON
-  `null` instead of blanket-`fillna("")`-ing it into an empty string;
-  `PredictRequest`'s five affected fields are now optional; and
-  `build_feature_row` median-imputes a missing one against the exact same
-  position-conditional reference `explain_prediction` would independently
-  pick, guaranteeing a true, honest 0.0 contribution and an explicit "No
-  recent performance data available" message instead of a fabricated swing.
-  A related but separate bug surfaced while verifying this: for a player
-  at a *covered* club with a genuinely real 0 recent minutes (e.g. an
-  actual long-term injury), `pre_minutes` could still show a small
-  *positive* contribution in isolation, even though the correlated
-  `pre_mins_per_app` correctly penalized the same player. Not a data
-  artifact this time, and not the model being wrong either - the leave-
-  one-out explanation swap itself was the problem: `pre_apps`,
-  `pre_minutes`, and `pre_mins_per_app` are structurally dependent
-  (minutes roughly equals apps times mins_per_app), so swapping `pre_minutes`
-  alone to its reference (~1979) while `pre_apps`/`pre_mins_per_app` stayed
-  at the player's real 0 produced a physically impossible synthetic row -
-  "0 apps, 1979 minutes, 0 min/app" - that no real transfer has ever had,
-  which the model then extrapolated at unpredictably. Checked directly: a
-  real player with real 0s across all three showed +3.1 for `pre_minutes`
-  swapped alone, but swapping all three together to one consistent
-  "typical" combination showed the correct, honest -4.2 - and the three
-  separate single-swap numbers don't even sum close to that joint one,
-  confirming they aren't independent contributions to begin with. Fixed by
-  swapping the three together as one combined "Recent playing time" entry
-  (bulleted breakdown of the real apps/minutes/min-per-app numbers,
-  the same shape as the FotMob group explanations above) rather than three
-  separate ones - explanation-only, the model itself never saw an
-  inconsistent combination like this in training, only real ones, so it
-  needed no change. `pre_goals_p90`/`pre_ga_p90` are related the same way
-  (`ga_p90 = goals_p90 + assists_p90`) but tested empirically without
-  finding the same severity of issue, so they were left as independent
-  entries rather than grouped on spec.
-- **When there's no real recent-performance data at all, the *displayed
-  score itself* now averages over real profiles instead of guessing one
-  median point.** Median-imputing the 5 missing features (see the
-  `build_lookups.py` fix above) fixed the fabricated-0 bug, but a single
-  median point still isn't a neutral "no information" input to a tree
-  ensemble - a model's response to a feature isn't linear, so
-  `E[f(X)] != f(E[X])`. Checked directly: for a real missing-data case, the
-  median point predicted 55.6, but averaging the prediction over every
-  real attacker's actual (self-consistent) profile in the training data
-  gave a mean of 57.0, with real spread across individual attackers
-  (52.9-63.1) - the median point wasn't neutral, it was one specific (and
-  here, pessimistic) guess. Fixed by storing every real position-matched
-  `RECENT_PERFORMANCE_FEATURES` combination from the training data
-  (`recent_performance_samples` in metadata.json - whole rows, not
-  independently-resampled columns, since resampling each column on its own
-  would recreate the exact impossible-combination bug above) and averaging
-  the model's prediction across all of them in one batched
-  `pipeline.predict()` call (`predict_marginalized_recent_performance` in
-  `app/main.py`) - checked directly for speed too: 35ms for 2,585 rows,
-  cheap enough to run on every request that needs it, and fully
-  deterministic since the sample set is precomputed at train time, not
-  drawn fresh per request.
-
-  This only changes the *headline* number - `explain_prediction` still
-  builds its per-feature breakdown from `feature_row`'s single median-point
-  prediction, deliberately not the marginalized one. Caught directly while
-  wiring this in: feeding the marginalized score into `explain_prediction`
-  as its base shifted *every single feature's* contribution by the exact
-  same constant (the gap between the two scores), not just the missing-data
-  features' own - a systematic bug, not a rounding nuance, since every
-  swap's contribution is `base_score − modified_score` and only
-  `base_score` had changed. Fixed by decoupling the two: the breakdown
-  explains the median-point prediction (self-consistent with itself, as
-  always), while only the number shown above it is upgraded to the
-  marginalized one. The two already don't sum to exactly the same thing for
-  any nonlinear-model prediction here (leave-one-out contributions never
-  perfectly reconcile with the total) - this widens that existing,
-  accepted gap slightly for this one case rather than introducing a new
-  kind of inconsistency.
-- Predicting a *new* hypothetical transfer is meaningfully less reliable
-  than the historical scores shown for known transfers, since the model
-  only sees pre-transfer information by construction.
-- League-adjustment only feeds into the *label* (the historical success
-  score), not the model's input features. This was tried deliberately:
-  `data/league_baselines.csv` (the same per-league/position goal-
-  contribution baselines the label uses, persisted as a small artifact so
-  the app can share it) was added as extra model features - a
-  league-adjusted pre-transfer performance number, plus the raw
-  origin/destination league baselines - and tested against 5 feature
-  combinations and 5 model configs on the temporal holdout. None beat the
-  original, simpler feature set's R² (0.103); a couple made it slightly
-  worse. The destination league category already captures most of that
-  signal for leagues with enough training transfers, and ~4,400 training
-  rows isn't enough to reliably learn the added continuous relationships
-  on top of that. Kept the simpler feature set rather than adding
-  complexity that measurably doesn't help - see `scripts/train_model.py`
-  for the reasoning. `league_baselines.csv` is still put to use, just for
-  explanation quality rather than accuracy: the live "why this score"
-  panel shows a player's pre-transfer output as a multiple of their
-  current league's average (e.g. "0.43 per 90 (2.1x their current
-  league's average)"), consistent with how historical cards explain
-  performance, even though the model itself learns from the raw number.
-- League baselines are averaged across the whole 2013–2026 window rather
-  than computed per-season, so a league that got notably more/less
-  attacking over that time isn't captured precisely.
-
-**A frontend pass turned up real usability gaps the backend work this far
-hadn't touched.** Clicking through every page (desktop, mobile, light
-theme) surfaced four:
-
-- The player/club search on the Predict and Compare pages - the only way
-  to use the site's core feature - was mouse-only. `setupAutocomplete`
-  (`app.js`) and `wireAutocomplete` (`compare.js`) wired a `click` handler
-  on each suggestion and nothing else: no arrow-key navigation, no
-  Enter-to-select, no ARIA roles at all. A keyboard-only or screen-reader
-  user could type a query and see nothing they could act on. Fixed by
-  adding the standard combobox pattern to both (they're separate, already-
-  duplicated implementations, not shared code - see `wireAutocomplete`'s
-  own comment) - ArrowUp/Down moves a tracked highlight, Enter selects it,
-  Escape closes the list, and `role="combobox"`/`"listbox"`/`"option"` plus
-  `aria-activedescendant` give a screen reader something to announce.
-  Verified directly: a real `keydown` event with `key: "Enter"` (exactly
-  what a physical Enter press produces) selects the highlighted item,
-  updates the chip, and closes the dropdown - confirmed via direct event
-  dispatch after the browser-automation tool's own synthetic key-press
-  simulation turned out not to reproduce a real Enter key faithfully for
-  this input (ArrowDown worked through the same tool without issue).
-- `compare.html`'s 8 inputs (player/club/fee/age × two columns) had no
-  `id` at all, so their visually-adjacent `<label>` text was never
-  programmatically linked to the field it labeled - a screen reader
-  announces these as unlabeled. The main Predict page's `index.html` did
-  this correctly from the start; Compare just never got it, likely because
-  duplicating a plain `id` across two columns isn't valid HTML and nobody
-  went back to give each column's copy its own suffixed one. Fixed by
-  giving every field a unique `-a`/`-b` id and pointing its label's `for`
-  at it (`wireAutocomplete` already used element references, not ids, for
-  its own logic, so this was purely additive).
-- The compare page rendered its "Option B scores 3.3 points higher than
-  Option A" conclusion *above* the two score cards and their breakdowns -
-  a reader saw the punchline before either number it was based on. Fixed
-  by moving `#compare-delta` below `.compare-results-grid` in
-  `compare.html` (purely a markup reorder - `compare.js` addresses both by
-  id, so nothing else needed to change).
-- Nothing stopped - or even flagged - "predicting" a transfer to a
-  player's own current club. Selecting Jude Bellingham (Real Madrid) with
-  Real Madrid as the destination returned a real-looking score (74.3) with
-  no indication the scenario itself doesn't make sense. Fixed by excluding
-  a selected player's `current_club_id` from their own destination-club
-  search results (`filterResults` on `app.js`'s `setupAutocomplete`,
-  mirrored in `compare.js`'s `wireAutocomplete`) - the option simply
-  doesn't appear, rather than appearing and silently producing a
-  meaningless prediction.
-
-No backend/model change - 102/102 tests pass unaffected, and every fix
-was verified live in the browser (keyboard-only selection, screen-reader-
-relevant ARIA state, the exclusion filter, and the reordered DOM), not
-just read off the diff.
-
-**A follow-up pass found one real functional bug and three stale-copy
-issues.** The functional one, reported directly: switching the currency
-setting on the Predict/Compare pages changed every *displayed* money value
-(via `formatMoney`) but not the transfer-fee *input* field - its label
-stayed hardcoded "(€m)" and, worse, whatever number was typed still got
-sent to the backend as raw EUR regardless of the selected currency, so a
-"$50m" typed while USD was selected was silently scored as €50m. Fixed by
-tracking each fee field's real value in EUR (`state.feeEurMillions` in
-`app.js`, one per scenario in `compare.js`) separately from whatever it
-*displays* - switching currency now redisplays the same real fee converted
-into the new currency (matching how every other money value on the site
-already behaves), and typing a new number converts it back to EUR against
-the currently-selected currency's rate before it's tracked.
-
-The three stale-copy issues, found by checking the homepage's own claims
-against the data rather than assuming they still held:
-
-- The homepage claimed the predict model is "trained on ~8,300 real
-  historical transfers" - true of the full scored dataset, but not of what
-  the model actually trains on. `train_model.py`'s `main()` drops any row
-  missing a required feature (recent form, market value, etc.) before
-  fitting, which the README's own technical section already correctly
-  documents ("~3,000 training rows") - the homepage copy just never got
-  updated to match once that gap opened up. Checked directly against
-  `metadata.json`: `n_train` + `n_test` = 4,895, not 8,358. Fixed the
-  claim to "~4,900" with a short clause explaining why it's smaller than
-  the full dataset, rather than just changing the number silently. (The
-  gap itself turned out to be a real, fixable bug, not an inherent
-  limitation - see the `fee_to_value_ratio` fix further up, which
-  recovered most of it; the homepage now says "~7,800" accordingly.)
-- `about.html` was missing a period ("real historical data Two different
-  things live here") - a run-on sentence from what was almost certainly a
-  copy-paste slip.
-- The predict page's disclaimer read "Predicting a player's *entire*
-  tenure" with literal, unrendered asterisks - raw markdown pasted into
-  HTML instead of the `<em>entire</em>` the exact same word already gets
-  two paragraphs earlier on the same page. A user reading the disclaimer
-  saw asterisk characters, not italics.
-
-Also checked and found *not* stale, so left alone: `browse.html`/
-`loans.html`'s transfer/loan counts, `about.html`'s transfermarkt-datasets
-scale figures, the "2013–2026" date range, the GitHub README link, the
-exchange-rate comment's "checked" date, and - via a grep-based cross-check
-- every CSS class and JS function defined in the frontend has at least one
-real usage elsewhere (no dead code accumulated).
-
-**A dedicated pass over Browse and Loans specifically found `browse.js`/
-`loans.js` themselves clean (no drift between the two near-duplicate
-files, all hardcoded counts still accurate, the loan-scoring description
-paragraph still matches `loan_score_weights.json`) - but turned up a real,
-long-standing display bug in the league names both pages' filter dropdown
-pulls from.** `data/competitions_lookup.csv` (added in one commit,
-generated ad hoc with no script checked in to reproduce it, so it's never
-been touched since) stores names built by turning the raw dataset's URL
-slugs (e.g. `pko-bp-ekstraklasa`, `dfb-pokal`, `uefa-champions-league`)
-into display text - every hyphen became a space and every word got
-title-cased, which mangles any real acronym or genuinely-hyphenated name
-caught up in that transformation: "Pko Bp Ekstraklasa", "Supersport Hnl",
-"Uefa Champions League", "Dfb Pokal", "Fa Cup", "A League Men", and 13
-more, all visible directly in the Browse/Loans league filter and in any
-"why this score" league-context sentence that happens to mention one of
-them. Checked each one against the real organization/competition name
-before fixing it (not just re-capitalizing blindly) - fixed 18 entries to
-their real names (`PKO BP Ekstraklasa`, `SuperSport HNL`, `UEFA Champions
-League`, `DFB-Pokal` and `A-League Men` restoring the hyphen the slug-to-
-space conversion had dropped, `FA Cup`, `AFC Asian Cup`, `KNVB Beker`,
-`Liga MX Clausura`, etc.) via a precise id-matched edit, not a blanket
-re-casing pass that could just as easily introduce a different mistake.
-Pure data-file fix - no code change, no retraining, 102/102 tests pass
-(none hardcoded the broken names), and it improves this same league name
-everywhere it's shown, not just the Browse/Loans filters.
-
-**`about.html` - the page whose entire job is describing "how the numbers
-are actually computed" - had two claims that didn't match what the
-scoring code actually does.** Checked every sentence against
-`score_weights.json`/`build_dataset.py` rather than trusting the prose:
-
-- Its list of what a historical score blends named perf level/change,
-  value growth, playing time, and fee-vs-value, plus FotMob stats "where
-  available" - and skipped `resale_profit` entirely, a real, weighted
-  component (8% of every position's score - see `score_weights.json`)
-  that's just as conditional as the FotMob stats already called out ("when
-  a real next sale exists to judge that by" - `has_resale_data` requires a
-  later transfer with a real, nonzero fee). Checked directly: 25% of
-  scored transfers have it, not a rare edge case. Added it to the list.
-- "Only transfers with enough playing time on both sides of the move are
-  scored" is true for permanent transfers but not loans - checked directly
-  against `build_dataset.py`'s loan pipeline, which applies the minimum-
-  appearances bar to the *pre*-loan window only and deliberately has none
-  for the loan window itself (its own comment: filtering loans by how much
-  they played *during* the loan would hide exactly the loans that didn't
-  deliver game time, the very outcome the loan score exists to capture).
-  Reworded to state the real, asymmetric rule instead of the tidier but
-  inaccurate symmetric one.
-
-Both were content gaps present since the page was written, not drift from
-something once-accurate - found by checking the prose against the code
-that actually computes each number, the same discipline applied to every
-other page this pass. Pure copy fix, no code/data change; 102/102 tests
-pass unaffected.
+**Contents:** [Project layout](#project-layout) · [Running it](#running-it) ·
+[Testing](#testing) · [How it works](#how-it-works) · [Pages](#pages) ·
+[Known limitations](#known-limitations) · [Project history](#project-history)
 
 ## Project layout
 
@@ -2458,37 +69,33 @@ the app:
 
 `fetch_transfer_types.py` re-fetches every candidate player's real transfer
 history from transfermarkt's live API to tell loans apart from free
-transfers (see "Loans are detected..." above) - one request per player
-(~23k), politely rate-limited, so it takes a few hours and is safe to
-interrupt and re-run (it resumes from `data/raw/transfer_types_cache.csv`
-rather than starting over). It's optional: skip it and `build_dataset.py`
-still runs, just without loan detection - every zero-fee transfer
-(including loans) is treated as a permanent transfer, and
-`data/loans_processed.csv` comes out empty.
+transfers — one request per player (~23k), politely rate-limited, so it
+takes a few hours and is safe to interrupt and re-run (it resumes from
+`data/raw/transfer_types_cache.csv` rather than starting over). It's
+optional: skip it and `build_dataset.py` still runs, just without loan
+detection — every zero-fee transfer (including loans) is treated as a
+permanent transfer, and `data/loans_processed.csv` comes out empty.
 
 `fetch_fotmob_stats.py` pulls FotMob's season stat leaderboards for the 23
-leagues in `LEAGUE_MAP` and stitches each tenure - both permanent
-transfers and loan spells, in one pass - into
-`data/raw/fotmob_stats_cache.csv` (see "The rating/attacking/defensive/
-possession components come from FotMob..." above) - a few thousand
-requests across ~14 seasons x 23 leagues, politely rate-limited, resumable
-from `data/raw/fotmob_season_cache/` (gitignored - regenerable, not meant
-to be committed) rather than refetching every league-season from scratch.
-Also optional: skip it and `build_dataset.py` still runs, just without the
-four FotMob components - each one's weight is dropped and the other
-weights renormalized for every transfer, the same as when resale data is
-unknown.
+leagues in `LEAGUE_MAP` and stitches each tenure — both permanent
+transfers and loan spells, in one pass — into
+`data/raw/fotmob_stats_cache.csv`. A few thousand requests across ~14
+seasons x 23 leagues, politely rate-limited, resumable from
+`data/raw/fotmob_season_cache/` (gitignored) rather than refetching every
+league-season from scratch. Also optional: skip it and `build_dataset.py`
+still runs, just without the four FotMob components — each one's weight
+is dropped and the other weights renormalized for every transfer, the
+same as when resale data is unknown.
 
 `fetch_pretransfer_fotmob_stats.py` and `fetch_current_fotmob_stats.py`
-feed the *predict model* (not the historical score) - see "The predict
-model's pre-transfer performance signal..." above. Both reuse
+feed the *predict model* (not the historical score). Both reuse
 `fetch_fotmob_stats.py`'s season-fetch/cache and matching functions
 directly (imported, not duplicated), so if that cache is already warm
-these run in seconds, not hours - no separate scrape needed. Both are
-optional the same way: skip either and `train_model.py`/`build_lookups.py`
-still run, just with every `pre_fotmob_*` feature (or every searched
-player's `recent_fotmob_*` autofill) falling back to the median/`None` a
-missing match already degrades to.
+these run in seconds, not hours. Both are optional the same way: skip
+either and `train_model.py`/`build_lookups.py` still run, just with every
+`pre_fotmob_*` feature (or every searched player's `recent_fotmob_*`
+autofill) falling back to the median/`None` a missing match already
+degrades to.
 
 ## Testing
 
@@ -2504,3 +111,273 @@ transfer's `success_score` matches its stored sub-components recomputed
 through `score_weights.json`, no nulls/out-of-range values) and
 `tests/test_app.py` (every API endpoint, including accent-insensitive
 search and the compare/predict flows).
+
+## How it works
+
+**Data.** [`dcaribou/transfermarkt-datasets`](https://github.com/dcaribou/transfermarkt-datasets)
+(mirrored on Kaggle as [`davidcariboo/player-scores`](https://www.kaggle.com/datasets/davidcariboo/player-scores)),
+~50k players, ~175k transfers, ~1.9M appearances, ~656k market valuations.
+
+**Success score (the training label, 0–100).** Computed from what
+happened *after* the move, measured over the player's **entire tenure**
+at the new club (transfer date until their next departure, or "now" if
+they're still there) — not just year one, so a slow starter who adapted
+late and a hot starter who faded aren't both mis-scored by a fixed
+first-year window.
+
+Built from ten sub-metrics, each converted to a percentile rank (so no
+single stat's raw scale dominates), then blended with **weights that vary
+by position and sub-position** (`data/score_weights.json`):
+
+- **Performance level & change** — goal contributions/90 at the new club,
+  adjusted for how hard it is to score in that specific league, then
+  ranked within the player's position. "Change" compares against a
+  regression-based *expectation* given their pre-transfer level, not a
+  raw before/after difference — otherwise an already-elite player has
+  nowhere to go but "down" on paper even while staying elite. Folded
+  together with the FotMob "attacking" bucket below when both exist, so
+  the two don't double-count the same signal.
+- **Market value growth** — an 80/20 blend of growth *relative to the
+  player's own starting value* and the *absolute euro gain*, each itself
+  weighted 80/20 toward the tenure's peak value over its end-of-tenure
+  value (a long career's market value naturally declines with age by the
+  time a player leaves, which shouldn't read as failure).
+- **Playing time** — 60% percent of the team's actual games played
+  (catches injuries/rotation a raw count hides), 40% raw appearance
+  count, with a forgiveness curve for a normal amount of missed games
+  before ranking (even clearly-elite players miss a median of ~12 games
+  a season). Weighted highest for goalkeepers, where winning the single
+  starting job is an unusually clean signal.
+- **Value for money** — fee vs. a position-weighted blend of every
+  on-pitch signal, judged against the player's own market value at
+  signing rather than the whole dataset's fee distribution. A premium up
+  to 1.3x pre-transfer value counts as normal and gets zero penalty; only
+  real overpays are ranked, against each other. Its weight decays with
+  tenure length — a long, clearly successful career is no longer judged
+  much on whether the initial fee looked reasonable.
+- **Resale profit** — did the buying club later resell the player for a
+  profit? Only counted when a real subsequent sale exists (~25% of
+  transfers); weight decays with tenure length, the same idea as value
+  for money.
+- **Four FotMob-derived components** (rating, attacking, defensive,
+  possession) — kept separate rather than blended into one number, so an
+  attack-minded fullback and a purely defensive one don't collapse to the
+  same score. League-adjusted and ranked within position; each
+  component's weight is dropped and the rest renormalized whenever
+  FotMob has no data for that specific bucket.
+
+Weight shifts from goal-based components (heavy for attackers, ~0 for
+goalkeepers, since goal contributions are meaningless for keepers) into
+the FotMob defensive/attacking/possession buckets as a position relies
+less on scoring. A handful of sub-positions (Defensive Midfield,
+Centre-Back, full-backs, wingers) get their own weight row shifting
+further toward defending/possession or attacking specifically, and the
+four outfield defensive sub-positions weight FotMob's overall `rating`
+at 30% instead of the usual 20% — checked directly, `rating` correlates
+with the final score far more than raw defensive-action counting does
+for those roles specifically (elite defenders often need to make fewer
+visible defensive actions, not more).
+
+**Loans are detected and scored separately**, not folded into the
+permanent-transfer formula. The packaged dataset has no loan/permanent
+flag at all — its ETL parses "loan transfer" and "€0" down to the same
+flat fee — so loans are identified by re-fetching each transfer's real
+fee text from Transfermarkt's own transfer-history API
+(`scripts/fetch_transfer_types.py`) and scored on
+`data/loan_score_weights.json` instead: no value-for-money or resale
+component (most loans carry no real fee and don't end in a sale), and
+playing time weighted much more heavily — whether the loan delivered
+game time is usually the central question it's judged on. A loan spell
+with zero appearances is kept, not filtered out, since that's a real
+(bad) outcome the Loans tab exists to surface.
+
+**The FotMob components** fill a real gap in the base Transfermarkt data,
+which has no column for defensive output at all (tackles, saves, clean
+sheets). `scripts/fetch_fotmob_stats.py` pulls FotMob's public season
+leaderboards for the 23 leagues that show up as a transfer destination
+and stitches each tenure's *entire* window (matching the rest of the
+score's philosophy), correctly handling multi-season tenures and
+same-league mid-season moves (FotMob otherwise attributes an entire
+season to whichever club a player is registered at when fetched, not
+split by stint). See [Known limitations](#known-limitations) for its
+real coverage ceilings.
+
+**Model.** A ridge-regularized linear regression trained on pre-transfer-
+only features (age, position, physical attributes, fee, market value,
+prior-year performance including FotMob rating/xG/xA/passing/defensive
+output, and origin/destination club & league strength) — nothing about
+what happened after the move. Evaluated on a temporal holdout (trained on
+transfers before mid-2023, tested on transfers since): **MAE ≈ 12.26
+points** on the 0–100 scale, **R² ≈ 0.211**, vs. ≈14.37 MAE for always
+predicting the average. That's a modest but real signal — predicting a
+player's *entire future tenure* from pre-transfer stats alone is
+genuinely hard, since multi-year outcomes depend heavily on injuries,
+tactics, and squad fit no pre-transfer number can see. (The model was
+originally a tuned `GradientBoostingRegressor`; a later investigation
+found a plain `Ridge` beat it and every other alternative tried — see
+[Project history](#project-history).)
+
+**Explainability.** For a known historical transfer, the app shows the
+real 5-10 component breakdown with concrete numbers behind each one
+("0.92 goal contributions/90 at Barcelona, ranked vs. other attackers").
+For a hypothetical prediction, it shows each feature's contribution via a
+leave-one-out swap against a "typical transfer" reference — but the
+reference itself is contextual, not one flat number for the whole
+dataset: position-conditional medians for stats that vary by role, a
+paid-vs-free-specific fee reference (over half of all transfers are
+free, which would otherwise drag the "typical fee" to €0), a fee
+expectation regression against the player's own market value, and short
+explanatory notes wherever a bare "X vs. typical Y" swap would otherwise
+read as a claim the data doesn't actually support (e.g. the Premier
+League's lower average score is almost entirely a fee-premium effect,
+not an on-pitch one — the note says so explicitly).
+
+## Pages
+
+- **`/`** — predict a hypothetical transfer: search a real player, pick a
+  destination club, see a predicted score, a likely range (min/max among
+  the 5 most similar real transfers, since a single point estimate
+  overstates how confident a model this size can be), a "why this score"
+  breakdown, and the nearest historical comparables.
+- **`/browse.html`** — every scored transfer (~8,300), filterable by
+  position and destination league, searchable by player/club name, sortable
+  by score/date/fee/age, paginated. Click any row to open that transfer's
+  full card (score + breakdown) in a modal.
+- **`/loans.html`** — every scored loan spell (~4,300), same browse/filter/
+  search/click-to-view-card experience as `/browse.html`, but scored on the
+  loan-specific formula above (no fee/resale rows in the breakdown, and
+  duration shown in months rather than years).
+- **`/compare.html`** — set up two hypothetical transfers side by side
+  (same player to two different clubs, or two different players entirely)
+  and see both predictions, ranges, and top factors together with the
+  point gap between them.
+
+## Known limitations
+
+- **FotMob coverage is real but partial.** ~67% of scored permanent
+  transfers (~39% of loans) get at least one of the four FotMob
+  components; coverage per bucket runs 54-67% even among those. Only the
+  23 leagues in `LEAGUE_MAP` are covered at all, each from whatever
+  season FotMob's own history starts for that league (2016/17 for the
+  big five, as late as 2021/22 for Greece), and Ukraine's Premier League
+  has no defensive/possession/rating data on FotMob at all. A transfer
+  missing a bucket just has that component's weight dropped and the rest
+  renormalized — never guessed at.
+- **FotMob/Transfermarkt player and club matching is name-based** (the
+  two sites share no id), which is inherently approximate. Extensively
+  debugged for identity-collision bugs (see [Project history](#project-history)),
+  but the least-scrutinized of the 23 leagues likely still has a
+  somewhat weaker match rate than the handful that were checked by hand.
+- **Only transfers with ≥10 appearances in both the year before and the
+  whole tenure after are scored** (~8,358 of ~112k permanent-transfer
+  candidates), which skews the dataset toward established first-team
+  players over fringe moves. Loans use a looser bar — only the pre-loan
+  side needs ≥10 appearances, since a loan with zero game time afterward
+  is a real outcome worth showing, not missing data.
+- **The packaged `transfers.csv` has real gaps** (a handful of famous
+  moves, like Eden Hazard's 2019 Real Madrid transfer, were entirely
+  missing). `data/manual_transfers.csv` is a hand-verified backfill,
+  built by cross-checking `appearances.csv`'s club-history against
+  `transfers.csv` and re-fetching real gaps from Transfermarkt's own API
+  — see [Project history](#project-history) for the full trail.
+- **Loan detection depends on a one-time scrape** of Transfermarkt's live,
+  unofficial transfer-history API — about 98% of candidates match a
+  fetched record; the rest default to "unknown" and are scored as a
+  permanent transfer. A loan that converts to a permanent deal at the
+  same club, with no separate recorded event for the conversion, still
+  scores as one continuous loan rather than splitting at the conversion
+  point.
+- **Sub-position weighting uses a player's single most-common fielded
+  position across their entire career**, not the specific window of any
+  one transfer — a player who genuinely changed roles mid-career has
+  every transfer weighted by whichever role dominates their overall
+  history.
+- **Predicting a new hypothetical transfer is meaningfully less reliable**
+  than the historical scores shown for known transfers, since the model
+  only ever sees pre-transfer information by construction.
+- **League-adjustment feeds the historical label, not the predict
+  model's own features** — tested directly as additional model inputs
+  (league baselines, a league-adjusted performance number) and it didn't
+  beat the simpler feature set on the holdout, so it's kept for
+  explanation display only (`data/league_baselines.csv`), not fed to the
+  model itself.
+
+## Project history
+
+A condensed changelog of notable fixes and investigations, newest first
+within each group. Full reasoning and numbers for anything here are in
+the git history.
+
+**Predict model & backend**
+- Switched the predict model from `GradientBoostingRegressor` to a plain
+  `Ridge` regression after benchmarking it against every tree-based
+  alternative tried (HistGradientBoosting, RandomForest, ExtraTrees, and
+  GBR variants) — Ridge won on every one of 5 different temporal splits.
+  MAE 12.40→12.26, R² 0.185→0.211. Fixed an overfit-coefficient issue for
+  thin-data leagues along the way (`OneHotEncoder(min_frequency=30)`).
+- Investigated feature interactions, a quadratic age term, polynomial
+  features, robust-loss regression, and nonlinear alternatives
+  (KernelRidge, SVR) as follow-ups to the Ridge switch; none justified
+  their added complexity over the plain model.
+- Investigated several new feature ideas (destination-club league
+  form/position, manager tenure at signing, reconstructed squad
+  age/nationality mix, player/destination nationality fit) and two
+  new-data-acquisition angles (a newer Kaggle dataset version, external
+  sources like Wikipedia pageviews and Transfermarkt injury history);
+  none produced a gain worth shipping.
+- Found `fee_to_value_ratio` was computed from a column missing for
+  38.7% of transfers, silently excluding them from model training —
+  fixing it recovered 41% of usable training data (MAE 12.65→12.40, R²
+  0.159→0.185).
+- Investigated a more historically-accurate, per-transfer-date club-value
+  feature (reconstructed from contemporaneous roster valuations); it
+  measurably hurt the model despite being more accurate, so the simpler
+  flat proxy was kept.
+- Fixed the loan pipeline's early filter referencing the wrong
+  (permanent-transfer) position-weight keys — harmless today only by
+  coincidence, fixed for future-proofing.
+- Fixed an unbounded `limit` query param on the player/club search
+  endpoints, and deduplicated a club-value-proxy computation that had
+  drifted into two independently-maintained copies.
+
+**Data pipeline & scoring formula**
+- Backfilled thousands of missing transfers into
+  `data/manual_transfers.csv` via Transfermarkt's live transfer-history
+  API, after discovering real gaps in the packaged `transfers.csv`
+  (starting from Eden Hazard's entirely-missing 2019 Real Madrid move).
+  Fixed several related bugs along the way (loan/permanent
+  misclassification, `tenure_end` defaulting to "today" for players
+  whose next real move wasn't recorded). Current scored counts: 8,358
+  permanent transfers, 4,306 loans.
+- Found and fixed several FotMob player/club identity-matching bugs
+  (fuzzy-match collisions, ambiguous shared club-name words, an
+  asymmetric similarity-ratio bug) that were silently attributing a
+  tenure to a different real player's or club's stats.
+- Fixed FotMob season-stitching contamination at both ends of a tenure —
+  a mid-season arrival or departure could leak a different club's season
+  into the aggregate (confirmed on Memphis Depay, Danny Ings, Alexander
+  Isak, among others).
+- Fixed Norway/Sweden silently returning the wrong (always-current)
+  FotMob season due to a single-year vs. split-year season-label
+  mismatch.
+- Fixed a home/away misattribution bug in `appearances.csv` affecting a
+  handful of players' pre-transfer appearance counts.
+- Fixed mangled league display names (title-cased URL slugs like "Pko Bp
+  Ekstraklasa") across 18 competitions.
+- Corrected two inaccurate claims on `about.html` (a missing
+  `resale_profit` component in its own description; an overstated
+  symmetric playing-time rule that doesn't apply to loans).
+
+**Frontend**
+- Added keyboard navigation and ARIA roles to the player/club search
+  autocomplete on Predict and Compare (previously mouse-only); fixed
+  missing input IDs on Compare; moved the compare-delta conclusion below
+  the evidence it's based on; blocked predicting a transfer to a
+  player's own current club.
+- Fixed the transfer-fee input not updating when currency changed, and
+  silently mis-scoring a foreign-currency-typed fee as EUR.
+- Extended accessibility work to Browse/Loans: keyboard-openable table
+  rows, and a shared focus-trap/dialog helper reused across all three of
+  the site's modals.
+- Fixed a CSS Grid layout bug where selecting a player or club visually
+  stretched the unrelated sibling field beside it.
