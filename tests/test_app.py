@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import (
-    CLUB_NAME_ALIASES, app, build_feature_row, explain_prediction, pipeline, predict_marginalized_recent_performance, PredictRequest,
+    CLUB_NAME_ALIASES, app, build_feature_row, eur_m, explain_prediction, pipeline, predict_marginalized_recent_performance, PredictRequest,
 )
 
 client = TestClient(app)
@@ -83,7 +83,7 @@ def test_resale_profit_description_matches_actual_profit_or_loss():
     res = client.get("/api/examples")
     dembele = next(
         ex for ex in res.json()
-        if ex["name"] == "Ousmane Dembélé" and ex["to_club"] == "Barcelona"
+        if ex["name"] == "Ousmane Dembélé" and ex["to_club"] == "FC Barcelona"
     )
     resale = next(c for c in dembele["breakdown"] if c["label"] == "Resale profit")
     assert "loss" in resale["description"].lower()
@@ -658,12 +658,28 @@ def test_clubs_leaderboard_row_has_no_second_request_needed_fields():
         assert "name" in r["worst_signing"] and "success_score" in r["worst_signing"]
 
 
+def test_eur_m_formats_billions_above_the_threshold():
+    """No individual transfer fee reaches a billion, but a club's aggregate spend (see build_club_report_cards) can - eur_m() should switch to 'b' at that point instead of an unwieldy 4-digit million count."""
+    assert eur_m(2_049_250_000) == "€2.05b"
+    assert eur_m(999_999_999) == "€1000m"
+    assert eur_m(1_000_000_000) == "€1.00b"
+
+
 def test_club_name_aliases_merge_known_legal_suffix_variants():
     """Barcelona's transfer history is split between 'Barcelona' and 'FC Barcelona' in the raw data - both must resolve to the same canonical club so its report card isn't missing half its transfers."""
-    assert CLUB_NAME_ALIASES.get("FC Barcelona") == CLUB_NAME_ALIASES.get("Barcelona", "Barcelona")
+    assert CLUB_NAME_ALIASES.get("FC Barcelona", "FC Barcelona") == CLUB_NAME_ALIASES.get("Barcelona", "Barcelona")
     res = client.get("/api/clubs/leaderboard", params={"q": "Barcelona"})
     names = {r["club_name"] for r in res.json()["results"]}
-    assert "FC Barcelona" not in names  # merged into "Barcelona", not its own separate row
+    assert "Barcelona" not in names  # merged into "FC Barcelona", not its own separate row
+    assert "FC Barcelona" in names
+
+
+def test_club_name_aliases_prefer_the_longer_spelling():
+    """Given two spellings of the same club, the canonical one should be whichever is longer ('Arsenal FC' over 'Arsenal', 'Tottenham Hotspur' over 'Tottenham') - the fuller name a reader unfamiliar with the shorthand is more likely to recognize."""
+    assert CLUB_NAME_ALIASES["Arsenal"] == "Arsenal FC"
+    assert CLUB_NAME_ALIASES["Tottenham"] == "Tottenham Hotspur"
+    assert CLUB_NAME_ALIASES["Man City"] == "Manchester City"
+    assert CLUB_NAME_ALIASES["Man Utd"] == "Manchester United"
 
 
 def test_club_name_aliases_does_not_merge_distinct_clubs():

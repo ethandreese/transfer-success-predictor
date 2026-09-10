@@ -88,27 +88,38 @@ function applyTheme() {
 /**
  * Convert a raw euro amount (in whole euros, e.g. 50_000_000) to the
  * selected currency and format it like the backend's eur_m(): "€50m",
- * "$54.5m" (sub-1-unit amounts get one decimal place), or "free" for 0/NaN.
- * Mirrors app/main.py's eur_m() so the two stay visually consistent.
+ * "$54.5m" (sub-1-unit amounts get one decimal place), "€2.05b" once the
+ * converted amount reaches a billion (no individual transfer fee does, but
+ * a club's aggregate spend/resale-profit total on /clubs.html can), or
+ * "free" for 0/NaN. Mirrors app/main.py's eur_m() so the two stay visually
+ * consistent.
  */
 function formatMoney(eurValue) {
   if (eurValue === null || eurValue === undefined || Number.isNaN(eurValue) || eurValue === 0) return "free";
   const symbol = CURRENCY_SYMBOLS[settings.currency];
-  const millions = (eurValue * EXCHANGE_RATES[settings.currency]) / 1_000_000;
+  const converted = eurValue * EXCHANGE_RATES[settings.currency];
+  if (Math.abs(converted) >= 1_000_000_000) {
+    return `${symbol}${(converted / 1_000_000_000).toFixed(2)}b`;
+  }
+  const millions = converted / 1_000_000;
   return millions < 1 ? `${symbol}${millions.toFixed(1)}m` : `${symbol}${millions.toFixed(0)}m`;
 }
 
 /**
- * Rewrite every "€X.Ym"/"€Xm" token in backend-generated prose (e.g. a
- * breakdown description like "Bought for €50m, later resold for €80m...")
- * into the selected currency. The backend always formats amounts in EUR
- * (see eur_m() in app/main.py) since that's the dataset's native currency,
- * so this is the only way to make that prose currency-aware without a
- * backend round-trip - a no-op when the setting is already EUR.
+ * Rewrite every "€X.Ym"/"€Xm"/"€X.Yb" token in backend-generated prose
+ * (e.g. a breakdown description like "Bought for €50m, later resold for
+ * €80m...") into the selected currency. The backend always formats
+ * amounts in EUR (see eur_m() in app/main.py) since that's the dataset's
+ * native currency, so this is the only way to make that prose
+ * currency-aware without a backend round-trip - a no-op when the setting
+ * is already EUR.
  */
 function convertMoneyInText(text) {
   if (!text || settings.currency === "EUR") return text;
-  return text.replace(/€([\d.]+)m/g, (match, amount) => formatMoney(parseFloat(amount) * 1_000_000));
+  return text.replace(/€([\d.]+)([mb])/g, (match, amount, unit) => {
+    const eurValue = parseFloat(amount) * (unit === "b" ? 1_000_000_000 : 1_000_000);
+    return formatMoney(eurValue);
+  });
 }
 
 /**

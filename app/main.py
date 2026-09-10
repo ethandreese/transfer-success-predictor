@@ -29,74 +29,6 @@ def fold_accents(value):
     return "".join(c for c in normalized if not unicodedata.combining(c)).lower()
 
 
-pipeline = joblib.load(os.path.join(MODEL_DIR, "model.joblib"))
-comparables = joblib.load(os.path.join(MODEL_DIR, "comparables.joblib"))
-with open(os.path.join(MODEL_DIR, "metadata.json")) as f:
-    metadata = json.load(f)
-
-transfers_df = pd.read_csv(os.path.join(DATA_DIR, "transfers_processed.csv"))
-# predicted_score/surprise_delta (see scripts/compute_prediction_surprises.py)
-# cover ~93% of transfers - the same required-feature dropna the deployed
-# model itself applies during training excludes the rest (a missing origin
-# league, fee, or height) - left as NaN for those via how="left" rather than
-# dropping the row from transfers_df entirely, since every other endpoint
-# still needs it.
-prediction_surprises_df = pd.read_csv(os.path.join(DATA_DIR, "prediction_surprises.csv"))
-transfers_df = transfers_df.merge(prediction_surprises_df, on=["player_id", "transfer_date"], how="left")
-loans_df = pd.read_csv(os.path.join(DATA_DIR, "loans_processed.csv"))
-players_df = pd.read_csv(os.path.join(DATA_DIR, "players_lookup.csv"))
-clubs_df = pd.read_csv(os.path.join(DATA_DIR, "clubs_lookup.csv"))
-
-players_df["_name_fold"] = players_df["name"].map(fold_accents)
-clubs_df["_name_fold"] = clubs_df["name"].map(fold_accents)
-transfers_df["_name_fold"] = transfers_df["name"].map(fold_accents)
-transfers_df["_from_club_fold"] = transfers_df["from_club_name"].map(fold_accents)
-transfers_df["_to_club_fold"] = transfers_df["to_club_name"].map(fold_accents)
-loans_df["_name_fold"] = loans_df["name"].map(fold_accents)
-loans_df["_from_club_fold"] = loans_df["from_club_name"].map(fold_accents)
-loans_df["_to_club_fold"] = loans_df["to_club_name"].map(fold_accents)
-competitions_df = pd.read_csv(os.path.join(DATA_DIR, "competitions_lookup.csv"))
-_dup_names = competitions_df["name"][competitions_df["name"].duplicated(keep=False)]
-competitions_df["display_name"] = competitions_df.apply(
-    lambda r: f"{r['name']} ({r['country_name']})" if r["name"] in _dup_names.values and pd.notna(r["country_name"]) else r["name"],
-    axis=1,
-)
-LEAGUE_NAMES = dict(zip(competitions_df["competition_id"], competitions_df["display_name"]))
-
-league_baselines_df = pd.read_csv(os.path.join(DATA_DIR, "league_baselines.csv"))
-LEAGUE_POSITION_BASELINE = {
-    (r["competition_id"], r["position"]): r["ga_p90_baseline"] for _, r in league_baselines_df.iterrows()
-}
-
-
-def league_display_name(competition_id):
-    """
-    Look up a league's display name, or "Unknown league" for the rare club
-    that isn't in clubs.csv at all (~7 in transfers_processed.csv, ~23 in
-    the smaller loans_processed.csv - obscure clubs the dataset never
-    populated a domestic_competition_id for), where competition_id itself
-    is NaN. LEAGUE_NAMES.get(competition_id, competition_id) alone would
-    return that same NaN back out (a float NaN never equals itself, so the
-    dict lookup always misses), which isn't JSON-serializable and 500s any
-    endpoint that returns it.
-    """
-    if pd.isna(competition_id):
-        return "Unknown league"
-    return LEAGUE_NAMES.get(competition_id, competition_id)
-
-
-def league_ga_baseline(competition_id, position):
-    """Goal contributions/90 baseline for this (league, position), falling back to the position's overall average."""
-    return LEAGUE_POSITION_BASELINE.get(
-        (competition_id, position),
-        LEAGUE_POSITION_BASELINE.get(("_default", position), 0.3),
-    )
-
-
-MIN_CLUB_TRANSFERS = 5
-MIN_CLUB_RESALES = 3
-
-
 CLUB_NAME_STRIP_TOKENS = {"fc", "cf", "sc", "ac", "afc", "club", "de", "football", "vfl", "vfb", "tsv", "sv", "ssv", "us"}
 
 # Nickname/official-name pairs that share no common token after
@@ -153,36 +85,59 @@ CLUB_NICKNAME_GROUPS = [
 ]
 CLUB_NICKNAME_KEYS = {name: f"nickname:{i}" for i, group in enumerate(CLUB_NICKNAME_GROUPS) for name in group}
 
+# "Racing" alone and "Racing Club" would otherwise merge mechanically
+# (CLUB_NAME_STRIP_TOKENS includes the generic word "club") - checked and
+# rejected: "Racing Club" here is Racing Club de Avellaneda (Argentina,
+# league ARG1), while every "Racing" row carries no league at all (an
+# uncovered competition), so there's no actual evidence the two are the
+# same club, unlike every other CLUB_NAME_STRIP_TOKENS merge (which never
+# hit this problem - "club" just happened to be safe for every other name
+# it stripped). Force-split rather than trust the generic rule here.
+CLUB_NAME_FORCE_SPLIT = {"Racing"}
 
-def build_club_name_aliases(df):
+
+def build_club_name_aliases(name_mentions):
     """
     Map every to_club_name/from_club_name spelling that's genuinely the
     same real club under a different legal-entity marker, accent encoding
     ("FC Barcelona"/"Barcelona", "Fenerbahçe"/"Fenerbahce"), or verified
     nickname (CLUB_NICKNAME_GROUPS, "Man City"/"Manchester City") to one
-    canonical spelling (whichever variant has the most transfer mentions),
-    for build_club_report_cards to group by - without this,
-    transfers_processed.csv's raw Transfermarkt names silently split a club
-    like Chelsea or Tottenham across two or more report-card rows, each
-    with only part of its real transfer history.
+    canonical spelling (whichever variant is *longest* - "Tottenham
+    Hotspur" over "Tottenham", "Arsenal FC" over "Arsenal" - on the theory
+    that the fuller name is the one a reader unfamiliar with the shorthand
+    will recognize) - applied to transfers_df, loans_df, and
+    comparables["meta"] at startup (see below) so a club's name reads the
+    same everywhere on the site, not just on its own /clubs.html report
+    card. Without this, transfers_processed.csv's raw Transfermarkt names
+    silently split a club like Chelsea or Tottenham across two or more
+    identities, each request only ever seeing part of its real history.
+
+    name_mentions is every to_club_name/from_club_name value across both
+    transfers_df and loans_df, concatenated - only used as a tiebreaker
+    (more mentions wins) on the rare case two variants tie in length; the
+    canonical choice itself is decided by length, not frequency.
 
     The mechanical part (CLUB_NAME_STRIP_TOKENS) is narrow on purpose:
     strips only a fixed set of generic club-entity tokens plus a leading
     "1.FC " prefix, and merges two names only when the *remainder* is
     identical - safe because two *different* real clubs essentially never
-    collide once a generic token like "FC" is removed. One real near-miss
-    found doing that check: "SC Dnipro-1" and "Dnipro" (the historical
-    "Dnipro Dnipropetrovsk" club, dissolved 2020) look like spelling
-    variants but are legally distinct clubs - excluded by leaving the "-1"
-    digit as its own token rather than stripping bare "1" generically.
+    collide once a generic token like "FC" is removed. Two real near-misses
+    found doing that check, both excluded rather than merged: "SC Dnipro-1"
+    and "Dnipro" (the historical "Dnipro Dnipropetrovsk" club, dissolved
+    2020) look like spelling variants but are legally distinct clubs -
+    excluded by leaving the "-1" digit as its own token rather than
+    stripping bare "1" generically; and "Racing"/"Racing Club" (see
+    CLUB_NAME_FORCE_SPLIT).
 
     CLUB_NICKNAME_GROUPS covers the nickname/official-name pairs that share
     no token at all and so can't be caught mechanically - each entry there
     was individually verified, not guessed from football knowledge alone
     (see that constant's own comment). Still not exhaustive across all
-    ~700 club names here - see README's Known limitations.
+    ~700+ club names here - see README's Known limitations.
     """
     def normalize(name):
+        if name in CLUB_NAME_FORCE_SPLIT:
+            return f"force_split:{name}"
         if name in CLUB_NICKNAME_KEYS:
             return CLUB_NICKNAME_KEYS[name]
         key = fold_accents(name)
@@ -190,7 +145,7 @@ def build_club_name_aliases(df):
         key = re.sub(r"[^a-z0-9 ]", " ", key)
         return " ".join(w for w in key.split() if w not in CLUB_NAME_STRIP_TOKENS)
 
-    counts = pd.concat([df["to_club_name"], df["from_club_name"]]).value_counts()
+    counts = name_mentions.value_counts()
     groups = {}
     for name in counts.index:
         groups.setdefault(normalize(name), []).append(name)
@@ -199,10 +154,108 @@ def build_club_name_aliases(df):
     for variants in groups.values():
         if len(variants) < 2:
             continue
-        canonical = max(variants, key=lambda n: counts[n])
+        # The longest spelling, not the most frequent - "Tottenham Hotspur"
+        # over "Tottenham", "Arsenal FC" over "Arsenal" - on the theory that
+        # the fuller name is the one a reader unfamiliar with the shorthand
+        # will actually recognize. Ties (none found in practice) fall back
+        # to whichever variant has more mentions, purely for determinism.
+        canonical = max(variants, key=lambda n: (len(n), counts[n]))
         for variant in variants:
             aliases[variant] = canonical
     return aliases
+
+
+pipeline = joblib.load(os.path.join(MODEL_DIR, "model.joblib"))
+comparables = joblib.load(os.path.join(MODEL_DIR, "comparables.joblib"))
+with open(os.path.join(MODEL_DIR, "metadata.json")) as f:
+    metadata = json.load(f)
+
+transfers_df = pd.read_csv(os.path.join(DATA_DIR, "transfers_processed.csv"))
+# predicted_score/surprise_delta (see scripts/compute_prediction_surprises.py)
+# cover ~93% of transfers - the same required-feature dropna the deployed
+# model itself applies during training excludes the rest (a missing origin
+# league, fee, or height) - left as NaN for those via how="left" rather than
+# dropping the row from transfers_df entirely, since every other endpoint
+# still needs it.
+prediction_surprises_df = pd.read_csv(os.path.join(DATA_DIR, "prediction_surprises.csv"))
+transfers_df = transfers_df.merge(prediction_surprises_df, on=["player_id", "transfer_date"], how="left")
+loans_df = pd.read_csv(os.path.join(DATA_DIR, "loans_processed.csv"))
+players_df = pd.read_csv(os.path.join(DATA_DIR, "players_lookup.csv"))
+clubs_df = pd.read_csv(os.path.join(DATA_DIR, "clubs_lookup.csv"))
+
+# Canonicalize club names sitewide - transfers_processed.csv/loans_processed.csv
+# have no club_id, so the same real club shows up under several raw
+# Transfermarkt spellings (see build_club_name_aliases). Counting mentions
+# across both files (not just transfers_df) before picking each group's
+# canonical spelling, and rewriting to_club_name/from_club_name in place
+# here, before _to_club_fold/_from_club_fold below are computed from them -
+# every endpoint that reads either column (Browse, Loans, Surprises,
+# Predict's comparables, Club Report Cards) sees the same name for the
+# same club, not just whichever one happened to land on this specific row.
+CLUB_NAME_ALIASES = build_club_name_aliases(pd.concat([
+    transfers_df["to_club_name"], transfers_df["from_club_name"],
+    loans_df["to_club_name"], loans_df["from_club_name"],
+]))
+transfers_df["to_club_name"] = transfers_df["to_club_name"].map(lambda n: CLUB_NAME_ALIASES.get(n, n))
+transfers_df["from_club_name"] = transfers_df["from_club_name"].map(lambda n: CLUB_NAME_ALIASES.get(n, n))
+loans_df["to_club_name"] = loans_df["to_club_name"].map(lambda n: CLUB_NAME_ALIASES.get(n, n))
+loans_df["from_club_name"] = loans_df["from_club_name"].map(lambda n: CLUB_NAME_ALIASES.get(n, n))
+# comparables["meta"] (train_model.py's nearest-neighbors index, shown as
+# "comparable historical transfers" on Predict/Compare) is a separate
+# artifact built straight from the raw CSV, not derived from transfers_df -
+# needs the same rewrite or its club names would be the only place on the
+# site still showing the old, split spellings.
+comparables["meta"]["to_club_name"] = comparables["meta"]["to_club_name"].map(lambda n: CLUB_NAME_ALIASES.get(n, n))
+comparables["meta"]["from_club_name"] = comparables["meta"]["from_club_name"].map(lambda n: CLUB_NAME_ALIASES.get(n, n))
+
+players_df["_name_fold"] = players_df["name"].map(fold_accents)
+clubs_df["_name_fold"] = clubs_df["name"].map(fold_accents)
+transfers_df["_name_fold"] = transfers_df["name"].map(fold_accents)
+transfers_df["_from_club_fold"] = transfers_df["from_club_name"].map(fold_accents)
+transfers_df["_to_club_fold"] = transfers_df["to_club_name"].map(fold_accents)
+loans_df["_name_fold"] = loans_df["name"].map(fold_accents)
+loans_df["_from_club_fold"] = loans_df["from_club_name"].map(fold_accents)
+loans_df["_to_club_fold"] = loans_df["to_club_name"].map(fold_accents)
+competitions_df = pd.read_csv(os.path.join(DATA_DIR, "competitions_lookup.csv"))
+_dup_names = competitions_df["name"][competitions_df["name"].duplicated(keep=False)]
+competitions_df["display_name"] = competitions_df.apply(
+    lambda r: f"{r['name']} ({r['country_name']})" if r["name"] in _dup_names.values and pd.notna(r["country_name"]) else r["name"],
+    axis=1,
+)
+LEAGUE_NAMES = dict(zip(competitions_df["competition_id"], competitions_df["display_name"]))
+
+league_baselines_df = pd.read_csv(os.path.join(DATA_DIR, "league_baselines.csv"))
+LEAGUE_POSITION_BASELINE = {
+    (r["competition_id"], r["position"]): r["ga_p90_baseline"] for _, r in league_baselines_df.iterrows()
+}
+
+
+def league_display_name(competition_id):
+    """
+    Look up a league's display name, or "Unknown league" for the rare club
+    that isn't in clubs.csv at all (~7 in transfers_processed.csv, ~23 in
+    the smaller loans_processed.csv - obscure clubs the dataset never
+    populated a domestic_competition_id for), where competition_id itself
+    is NaN. LEAGUE_NAMES.get(competition_id, competition_id) alone would
+    return that same NaN back out (a float NaN never equals itself, so the
+    dict lookup always misses), which isn't JSON-serializable and 500s any
+    endpoint that returns it.
+    """
+    if pd.isna(competition_id):
+        return "Unknown league"
+    return LEAGUE_NAMES.get(competition_id, competition_id)
+
+
+def league_ga_baseline(competition_id, position):
+    """Goal contributions/90 baseline for this (league, position), falling back to the position's overall average."""
+    return LEAGUE_POSITION_BASELINE.get(
+        (competition_id, position),
+        LEAGUE_POSITION_BASELINE.get(("_default", position), 0.3),
+    )
+
+
+MIN_CLUB_TRANSFERS = 5
+MIN_CLUB_RESALES = 3
 
 
 def build_club_report_cards(df):
@@ -304,11 +357,9 @@ def build_club_report_cards(df):
     return out
 
 
-CLUB_NAME_ALIASES = build_club_name_aliases(transfers_df)
-club_report_cards_df = build_club_report_cards(transfers_df.assign(
-    to_club_name=transfers_df["to_club_name"].map(lambda n: CLUB_NAME_ALIASES.get(n, n)),
-    from_club_name=transfers_df["from_club_name"].map(lambda n: CLUB_NAME_ALIASES.get(n, n)),
-))
+# transfers_df's to_club_name/from_club_name are already canonical (see
+# CLUB_NAME_ALIASES above, applied right after load) - no remapping needed here.
+club_report_cards_df = build_club_report_cards(transfers_df)
 
 
 NUMERIC_FEATURES = metadata["numeric_features"]
@@ -455,9 +506,11 @@ def ordinal(n):
 
 
 def eur_m(v):
-    """Format a euro amount for display, e.g. 50_000_000 -> "€50m", 300_000 -> "€0.3m", 0/NaN -> "free"."""
+    """Format a euro amount for display, e.g. 50_000_000 -> "€50m", 300_000 -> "€0.3m", 2_049_250_000 -> "€2.05b", 0/NaN -> "free". No individual transfer fee reaches a billion, but a club's aggregate spend/resale-profit total (see build_club_report_cards) can."""
     if pd.isna(v) or v == 0:
         return "free"
+    if abs(v) >= 1_000_000_000:
+        return f"€{v / 1_000_000_000:.2f}b"
     millions = v / 1_000_000
     # Sub-million fees are common (e.g. a €300k sale) - one decimal place
     # keeps them from rounding down to a misleading "€0m".
@@ -1490,11 +1543,20 @@ def health():
 
 @app.get("/api/examples")
 def examples():
-    """Return the curated homepage cards (EXAMPLE_TRANSFER_KEYS) as full transfer cards."""
+    """
+    Return the curated homepage cards (EXAMPLE_TRANSFER_KEYS) as full
+    transfer cards. EXAMPLE_TRANSFER_KEYS is written in whichever short
+    form reads clearly to a maintainer ("Man City") - resolved through
+    CLUB_NAME_ALIASES before matching, since transfers_df's own
+    to_club_name is already canonicalized to (usually longer) spellings
+    like "Manchester City" - without this, the lookup would silently drop
+    an entry every time the canonical-name rule picks a different variant.
+    """
     out = []
     for name, to_club in EXAMPLE_TRANSFER_KEYS:
+        canonical_club = CLUB_NAME_ALIASES.get(to_club, to_club)
         match = transfers_df[
-            (transfers_df["name"] == name) & (transfers_df["to_club_name"] == to_club)
+            (transfers_df["name"] == name) & (transfers_df["to_club_name"] == canonical_club)
         ]
         if match.empty:
             continue

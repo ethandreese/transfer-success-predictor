@@ -333,28 +333,37 @@ not an on-pitch one — the note says so explicitly).
   different fit than `model.joblib`, which is refit on the *full* dataset
   for serving live predictions. Don't expect it to match a live
   `/api/predict` call for the same inputs exactly.
-- **Club Report Cards identify a club purely by its name string** -
-  `transfers_processed.csv` has no club_id at all, and never joins
-  `clubs_lookup.csv` (whose own naming, "Manchester City", doesn't reliably
-  match the raw Transfermarkt names here either, e.g. "Man City" - a
-  separate, unresolved gap between the two files). `build_club_name_aliases`
-  merges same-club spellings two ways: mechanically, for a generic
-  legal-entity marker or accent encoding ("FC Barcelona"/"Barcelona",
-  "Fenerbahçe"/"Fenerbahce" - ~75 clusters, hand-checked one by one before
-  shipping); and via `CLUB_NICKNAME_GROUPS`, a curated list of
-  nickname/official-name pairs that share no token at all ("Man
-  City"/"Manchester City", "PSG"/"Paris Saint-Germain", "Bor.
-  Dortmund"/"Borussia Dortmund"/"Dortmund", "Sporting"/"Sporting CP", and
-  ~25 more) - each entry individually verified against the real data
-  (matching `domestic_competition_id` on both sides, a non-contradictory
+- **Every club name on the site is identified purely by its name string** -
+  `transfers_processed.csv`/`loans_processed.csv` have no club_id at all,
+  and never join `clubs_lookup.csv` (whose own naming, "Manchester City",
+  doesn't reliably match the raw Transfermarkt names here either, e.g. "Man
+  City" - a separate, unresolved gap between the two files).
+  `build_club_name_aliases` merges same-club spellings two ways:
+  mechanically, for a generic legal-entity marker or accent encoding ("FC
+  Barcelona"/"Barcelona", "Fenerbahçe"/"Fenerbahce" - ~75+ clusters,
+  hand-checked one by one before shipping, across both transfers and loans);
+  and via `CLUB_NICKNAME_GROUPS`, a curated list of nickname/official-name
+  pairs that share no token at all ("Man City"/"Manchester City",
+  "PSG"/"Paris Saint-Germain", "Bor. Dortmund"/"Borussia
+  Dortmund"/"Dortmund", "Sporting"/"Sporting CP", and ~25 more) - each entry
+  individually verified against the real data (matching
+  `domestic_competition_id` on both sides, a non-contradictory
   `transfer_date` range) rather than assumed from football knowledge alone,
   which is exactly what caught that "Sporting" alone is safe to fold into
   Sporting CP specifically (every row carries league `PO1`, never Sporting
   Gijón's `ES1` or Royal Charleroi's `BE1`) rather than the genuinely
-  ambiguous case it looks like at a glance. Neither list is exhaustive
-  across all ~700 club names here - a club whose nickname/official-name
-  split was never spot-checked still shows up as two or more separate
-  report-card rows, each missing part of the real history.
+  ambiguous case it looks like at a glance - and, in the other direction,
+  that a mechanical strip of the generic word "club" would have wrongly
+  merged "Racing" with the unrelated Argentine "Racing Club" (`ARG1`),
+  force-split instead (`CLUB_NAME_FORCE_SPLIT`). Applied once at startup to
+  `to_club_name`/`from_club_name` in both `transfers_df` and `loans_df`
+  (and to `comparables["meta"]`, the nearest-neighbors index behind
+  Predict's "similar historical transfers"), so every page - Browse, Loans,
+  Biggest Surprises, Predict, Compare, and Club Report Cards - shows the
+  same name for the same club. Neither list is exhaustive across all ~700+
+  club names here - a club whose nickname/official-name split was never
+  spot-checked still shows up as two or more separate identities everywhere
+  it appears, each missing part of the real history.
 - **League-adjustment feeds the historical label, not the predict
   model's own features** — tested directly as additional model inputs
   (league baselines, a league-adjusted performance number) and it didn't
@@ -451,6 +460,21 @@ the git history.
   `transfers_processed.csv` has no club_id, so without either fix, several
   major clubs' report cards were silently missing part of their real
   history.
+- Moved club-name canonicalization to run once at startup on
+  `transfers_df`/`loans_df`/`comparables["meta"]` directly (previously only
+  applied inside Club Report Cards' own aggregation) - Browse, Loans,
+  Biggest Surprises, and Predict/Compare's comparables now all show the
+  same name for the same club too, not just `/clubs.html`. Also caught and
+  force-split a false merge the mechanical pass would otherwise have made
+  once loans data joined the count: "Racing" and the unrelated Argentine
+  "Racing Club" share the generic word "club" but not a league.
+- Changed the canonical-name pick from "whichever spelling has the most
+  transfer mentions" to "whichever spelling is longest" ("Tottenham
+  Hotspur" over "Tottenham", "Arsenal FC" over "Arsenal") - a reader
+  unfamiliar with a shorthand is more likely to recognize the fuller name.
+- Added billions formatting (`eur_m()`/`formatMoney()`, e.g. `"€2049m"` ->
+  `"€2.05b"`) - no individual transfer fee reaches a billion, but a club's
+  aggregate spend or resale-profit total on `/clubs.html` regularly does.
 - Added a "Biggest Surprises" page (`/surprises.html` + `/api/surprises`):
   every transfer ranked by how far its real outcome diverged from a 5-fold
   cross-validated, held-out model prediction - the biggest overachievers
