@@ -112,6 +112,18 @@ h2 {
 .example-card .score { font-size: 1.6rem; font-weight: 700; }
 .example-card .tenure-note { color: var(--muted); font-size: 0.72rem; margin: 0.2rem 0 0.6rem; }
 
+.surprises-intro { color: var(--muted); font-size: 0.88rem; margin: 0; }
+
+.surprise-banner {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin: 0.6rem 0 0.9rem;
+}
+
 .breakdown { display: flex; flex-direction: column; gap: 0.35rem; }
 
 .breakdown-row {
@@ -437,6 +449,16 @@ button.predict-btn:disabled {
 #loans-table th:nth-child(6), #loans-table td:nth-child(6) { width: 7%; }
 #loans-table th:nth-child(7), #loans-table td:nth-child(7) { width: 10%; }
 #loans-table th:nth-child(8), #loans-table td:nth-child(8) { width: 9%; }
+
+#surprises-table { min-width: 900px; }
+#surprises-table th:nth-child(1), #surprises-table td:nth-child(1) { width: 15%; }
+#surprises-table th:nth-child(2), #surprises-table td:nth-child(2) { width: 10%; }
+#surprises-table th:nth-child(3), #surprises-table td:nth-child(3) { width: 24%; }
+#surprises-table th:nth-child(4), #surprises-table td:nth-child(4) { width: 17%; }
+#surprises-table th:nth-child(5), #surprises-table td:nth-child(5) { width: 9%; }
+#surprises-table th:nth-child(6), #surprises-table td:nth-child(6) { width: 9%; }
+#surprises-table th:nth-child(7), #surprises-table td:nth-child(7) { width: 8%; }
+#surprises-table th:nth-child(8), #surprises-table td:nth-child(8) { width: 8%; }
 
 .transfers-table th {
   text-align: left;

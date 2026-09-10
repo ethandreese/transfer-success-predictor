@@ -18,10 +18,11 @@ scripts/fetch_fotmob_stats.py             # (optional) backfills data/raw/fotmob
 scripts/fetch_pretransfer_fotmob_stats.py # (optional) backfills data/raw/pretransfer_fotmob_stats_cache.csv - the predict model's pre-transfer FotMob signal
 scripts/fetch_current_fotmob_stats.py     # (optional) backfills data/raw/current_fotmob_stats_cache.csv - live predictions' "current form" FotMob signal
 scripts/build_dataset.py   # raw Transfermarkt CSVs -> data/transfers_processed.csv + data/loans_processed.csv
-scripts/train_model.py     # trains the model + comparable-transfers index
+scripts/train_model.py     # trains the deployed model + comparable-transfers index
+scripts/compute_prediction_surprises.py  # 5-fold held-out predictions for every transfer -> data/prediction_surprises.csv (the Biggest Surprises page)
 scripts/build_lookups.py   # small player/club search tables for the web app
 app/main.py                 # FastAPI backend (serves the API + the static frontend)
-app/static/                 # vanilla HTML/CSS/JS frontend (index/browse/loans/compare)
+app/static/                 # vanilla HTML/CSS/JS frontend (index/browse/loans/compare/surprises)
 data/                        # committed: small derived CSVs only (~8MB total)
 tests/                       # pytest suite - runs against committed artifacts only
 ```
@@ -65,6 +66,7 @@ the app:
 ./.venv/bin/python scripts/fetch_current_fotmob_stats.py      # optional but recommended - see below
 ./.venv/bin/python scripts/build_lookups.py                   # run again to merge in the current-FotMob snapshot just fetched
 ./.venv/bin/python scripts/train_model.py
+./.venv/bin/python scripts/compute_prediction_surprises.py
 ```
 
 `fetch_transfer_types.py` re-fetches every candidate player's real transfer
@@ -97,6 +99,17 @@ either and `train_model.py`/`build_lookups.py` still run, just with every
 autofill) falling back to the median/`None` a missing match already
 degrades to.
 
+`compute_prediction_surprises.py` is **not** optional like the four above -
+`app/main.py` loads `data/prediction_surprises.csv` unconditionally at
+startup (the Biggest Surprises page's data source). It reuses
+`train_model.py`'s exact feature-engineering functions and feature lists,
+swapping 5-fold cross-validation in for that script's one temporal split,
+so every transfer gets a `predicted_score` from a model that never saw that
+transfer's own outcome during fitting - unlike `model.joblib` itself, which
+is refit on the full dataset for serving accurate live predictions, at the
+cost of its own predictions on historical transfers being partly circular
+(it saw the answer). Runs in seconds; doesn't touch `model.joblib`.
+
 ## Testing
 
 ```bash
@@ -110,7 +123,8 @@ The suite runs entirely against the committed `data/*.csv` and
 transfer's `success_score` matches its stored sub-components recomputed
 through `score_weights.json`, no nulls/out-of-range values) and
 `tests/test_app.py` (every API endpoint, including accent-insensitive
-search and the compare/predict flows).
+search, the compare/predict flows, and `/api/surprises`' sort directions and
+held-out-only filtering).
 
 ## How it works
 
@@ -251,6 +265,13 @@ not an on-pitch one — the note says so explicitly).
   (same player to two different clubs, or two different players entirely)
   and see both predictions, ranges, and top factors together with the
   point gap between them.
+- **`/surprises.html`** — every scored permanent transfer with a held-out
+  prediction (~93% of them - see `compute_prediction_surprises.py`), ranked
+  by how far the real outcome diverged from what a model that never saw
+  that transfer's own result would have guessed from pre-transfer data
+  alone: the biggest overachievers and the biggest busts. Same filter/
+  search/click-to-view-card experience as Browse, plus the model's own
+  number shown alongside the real one.
 
 ## Known limitations
 
@@ -295,6 +316,14 @@ not an on-pitch one — the note says so explicitly).
 - **Predicting a new hypothetical transfer is meaningfully less reliable**
   than the historical scores shown for known transfers, since the model
   only ever sees pre-transfer information by construction.
+- **The Biggest Surprises page's `predicted_score` isn't the deployed
+  model.** It comes from 5-fold cross-validation (see
+  `compute_prediction_surprises.py`), so every transfer's number is honest
+  in the sense that matters for ranking "how surprising was this" (no
+  prediction ever saw its own outcome) - but each fold is a slightly
+  different fit than `model.joblib`, which is refit on the *full* dataset
+  for serving live predictions. Don't expect it to match a live
+  `/api/predict` call for the same inputs exactly.
 - **League-adjustment feeds the historical label, not the predict
   model's own features** — tested directly as additional model inputs
   (league baselines, a league-adjusted performance number) and it didn't
@@ -369,6 +398,10 @@ the git history.
   symmetric playing-time rule that doesn't apply to loans).
 
 **Frontend**
+- Added a "Biggest Surprises" page (`/surprises.html` + `/api/surprises`):
+  every transfer ranked by how far its real outcome diverged from a 5-fold
+  cross-validated, held-out model prediction - the biggest overachievers
+  and busts a pre-transfer-only model didn't see coming.
 - Added keyboard navigation and ARIA roles to the player/club search
   autocomplete on Predict and Compare (previously mouse-only); fixed
   missing input IDs on Compare; moved the compare-delta conclusion below

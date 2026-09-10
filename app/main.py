@@ -34,6 +34,14 @@ with open(os.path.join(MODEL_DIR, "metadata.json")) as f:
     metadata = json.load(f)
 
 transfers_df = pd.read_csv(os.path.join(DATA_DIR, "transfers_processed.csv"))
+# predicted_score/surprise_delta (see scripts/compute_prediction_surprises.py)
+# cover ~93% of transfers - the same required-feature dropna the deployed
+# model itself applies during training excludes the rest (a missing origin
+# league, fee, or height) - left as NaN for those via how="left" rather than
+# dropping the row from transfers_df entirely, since every other endpoint
+# still needs it.
+prediction_surprises_df = pd.read_csv(os.path.join(DATA_DIR, "prediction_surprises.csv"))
+transfers_df = transfers_df.merge(prediction_surprises_df, on=["player_id", "transfer_date"], how="left")
 loans_df = pd.read_csv(os.path.join(DATA_DIR, "loans_processed.csv"))
 players_df = pd.read_csv(os.path.join(DATA_DIR, "players_lookup.csv"))
 clubs_df = pd.read_csv(os.path.join(DATA_DIR, "clubs_lookup.csv"))
@@ -1482,6 +1490,67 @@ def list_transfers(
             "tenure_days": int(r["tenure_days"]),
             "still_at_club": bool(r["still_at_club"]),
             "success_score": float(r["success_score"]),
+        })
+    return {"total": total, "limit": limit, "offset": offset, "results": results}
+
+
+SURPRISE_SORT_FIELDS = {"surprise_delta", "success_score", "predicted_score", "transfer_date", "age_at_transfer"}
+
+
+@app.get("/api/surprises")
+def list_surprises(
+    position: str | None = None,
+    league: str | None = None,
+    q: str | None = None,
+    sort: str = "surprise_delta",
+    order: str = "desc",
+    limit: int = 25,
+    offset: int = 0,
+):
+    """
+    Paginated, filterable, sortable listing of every transfer with a held-
+    out model prediction (predicted_score/surprise_delta - see
+    scripts/compute_prediction_surprises.py), ranked by surprise_delta
+    (success_score minus predicted_score) by default: order=desc surfaces
+    the biggest overachievers (a model that never saw this transfer's
+    outcome predicted a flop from pre-transfer data alone, the player
+    thrived anyway); order=asc surfaces the biggest busts.
+    """
+    df = transfers_df[transfers_df["predicted_score"].notna()]
+    if position:
+        df = df[df["position"] == position]
+    if league:
+        df = df[df["to_domestic_competition_id"] == league]
+    if q:
+        q_fold = fold_accents(q)
+        mask = (
+            df["_name_fold"].str.contains(q_fold, na=False)
+            | df["_to_club_fold"].str.contains(q_fold, na=False)
+            | df["_from_club_fold"].str.contains(q_fold, na=False)
+        )
+        df = df[mask]
+
+    sort_field = sort if sort in SURPRISE_SORT_FIELDS else "surprise_delta"
+    df = df.sort_values(sort_field, ascending=(order == "asc"))
+
+    total = len(df)
+    limit = max(1, min(limit, 100))
+    page = df.iloc[offset:offset + limit]
+
+    results = []
+    for _, r in page.iterrows():
+        results.append({
+            "player_id": int(r["player_id"]),
+            "name": r["name"],
+            "position": r["position"],
+            "from_club": r["from_club_name"],
+            "to_club": r["to_club_name"],
+            "to_league": league_display_name(r["to_domestic_competition_id"]),
+            "transfer_date": str(r["transfer_date"])[:10],
+            "age_at_transfer": round(float(r["age_at_transfer"]), 1),
+            "success_score": float(r["success_score"]),
+            "predicted_score": float(r["predicted_score"]),
+            "surprise_delta": float(r["surprise_delta"]),
         })
     return {"total": total, "limit": limit, "offset": offset, "results": results}
 

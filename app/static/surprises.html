@@ -3,33 +3,45 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Browse Transfers - Transfer Success Predictor</title>
-  <meta name="description" content="Browse, filter, and search ~8,300 real scored football transfers (2013-2026)." />
+  <title>Biggest Surprises - Transfer Success Predictor</title>
+  <meta name="description" content="The real transfers that most defied a held-out model's pre-transfer-only prediction - the biggest overachievers and busts." />
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="Browse Transfers - Transfer Success Predictor" />
-  <meta property="og:description" content="Browse, filter, and search ~8,300 real scored football transfers (2013-2026)." />
-  <meta property="og:url" content="https://transfer-success-predictor.onrender.com/browse.html" />
+  <meta property="og:title" content="Biggest Surprises - Transfer Success Predictor" />
+  <meta property="og:description" content="The real transfers that most defied a held-out model's pre-transfer-only prediction - the biggest overachievers and busts." />
+  <meta property="og:url" content="https://transfer-success-predictor.onrender.com/surprises.html" />
   <meta name="twitter:card" content="summary" />
-  <meta name="twitter:title" content="Browse Transfers - Transfer Success Predictor" />
-  <meta name="twitter:description" content="Browse, filter, and search ~8,300 real scored football transfers." />
+  <meta name="twitter:title" content="Biggest Surprises - Transfer Success Predictor" />
+  <meta name="twitter:description" content="The real transfers that most defied a held-out model's pre-transfer-only prediction." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="stylesheet" href="/style.css?v=29" />
 </head>
 <body>
   <header>
     <h1>⚽ Transfer Success Predictor</h1>
-    <p>Browse all ~8,300 scored transfers: filter, search, and sort.</p>
+    <p>Where the model's pre-transfer prediction and the real outcome disagree the most.</p>
     <nav class="topnav">
       <a href="/">Predict</a>
-      <a href="/browse.html" class="active">Browse all transfers</a>
+      <a href="/browse.html">Browse all transfers</a>
       <a href="/loans.html">Browse loans</a>
       <a href="/compare.html">Compare two transfers</a>
-      <a href="/surprises.html">Biggest surprises</a>
+      <a href="/surprises.html" class="active">Biggest surprises</a>
       <a href="/about.html">About</a>
     </nav>
   </header>
 
   <main class="wide">
+    <section class="card">
+      <p class="surprises-intro">
+        For every scored permanent transfer, a version of the model that never saw that
+        transfer's own outcome (5-fold cross-validated, using only pre-transfer data) made
+        its best guess. This page ranks the biggest gaps between that guess and what actually
+        happened - <strong>overachievers</strong> the model's pre-transfer numbers didn't see
+        coming, and <strong>busts</strong> it didn't see coming either, the other direction.
+        Not every transfer has a prediction here - the same handful missing a required
+        feature (fee, height, origin league) are excluded from the model's training too.
+      </p>
+    </section>
+
     <section class="card">
       <div class="browse-controls">
         <div class="field">
@@ -45,21 +57,20 @@
           <select id="league-select"><option value="">All leagues</option></select>
         </div>
         <div class="field">
-          <label for="sort-select">Sort by</label>
+          <label for="sort-select">Show</label>
           <select id="sort-select">
-            <option value="success_score:desc">Success score (high to low)</option>
-            <option value="success_score:asc">Success score (low to high)</option>
+            <option value="surprise_delta:desc">Biggest overachievers first</option>
+            <option value="surprise_delta:asc">Biggest busts first</option>
+            <option value="success_score:desc">Actual score (high to low)</option>
             <option value="transfer_date:desc">Date (newest first)</option>
             <option value="transfer_date:asc">Date (oldest first)</option>
-            <option value="transfer_fee:desc">Fee (highest first)</option>
             <option value="age_at_transfer:asc">Age (youngest first)</option>
-            <option value="to_club_name:asc" id="club-sort-option" hidden>Club (A-Z)</option>
           </select>
         </div>
       </div>
 
       <div class="table-wrap">
-        <table class="transfers-table" id="transfers-table">
+        <table class="transfers-table" id="surprises-table">
           <thead>
             <tr>
               <th>Player</th>
@@ -67,14 +78,13 @@
               <th>Route</th>
               <th>League</th>
               <th>Date</th>
-              <th>Age</th>
-              <th>Fee</th>
-              <th>Tenure</th>
-              <th>Score</th>
+              <th>Predicted</th>
+              <th>Actual</th>
+              <th>Surprise</th>
             </tr>
           </thead>
           <tbody id="table-body">
-            <tr><td colspan="9">Loading...</td></tr>
+            <tr><td colspan="8">Loading...</td></tr>
           </tbody>
         </table>
       </div>
@@ -95,6 +105,6 @@
   </div>
 
   <script src="/settings.js?v=29"></script>
-  <script src="/browse.js?v=29"></script>
+  <script src="/surprises.js?v=29"></script>
 </body>
 </html>

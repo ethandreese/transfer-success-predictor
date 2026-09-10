@@ -521,3 +521,67 @@ def test_loan_detail_404_for_unknown_loan():
     """A (player_id, transfer_date) pair that doesn't exist in loans_processed.csv should 404, not 500."""
     res = client.get("/api/loans/detail", params={"player_id": 999999999, "transfer_date": "2020-01-01"})
     assert res.status_code == 404
+
+
+def test_surprises_list_pagination():
+    """A limit=10 request should return exactly 10 results, with the true total count reported separately."""
+    res = client.get("/api/surprises", params={"limit": 10, "offset": 0})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["total"] > 1000
+    assert len(data["results"]) == 10
+
+
+def test_surprises_list_sorted_descending_by_default():
+    """With no explicit sort params, results should default to surprise_delta descending - the biggest overachievers first."""
+    res = client.get("/api/surprises", params={"limit": 20})
+    deltas = [r["surprise_delta"] for r in res.json()["results"]]
+    assert deltas == sorted(deltas, reverse=True)
+    for r in res.json()["results"]:
+        assert r["surprise_delta"] == pytest.approx(r["success_score"] - r["predicted_score"], abs=0.05)
+
+
+def test_surprises_list_ascending_surfaces_busts():
+    """order=asc should surface the biggest busts - a large *negative* surprise_delta - not just reverse into small positives."""
+    res = client.get("/api/surprises", params={"sort": "surprise_delta", "order": "asc", "limit": 5})
+    deltas = [r["surprise_delta"] for r in res.json()["results"]]
+    assert deltas == sorted(deltas)
+    assert deltas[0] < -20
+
+
+def test_surprises_list_position_filter():
+    """Filtering by position=Goalkeeper should return only goalkeepers."""
+    res = client.get("/api/surprises", params={"position": "Goalkeeper", "limit": 50})
+    data = res.json()
+    assert data["total"] > 0
+    assert all(r["position"] == "Goalkeeper" for r in data["results"])
+
+
+def test_surprises_list_search_is_accent_insensitive():
+    """The search box should match accented names via the plain-ASCII query too."""
+    res = client.get("/api/surprises", params={"q": "Dembele"})
+    data = res.json()
+    assert data["total"] > 0
+    assert any("Dembélé" in r["name"] for r in data["results"])
+
+
+def test_surprises_list_excludes_transfers_with_no_prediction():
+    """
+    A transfer missing a required model feature (fee, height, origin league)
+    never got a held-out prediction (see scripts/compute_prediction_surprises.py)
+    and must not appear here with a fabricated score.
+    """
+    res = client.get("/api/surprises", params={"limit": 100})
+    for r in res.json()["results"]:
+        assert r["predicted_score"] is not None
+
+
+def test_surprises_detail_reuses_transfer_detail_card():
+    """The surprises page's modal reuses /api/transfers/detail for the breakdown - the same (player_id, transfer_date) key must resolve there too."""
+    res = client.get("/api/surprises", params={"limit": 1})
+    row = res.json()["results"][0]
+    detail = client.get("/api/transfers/detail", params={
+        "player_id": row["player_id"], "transfer_date": row["transfer_date"],
+    })
+    assert detail.status_code == 200
+    assert detail.json()["success_score"] == row["success_score"]
