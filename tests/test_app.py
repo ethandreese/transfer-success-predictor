@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import (
-    app, build_feature_row, explain_prediction, pipeline, predict_marginalized_recent_performance, PredictRequest,
+    CLUB_NAME_ALIASES, app, build_feature_row, explain_prediction, pipeline, predict_marginalized_recent_performance, PredictRequest,
 )
 
 client = TestClient(app)
@@ -585,3 +585,147 @@ def test_surprises_detail_reuses_transfer_detail_card():
     })
     assert detail.status_code == 200
     assert detail.json()["success_score"] == row["success_score"]
+
+
+def test_clubs_leaderboard_pagination():
+    """A limit=10 request should return exactly 10 results, with the true total count reported separately."""
+    res = client.get("/api/clubs/leaderboard", params={"limit": 10, "offset": 0})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["total"] > 100
+    assert len(data["results"]) == 10
+
+
+def test_clubs_leaderboard_default_sort_respects_minimum_sample():
+    """Ranking by avg_incoming_score (the default) must exclude any club below MIN_CLUB_TRANSFERS incoming transfers - a club with one lucky signing shouldn't top the list."""
+    res = client.get("/api/clubs/leaderboard", params={"limit": 50})
+    data = res.json()
+    scores = [r["avg_incoming_score"] for r in data["results"]]
+    assert scores == sorted(scores, reverse=True)
+    for r in data["results"]:
+        assert r["transfers_in"] >= 5
+
+
+def test_clubs_leaderboard_resale_profit_sort_respects_its_own_minimum():
+    """Ranking by avg_resale_profit_pct must exclude clubs below MIN_CLUB_RESALES resold transfers, independently of the incoming-transfer threshold."""
+    res = client.get("/api/clubs/leaderboard", params={"sort": "avg_resale_profit_pct", "order": "desc", "limit": 50})
+    data = res.json()
+    pcts = [r["avg_resale_profit_pct"] for r in data["results"]]
+    assert pcts == sorted(pcts, reverse=True)
+    for r in data["results"]:
+        assert r["resales_count"] >= 3
+
+
+def test_clubs_leaderboard_resale_profit_direction_is_the_buying_club():
+    """
+    Resale profit belongs to the club that bought the player (to_club_name)
+    and later resold him on, not the club that originally sold him to that
+    buyer (from_club_name) - next_transfer_fee is what a third club paid
+    the *buyer*, not anything about the original seller (see
+    build_club_report_cards). Real Madrid bought Ronaldo from Man Utd in
+    2009 and sold him to Juventus in 2018 for a real, large fee - his
+    transfer to Juventus must show up as one of *Juventus's* incoming
+    transfers, not attributed to Real Madrid's resale record.
+    """
+    res = client.get("/api/clubs/leaderboard", params={"q": "Real Madrid", "sort": "total_spent"})
+    real_madrid = next(r for r in res.json()["results"] if r["club_name"] == "Real Madrid")
+    flip_names = {real_madrid["best_flip"]["name"] if real_madrid["best_flip"] else None,
+                  real_madrid["worst_flip"]["name"] if real_madrid["worst_flip"] else None}
+    assert "Cristiano Ronaldo" not in flip_names
+
+
+def test_clubs_leaderboard_search_filters_by_name():
+    """The search box should filter to clubs whose name contains the query."""
+    res = client.get("/api/clubs/leaderboard", params={"q": "Real Madrid"})
+    data = res.json()
+    assert data["total"] >= 1
+    assert all("real madrid" in r["club_name"].lower() for r in data["results"])
+
+
+def test_clubs_leaderboard_league_filter():
+    """Filtering by league=GB1 should return only clubs whose primary league is the Premier League."""
+    res = client.get("/api/clubs/leaderboard", params={"league": "GB1", "limit": 50})
+    data = res.json()
+    assert data["total"] > 0
+    assert all(r["league"] == "Premier League" for r in data["results"])
+
+
+def test_clubs_leaderboard_row_has_no_second_request_needed_fields():
+    """Every row must already carry its own best/worst signing so the frontend's click-to-view-card modal needs no second request."""
+    res = client.get("/api/clubs/leaderboard", params={"limit": 5})
+    for r in res.json()["results"]:
+        assert "name" in r["best_signing"] and "success_score" in r["best_signing"]
+        assert "name" in r["worst_signing"] and "success_score" in r["worst_signing"]
+
+
+def test_club_name_aliases_merge_known_legal_suffix_variants():
+    """Barcelona's transfer history is split between 'Barcelona' and 'FC Barcelona' in the raw data - both must resolve to the same canonical club so its report card isn't missing half its transfers."""
+    assert CLUB_NAME_ALIASES.get("FC Barcelona") == CLUB_NAME_ALIASES.get("Barcelona", "Barcelona")
+    res = client.get("/api/clubs/leaderboard", params={"q": "Barcelona"})
+    names = {r["club_name"] for r in res.json()["results"]}
+    assert "FC Barcelona" not in names  # merged into "Barcelona", not its own separate row
+
+
+def test_club_name_aliases_does_not_merge_distinct_clubs():
+    """'SC Dnipro-1' is a real, distinct club from the dissolved 'Dnipro Dnipropetrovsk' - the alias builder must not merge them just because they share a city name."""
+    assert CLUB_NAME_ALIASES.get("SC Dnipro-1", "SC Dnipro-1") != CLUB_NAME_ALIASES.get("Dnipro", "Dnipro")
+
+
+@pytest.mark.parametrize("a,b", [
+    ("Man City", "Manchester City"),
+    ("Man Utd", "Manchester United"),
+    ("PSG", "Paris Saint-Germain"),
+    ("Paris SG", "Paris Saint-Germain"),
+    ("Bor. Dortmund", "Dortmund"),
+    ("Borussia Dortmund", "Dortmund"),
+    ("Tottenham", "Tottenham Hotspur"),
+    ("Newcastle", "Newcastle United"),
+    ("West Ham", "West Ham United"),
+    ("West Brom", "West Bromwich Albion"),
+    ("Brighton", "Brighton & Hove Albion"),
+    ("Leeds", "Leeds United"),
+    ("Leicester", "Leicester City"),
+    ("AS Monaco", "Monaco"),
+    ("Lyon", "Olympique Lyon"),
+    ("Marseille", "Olympique Marseille"),
+    ("LOSC Lille", "Lille"),
+    ("Nice", "OGC Nice"),
+    ("Real Betis", "Real Betis Balompié"),
+    ("Athletic Bilbao", "Athletic Club"),
+    ("Ajax", "Ajax Amsterdam"),
+    ("Feyenoord", "Feyenoord Rotterdam"),
+    ("PSV", "PSV Eindhoven"),
+    ("Benfica", "SL Benfica"),
+    ("Espanyol", "RCD Espanyol Barcelona"),
+    ("Hamburg", "Hamburger SV"),
+    ("Zenit S-Pb", "AO FK Zenit Sankt-Peterburg"),
+    ("Shakhtar D.", "FC Shakhtar Donetsk"),
+    ("Sporting", "Sporting CP"),
+    ("Inter", "Inter Milan"),
+])
+def test_club_name_aliases_merge_verified_nickname_pairs(a, b):
+    """
+    Each of these pairs was individually verified (same domestic
+    competition on both sides, non-contradictory transfer_date range - see
+    CLUB_NICKNAME_GROUPS in app/main.py) to be the same real club under a
+    nickname/official-name split that CLUB_NAME_STRIP_TOKENS' mechanical
+    pass can't catch on its own (no shared token). Both spellings must
+    resolve to the same canonical club.
+    """
+    assert CLUB_NAME_ALIASES.get(a, a) == CLUB_NAME_ALIASES.get(b, b)
+
+
+def test_club_name_aliases_keeps_distinct_sporting_clubs_separate():
+    """'Sporting' alone is only merged into Sporting CP (verified via league PO1) - Sporting Gijón (Spain) and Royal Charleroi Sporting Club (Belgium) are different real clubs and must stay their own rows."""
+    sporting_cp_canonical = CLUB_NAME_ALIASES.get("Sporting CP", "Sporting CP")
+    assert CLUB_NAME_ALIASES.get("Sporting Gijón", "Sporting Gijón") != sporting_cp_canonical
+    assert CLUB_NAME_ALIASES.get("Royal Charleroi Sporting Club", "Royal Charleroi Sporting Club") != sporting_cp_canonical
+
+
+def test_clubs_leaderboard_filters_endpoint():
+    """/api/clubs/leaderboard/filters should list at least one league, each with an id and a display name."""
+    res = client.get("/api/clubs/leaderboard/filters")
+    assert res.status_code == 200
+    data = res.json()
+    assert len(data["leagues"]) > 0
+    assert all("id" in l and "name" in l for l in data["leagues"])

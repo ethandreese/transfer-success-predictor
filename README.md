@@ -22,7 +22,7 @@ scripts/train_model.py     # trains the deployed model + comparable-transfers in
 scripts/compute_prediction_surprises.py  # 5-fold held-out predictions for every transfer -> data/prediction_surprises.csv (the Biggest Surprises page)
 scripts/build_lookups.py   # small player/club search tables for the web app
 app/main.py                 # FastAPI backend (serves the API + the static frontend)
-app/static/                 # vanilla HTML/CSS/JS frontend (index/browse/loans/compare/surprises)
+app/static/                 # vanilla HTML/CSS/JS frontend (index/browse/loans/compare/surprises/clubs)
 data/                        # committed: small derived CSVs only (~8MB total)
 tests/                       # pytest suite - runs against committed artifacts only
 ```
@@ -123,8 +123,9 @@ The suite runs entirely against the committed `data/*.csv` and
 transfer's `success_score` matches its stored sub-components recomputed
 through `score_weights.json`, no nulls/out-of-range values) and
 `tests/test_app.py` (every API endpoint, including accent-insensitive
-search, the compare/predict flows, and `/api/surprises`' sort directions and
-held-out-only filtering).
+search, the compare/predict flows, `/api/surprises`' sort directions and
+held-out-only filtering, and `/api/clubs/leaderboard`'s minimum-sample
+thresholds and name-alias merging).
 
 ## How it works
 
@@ -272,6 +273,14 @@ not an on-pitch one — the note says so explicitly).
   alone: the biggest overachievers and the biggest busts. Same filter/
   search/click-to-view-card experience as Browse, plus the model's own
   number shown alongside the real one.
+- **`/clubs.html`** — every club that's bought or sold at least one scored
+  permanent transfer, ranked as a recruiter: incoming transfers and their
+  average score, total spent, buy-develop-resell profit on the subset it
+  later sold on again, and how players it let go performed at their *next*
+  club. A club needs at least 5 transfers (3 for resale-profit ranking)
+  before a rate-based ranking includes it. Click a club for its full report
+  card (best/worst signing, best/worst flip, best/worst departure) and a
+  link to its complete transfer history on Browse.
 
 ## Known limitations
 
@@ -324,6 +333,28 @@ not an on-pitch one — the note says so explicitly).
   different fit than `model.joblib`, which is refit on the *full* dataset
   for serving live predictions. Don't expect it to match a live
   `/api/predict` call for the same inputs exactly.
+- **Club Report Cards identify a club purely by its name string** -
+  `transfers_processed.csv` has no club_id at all, and never joins
+  `clubs_lookup.csv` (whose own naming, "Manchester City", doesn't reliably
+  match the raw Transfermarkt names here either, e.g. "Man City" - a
+  separate, unresolved gap between the two files). `build_club_name_aliases`
+  merges same-club spellings two ways: mechanically, for a generic
+  legal-entity marker or accent encoding ("FC Barcelona"/"Barcelona",
+  "Fenerbahçe"/"Fenerbahce" - ~75 clusters, hand-checked one by one before
+  shipping); and via `CLUB_NICKNAME_GROUPS`, a curated list of
+  nickname/official-name pairs that share no token at all ("Man
+  City"/"Manchester City", "PSG"/"Paris Saint-Germain", "Bor.
+  Dortmund"/"Borussia Dortmund"/"Dortmund", "Sporting"/"Sporting CP", and
+  ~25 more) - each entry individually verified against the real data
+  (matching `domestic_competition_id` on both sides, a non-contradictory
+  `transfer_date` range) rather than assumed from football knowledge alone,
+  which is exactly what caught that "Sporting" alone is safe to fold into
+  Sporting CP specifically (every row carries league `PO1`, never Sporting
+  Gijón's `ES1` or Royal Charleroi's `BE1`) rather than the genuinely
+  ambiguous case it looks like at a glance. Neither list is exhaustive
+  across all ~700 club names here - a club whose nickname/official-name
+  split was never spot-checked still shows up as two or more separate
+  report-card rows, each missing part of the real history.
 - **League-adjustment feeds the historical label, not the predict
   model's own features** — tested directly as additional model inputs
   (league baselines, a league-adjusted performance number) and it didn't
@@ -398,6 +429,28 @@ the git history.
   symmetric playing-time rule that doesn't apply to loans).
 
 **Frontend**
+- Added Club Report Cards (`/clubs.html` + `/api/clubs/leaderboard`): every
+  club ranked as a recruiter (incoming transfers, spend, buy-develop-resell
+  profit, how departing players did elsewhere). Found and fixed a real bug
+  along the way: an early version attributed a club's *buyer's* eventual
+  resale profit to whichever club had sold it that player originally (e.g.
+  crediting Real Madrid's sale of Ronaldo to Juventus with Juventus's own
+  later resale of him) - resale profit belongs to the buyer
+  (`to_club_name`), not the seller, since `next_transfer_fee` is what a
+  third club later paid *that buyer*. Also added `build_club_name_aliases`
+  to merge ~75 same-club name variants that differ only by a generic
+  legal-entity marker or accent encoding ("FC Barcelona"/"Barcelona"), then
+  extended it with `CLUB_NICKNAME_GROUPS` - ~28 hand-verified
+  nickname/official-name pairs sharing no token at all ("Man
+  City"/"Manchester City", "PSG"/"Paris Saint-Germain", "Bor.
+  Dortmund"/"Borussia Dortmund"/"Dortmund") - each checked against the real
+  data (matching league both sides, non-contradictory dates) rather than
+  assumed, which is what confirmed "Sporting" is safe to fold into Sporting
+  CP specifically rather than the ambiguous case ("Sporting" could also
+  mean Sporting Gijón or Royal Charleroi) it looks like on name alone.
+  `transfers_processed.csv` has no club_id, so without either fix, several
+  major clubs' report cards were silently missing part of their real
+  history.
 - Added a "Biggest Surprises" page (`/surprises.html` + `/api/surprises`):
   every transfer ranked by how far its real outcome diverged from a 5-fold
   cross-validated, held-out model prediction - the biggest overachievers

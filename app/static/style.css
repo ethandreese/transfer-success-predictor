@@ -124,6 +124,21 @@ h2 {
   margin: 0.6rem 0 0.9rem;
 }
 
+.example-card h3 { font-size: 0.9rem; margin: 1rem 0 0.3rem; }
+.example-card p { font-size: 0.85rem; color: var(--muted); margin: 0.2rem 0; }
+
+.highlight-row { font-size: 0.82rem; color: var(--muted); margin: 0.15rem 0; }
+.highlight-label { color: var(--text); margin-right: 0.3rem; }
+
+.browse-link {
+  display: block;
+  margin-top: 1rem;
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+.browse-link:hover { text-decoration: underline; }
+
 .breakdown { display: flex; flex-direction: column; gap: 0.35rem; }
 
 .breakdown-row {
@@ -459,6 +474,16 @@ button.predict-btn:disabled {
 #surprises-table th:nth-child(6), #surprises-table td:nth-child(6) { width: 9%; }
 #surprises-table th:nth-child(7), #surprises-table td:nth-child(7) { width: 8%; }
 #surprises-table th:nth-child(8), #surprises-table td:nth-child(8) { width: 8%; }
+
+#clubs-table { min-width: 850px; }
+#clubs-table th:nth-child(1), #clubs-table td:nth-child(1) { width: 20%; }
+#clubs-table th:nth-child(2), #clubs-table td:nth-child(2) { width: 17%; }
+#clubs-table th:nth-child(3), #clubs-table td:nth-child(3) { width: 7%; }
+#clubs-table th:nth-child(4), #clubs-table td:nth-child(4) { width: 13%; }
+#clubs-table th:nth-child(5), #clubs-table td:nth-child(5) { width: 12%; }
+#clubs-table th:nth-child(6), #clubs-table td:nth-child(6) { width: 13%; }
+#clubs-table th:nth-child(7), #clubs-table td:nth-child(7) { width: 7%; }
+#clubs-table th:nth-child(8), #clubs-table td:nth-child(8) { width: 13%; }
 
 .transfers-table th {
   text-align: left;

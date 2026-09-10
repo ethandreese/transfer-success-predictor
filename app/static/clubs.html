@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Club Report Cards - Transfer Success Predictor</title>
+  <meta name="description" content="Every club ranked as a recruiter: incoming transfer success, spend, buy-develop-resell profit, and how departing players did elsewhere." />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Club Report Cards - Transfer Success Predictor" />
+  <meta property="og:description" content="Every club ranked as a recruiter: incoming transfer success, spend, buy-develop-resell profit, and how departing players did elsewhere." />
+  <meta property="og:url" content="https://transfer-success-predictor.onrender.com/clubs.html" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Club Report Cards - Transfer Success Predictor" />
+  <meta name="twitter:description" content="Every club ranked as a recruiter: incoming transfer success, spend, and resale profit." />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="stylesheet" href="/style.css?v=30" />
+</head>
+<body>
+  <header>
+    <h1>⚽ Transfer Success Predictor</h1>
+    <p>Every club, graded as a recruiter: who they bought, what it cost, and how it went.</p>
+    <nav class="topnav">
+      <a href="/">Predict</a>
+      <a href="/browse.html">Browse all transfers</a>
+      <a href="/loans.html">Browse loans</a>
+      <a href="/compare.html">Compare two transfers</a>
+      <a href="/surprises.html">Biggest surprises</a>
+      <a href="/clubs.html" class="active">Club report cards</a>
+      <a href="/about.html">About</a>
+    </nav>
+  </header>
+
+  <main class="wide">
+    <section class="card">
+      <p class="surprises-intro">
+        One row per club that bought or sold at least one scored permanent transfer, built
+        entirely from the same historical scores shown on Browse. <strong>In/Avg score</strong>
+        covers players this club <em>bought</em>; <strong>Resale</strong> covers the subset it
+        later sold on again (profit or loss vs. what it paid); <strong>Out/Departures</strong>
+        covers how players this club <em>sold away</em> went on to perform at their next club.
+        A club needs at least 5 transfers (3 for resales) before it's eligible for a rate-based
+        ranking - a club with one lucky signing isn't "the best recruiter in Europe."
+      </p>
+    </section>
+
+    <section class="card">
+      <div class="browse-controls">
+        <div class="field">
+          <label for="search-input">Search</label>
+          <input id="search-input" type="text" placeholder="Club name" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="league-select">League</label>
+          <select id="league-select"><option value="">All leagues</option></select>
+        </div>
+        <div class="field">
+          <label for="sort-select">Rank by</label>
+          <select id="sort-select">
+            <option value="avg_incoming_score:desc">Best recruiters first</option>
+            <option value="avg_incoming_score:asc">Worst recruiters first</option>
+            <option value="total_spent:desc">Biggest spenders first</option>
+            <option value="avg_resale_profit_pct:desc">Best resale profit first</option>
+            <option value="avg_resale_profit_pct:asc">Worst resale profit first</option>
+            <option value="avg_departure_score:desc">Departures who thrived elsewhere</option>
+            <option value="avg_departure_score:asc">Departures who struggled elsewhere</option>
+            <option value="transfers_in:desc">Most incoming transfers</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="transfers-table" id="clubs-table">
+          <thead>
+            <tr>
+              <th>Club</th>
+              <th>League</th>
+              <th>In</th>
+              <th>Avg score</th>
+              <th>Spent</th>
+              <th>Resale</th>
+              <th>Out</th>
+              <th>Departures</th>
+            </tr>
+          </thead>
+          <tbody id="table-body">
+            <tr><td colspan="8">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="pagination">
+        <button id="prev-page" disabled>&larr; Prev</button>
+        <span id="page-info"></span>
+        <button id="next-page" disabled>Next &rarr;</button>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal-backdrop" id="card-modal-backdrop">
+    <div class="modal-box" role="dialog" aria-modal="true" aria-label="Club report card">
+      <button class="modal-close" id="card-modal-close" aria-label="Close">&times;</button>
+      <div id="card-modal-content">Loading...</div>
+    </div>
+  </div>
+
+  <script src="/settings.js?v=30"></script>
+  <script src="/clubs.js?v=30"></script>
+</body>
+</html>

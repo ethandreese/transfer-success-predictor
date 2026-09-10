@@ -257,5 +257,11 @@ document.addEventListener("settingschange", () => {
   if (state.openCard) showCard(state.openCard.playerId, state.openCard.transferDate);
 });
 
+// Pre-fill the search box from a ?q= link (e.g. a club report card's "View
+// every transfer involving X" link on /clubs.html) so landing here already
+// shows that search's results, not the unfiltered full table.
+const urlQuery = new URLSearchParams(location.search).get("q");
+if (urlQuery) document.getElementById("search-input").value = urlQuery;
+
 loadFilters();
 loadTable();

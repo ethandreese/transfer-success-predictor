@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import unicodedata
 
 import joblib
@@ -90,6 +91,224 @@ def league_ga_baseline(competition_id, position):
         (competition_id, position),
         LEAGUE_POSITION_BASELINE.get(("_default", position), 0.3),
     )
+
+
+MIN_CLUB_TRANSFERS = 5
+MIN_CLUB_RESALES = 3
+
+
+CLUB_NAME_STRIP_TOKENS = {"fc", "cf", "sc", "ac", "afc", "club", "de", "football", "vfl", "vfb", "tsv", "sv", "ssv", "us"}
+
+# Nickname/official-name pairs that share no common token after
+# CLUB_NAME_STRIP_TOKENS stripping, so build_club_name_aliases' mechanical
+# pass can't catch them on its own ("Man City" and "Manchester City" have
+# no word in common at all). Each group here was individually verified
+# against the actual data before being added - not assumed from football
+# knowledge alone - by checking that every raw-name variant in the group
+# shares the same domestic_competition_id (both directions) and a
+# plausible, non-contradictory transfer_date range; see the PR/commit this
+# shipped in for the full per-group check. That check also caught a genuine
+# false lead: "Sporting" alone looks ambiguous (Sporting CP, Sporting
+# Gijón, and Royal Charleroi Sporting Club are all real clubs nicknamed
+# "Sporting"), but every single "Sporting" row in this dataset carries
+# league PO1 - the same league as "Sporting CP" and neither of the other
+# two - so it's included below, unlike a name that actually did straddle
+# more than one plausible club (none found in this pass, but the check is
+# what makes the inclusion safe, not the resemblance).
+#
+# Deliberately not exhaustive - there are ~700 club names in this dataset
+# and this covers the ones spot-checked so far (see README's Known
+# limitations for what's still open, e.g. any second-division or
+# less-followed club whose nickname/official-name split was never looked
+# at).
+CLUB_NICKNAME_GROUPS = [
+    {"Man City", "Manchester City"},
+    {"Man Utd", "Manchester United"},
+    {"PSG", "Paris SG", "Paris Saint-Germain"},
+    {"Bor. Dortmund", "Borussia Dortmund", "Dortmund"},
+    {"Tottenham", "Tottenham Hotspur"},
+    {"Newcastle", "Newcastle United"},
+    {"West Ham", "West Ham United"},
+    {"West Brom", "West Bromwich Albion"},
+    {"Brighton", "Brighton & Hove Albion"},
+    {"Leeds", "Leeds United"},
+    {"Leicester", "Leicester City"},
+    {"AS Monaco", "Monaco"},
+    {"Lyon", "Olympique Lyon"},
+    {"Marseille", "Olympique Marseille"},
+    {"LOSC Lille", "Lille"},
+    {"Nice", "OGC Nice"},
+    {"Real Betis", "Real Betis Balompié"},
+    {"Athletic Bilbao", "Athletic Club"},
+    {"Ajax", "Ajax Amsterdam"},
+    {"Feyenoord", "Feyenoord Rotterdam"},
+    {"PSV", "PSV Eindhoven"},
+    {"Benfica", "SL Benfica"},
+    {"Espanyol", "RCD Espanyol Barcelona"},
+    {"Hamburg", "Hamburger SV"},
+    {"Zenit S-Pb", "AO FK Zenit Sankt-Peterburg"},
+    {"Shakhtar D.", "FC Shakhtar Donetsk"},
+    {"Sporting", "Sporting CP"},
+    {"Inter", "Inter Milan"},
+]
+CLUB_NICKNAME_KEYS = {name: f"nickname:{i}" for i, group in enumerate(CLUB_NICKNAME_GROUPS) for name in group}
+
+
+def build_club_name_aliases(df):
+    """
+    Map every to_club_name/from_club_name spelling that's genuinely the
+    same real club under a different legal-entity marker, accent encoding
+    ("FC Barcelona"/"Barcelona", "Fenerbahçe"/"Fenerbahce"), or verified
+    nickname (CLUB_NICKNAME_GROUPS, "Man City"/"Manchester City") to one
+    canonical spelling (whichever variant has the most transfer mentions),
+    for build_club_report_cards to group by - without this,
+    transfers_processed.csv's raw Transfermarkt names silently split a club
+    like Chelsea or Tottenham across two or more report-card rows, each
+    with only part of its real transfer history.
+
+    The mechanical part (CLUB_NAME_STRIP_TOKENS) is narrow on purpose:
+    strips only a fixed set of generic club-entity tokens plus a leading
+    "1.FC " prefix, and merges two names only when the *remainder* is
+    identical - safe because two *different* real clubs essentially never
+    collide once a generic token like "FC" is removed. One real near-miss
+    found doing that check: "SC Dnipro-1" and "Dnipro" (the historical
+    "Dnipro Dnipropetrovsk" club, dissolved 2020) look like spelling
+    variants but are legally distinct clubs - excluded by leaving the "-1"
+    digit as its own token rather than stripping bare "1" generically.
+
+    CLUB_NICKNAME_GROUPS covers the nickname/official-name pairs that share
+    no token at all and so can't be caught mechanically - each entry there
+    was individually verified, not guessed from football knowledge alone
+    (see that constant's own comment). Still not exhaustive across all
+    ~700 club names here - see README's Known limitations.
+    """
+    def normalize(name):
+        if name in CLUB_NICKNAME_KEYS:
+            return CLUB_NICKNAME_KEYS[name]
+        key = fold_accents(name)
+        key = re.sub(r"^1\.?\s*fc\s+", "", key)
+        key = re.sub(r"[^a-z0-9 ]", " ", key)
+        return " ".join(w for w in key.split() if w not in CLUB_NAME_STRIP_TOKENS)
+
+    counts = pd.concat([df["to_club_name"], df["from_club_name"]]).value_counts()
+    groups = {}
+    for name in counts.index:
+        groups.setdefault(normalize(name), []).append(name)
+
+    aliases = {}
+    for variants in groups.values():
+        if len(variants) < 2:
+            continue
+        canonical = max(variants, key=lambda n: counts[n])
+        for variant in variants:
+            aliases[variant] = canonical
+    return aliases
+
+
+def build_club_report_cards(df):
+    """
+    One row per club name that appears as a buyer and/or seller among
+    permanent transfers, aggregating both sides independently - a club's
+    incoming and outgoing counts are usually very different, so each side
+    gets its own sample size rather than one blended number. Club identity
+    here is purely the from_club_name/to_club_name *string*:
+    transfers_processed.csv has no club_id column at all, and its raw
+    Transfermarkt names ("Man City") don't reliably match clubs_lookup.csv's
+    own naming ("Manchester City") - a real, unresolved gap between the two
+    files - so this deliberately never joins clubs_lookup.csv, rather than
+    risk manufacturing false matches between two differently-spelled clubs.
+
+    Resale profit (next_transfer_fee - transfer_fee, see build_dataset.py) is
+    computed once per row for its *to_club_name* - the buyer, since
+    next_transfer_fee is what a third club later paid *that* buyer for the
+    same player (df.groupby("player_id")["transfer_fee"].shift(-1)), not
+    anything about the row's from_club_name/seller. So both "recruitment"
+    stats (avg_incoming_score, total_spent) and "buy-develop-resell" stats
+    (resales_count, avg_resale_profit_pct) come from the same to_club_name
+    group here - grouping resale by from_club_name instead (an earlier,
+    wrong version of this function) attributed a club's *buyer's* eventual
+    resale to the selling club, e.g. crediting Manchester United's later
+    resale of a player to whichever club sold that player to United
+    originally.
+
+    The from_club_name side instead captures a different, genuinely
+    seller-side signal: how departing players went on to perform at their
+    *next* club (avg_departure_score) - a development/retention read (are
+    the players we let go thriving elsewhere?), not a financial one.
+
+    Precomputed once at startup into club_report_cards_df below; the
+    /api/clubs/leaderboard endpoint only filters/sorts/paginates it.
+    """
+    def transfer_highlight(g, best):
+        """The best (best=True) or worst transfer in this group, by success_score."""
+        r = g.loc[g["success_score"].idxmax() if best else g["success_score"].idxmin()]
+        return {"name": r["name"], "success_score": float(r["success_score"]), "transfer_date": str(r["transfer_date"])[:10]}
+
+    def flip_highlight(resold, best):
+        """The most (best=True) or least profitable buy-then-resell in this already-resold-only group."""
+        profit = resold["next_transfer_fee"] - resold["transfer_fee"].fillna(0)
+        r = resold.loc[profit.idxmax() if best else profit.idxmin()]
+        return {
+            "name": r["name"], "bought_from": r["from_club_name"],
+            "fee_paid": float(r["transfer_fee"]) if pd.notna(r["transfer_fee"]) else 0.0,
+            "fee_received": float(r["next_transfer_fee"]),
+            "transfer_date": str(r["transfer_date"])[:10],
+        }
+
+    rows = {}
+    for club, g in df.groupby("to_club_name"):
+        mode = g["to_domestic_competition_id"].mode()
+        resold = g[g["has_resale_data"]]
+        rows[club] = {
+            "club_name": club,
+            "league_id": mode.iat[0] if not mode.empty else None,
+            "transfers_in": len(g),
+            "avg_incoming_score": float(g["success_score"].mean()),
+            "total_spent": float(g["transfer_fee"].fillna(0).sum()),
+            "best_signing": transfer_highlight(g, best=True),
+            "worst_signing": transfer_highlight(g, best=False),
+            "resales_count": len(resold),
+            "avg_resale_profit_pct": float(resold["resale_profit_pct"].mean()) if len(resold) else None,
+            "total_resale_profit": float((resold["next_transfer_fee"] - resold["transfer_fee"].fillna(0)).sum()),
+            "best_flip": flip_highlight(resold, best=True) if len(resold) else None,
+            "worst_flip": flip_highlight(resold, best=False) if len(resold) else None,
+        }
+
+    for club, g in df.groupby("from_club_name"):
+        # A club that's only ever bought, never sold (or vice versa) still
+        # needs a row with the other side's fields defaulted - setdefault
+        # rather than assuming every club showed up in the loop above.
+        row = rows.setdefault(club, {
+            "club_name": club, "league_id": None, "transfers_in": 0,
+            "avg_incoming_score": None, "total_spent": 0.0,
+            "best_signing": None, "worst_signing": None,
+            "resales_count": 0, "avg_resale_profit_pct": None,
+            "total_resale_profit": 0.0, "best_flip": None, "worst_flip": None,
+        })
+        if row["league_id"] is None:
+            mode = g["from_domestic_competition_id"].mode()
+            row["league_id"] = mode.iat[0] if not mode.empty else None
+        row["transfers_out"] = len(g)
+        row["avg_departure_score"] = float(g["success_score"].mean())
+        row["best_departure"] = transfer_highlight(g, best=True)
+        row["worst_departure"] = transfer_highlight(g, best=False)
+
+    for row in rows.values():
+        row.setdefault("transfers_out", 0)
+        row.setdefault("avg_departure_score", None)
+        row.setdefault("best_departure", None)
+        row.setdefault("worst_departure", None)
+
+    out = pd.DataFrame(rows.values())
+    out["_name_fold"] = out["club_name"].map(fold_accents)
+    return out
+
+
+CLUB_NAME_ALIASES = build_club_name_aliases(transfers_df)
+club_report_cards_df = build_club_report_cards(transfers_df.assign(
+    to_club_name=transfers_df["to_club_name"].map(lambda n: CLUB_NAME_ALIASES.get(n, n)),
+    from_club_name=transfers_df["from_club_name"].map(lambda n: CLUB_NAME_ALIASES.get(n, n)),
+))
 
 
 NUMERIC_FEATURES = metadata["numeric_features"]
@@ -1341,6 +1560,90 @@ def search_clubs(q: str, limit: int = 10):
     mask = clubs_df["_name_fold"].str.contains(fold_accents(q), na=False, regex=False)
     rows = clubs_df[mask].head(limit).drop(columns=["_name_fold"])
     return rows.fillna("").to_dict(orient="records")
+
+
+# Each sort field's own (minimum-sample column, threshold) - an average
+# (avg_incoming_score, avg_resale_profit_pct) is misleading from a handful
+# of transfers, so ranking by one of those two filters out clubs below the
+# threshold entirely rather than showing a noisy number. A raw total
+# (total_spent, transfers_in/out) has no such problem - one real transfer is
+# one real data point, not a noisy average - so those get no filter.
+CLUB_SORT_FIELDS = {
+    "avg_incoming_score": ("transfers_in", MIN_CLUB_TRANSFERS),
+    "avg_resale_profit_pct": ("resales_count", MIN_CLUB_RESALES),
+    "avg_departure_score": ("transfers_out", MIN_CLUB_TRANSFERS),
+    "total_spent": (None, 0),
+    "total_resale_profit": (None, 0),
+    "transfers_in": (None, 0),
+    "transfers_out": (None, 0),
+}
+
+
+@app.get("/api/clubs/leaderboard")
+def clubs_leaderboard(
+    league: str | None = None,
+    q: str | None = None,
+    sort: str = "avg_incoming_score",
+    order: str = "desc",
+    limit: int = 25,
+    offset: int = 0,
+):
+    """
+    Paginated, filterable, sortable ranking of every club that's bought or
+    sold at least one scored permanent transfer (see
+    build_club_report_cards) - a club's "recruitment report card". Each row
+    already carries its own best/worst signing and best/worst resale, so the
+    frontend's click-to-view-card modal needs no second request.
+    """
+    df = club_report_cards_df
+    if league:
+        df = df[df["league_id"] == league]
+    if q:
+        df = df[df["_name_fold"].str.contains(fold_accents(q), na=False)]
+
+    sort_field = sort if sort in CLUB_SORT_FIELDS else "avg_incoming_score"
+    min_field, min_count = CLUB_SORT_FIELDS[sort_field]
+    if min_field:
+        df = df[df[min_field] >= min_count]
+    df = df.dropna(subset=[sort_field])
+    df = df.sort_values(sort_field, ascending=(order == "asc"))
+
+    total = len(df)
+    limit = max(1, min(limit, 100))
+    page = df.iloc[offset:offset + limit]
+
+    results = []
+    for _, r in page.iterrows():
+        results.append({
+            "club_name": r["club_name"],
+            "league": league_display_name(r["league_id"]),
+            "transfers_in": int(r["transfers_in"]),
+            "avg_incoming_score": None if pd.isna(r["avg_incoming_score"]) else round(float(r["avg_incoming_score"]), 1),
+            "total_spent": float(r["total_spent"]),
+            "best_signing": r["best_signing"],
+            "worst_signing": r["worst_signing"],
+            "resales_count": int(r["resales_count"]),
+            "avg_resale_profit_pct": None if pd.isna(r["avg_resale_profit_pct"]) else round(float(r["avg_resale_profit_pct"]), 1),
+            "total_resale_profit": float(r["total_resale_profit"]),
+            "best_flip": r["best_flip"],
+            "worst_flip": r["worst_flip"],
+            "transfers_out": int(r["transfers_out"]),
+            "avg_departure_score": None if pd.isna(r["avg_departure_score"]) else round(float(r["avg_departure_score"]), 1),
+            "best_departure": r["best_departure"],
+            "worst_departure": r["worst_departure"],
+        })
+    return {"total": total, "limit": limit, "offset": offset, "results": results}
+
+
+@app.get("/api/clubs/leaderboard/filters")
+def clubs_leaderboard_filters():
+    """List the distinct primary leagues present in club_report_cards_df, for the clubs page's league filter dropdown."""
+    league_ids = club_report_cards_df["league_id"].dropna().unique().tolist()
+    leagues = sorted(
+        ({"id": lid, "name": LEAGUE_NAMES.get(lid, lid)} for lid in league_ids),
+        key=lambda x: x["name"],
+    )
+    return {"leagues": leagues}
 
 
 @app.get("/api/clubs/{club_id}")
