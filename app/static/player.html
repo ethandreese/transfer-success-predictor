@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Player Timelines - Transfer Success Predictor</title>
+  <meta name="description" content="Every player's career charted as a timeline of scored transfers and loans, one dot per move." />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Player Timelines - Transfer Success Predictor" />
+  <meta property="og:description" content="Every player's career charted as a timeline of scored transfers and loans, one dot per move." />
+  <meta property="og:url" content="https://transfer-success-predictor.onrender.com/player.html" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Player Timelines - Transfer Success Predictor" />
+  <meta name="twitter:description" content="Every player's career charted as a timeline of scored transfers and loans." />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="stylesheet" href="/style.css?v=33" />
+</head>
+<body>
+  <header>
+    <h1>⚽ Transfer Success Predictor</h1>
+    <p>Search a player to see their whole scored career as a timeline: one dot per transfer or loan.</p>
+    <nav class="topnav">
+      <a href="/">Predict</a>
+      <a href="/browse.html">Browse all transfers</a>
+      <a href="/loans.html">Browse loans</a>
+      <a href="/compare.html">Compare two transfers</a>
+      <a href="/surprises.html">Biggest surprises</a>
+      <a href="/clubs.html">Club report cards</a>
+      <a href="/player.html" class="active">Player timelines</a>
+      <a href="/about.html">About</a>
+    </nav>
+  </header>
+
+  <main class="wide">
+    <section class="card">
+      <div class="field" style="max-width: 420px;">
+        <label for="player-search">Player</label>
+        <input id="player-search" type="text" placeholder="Search a player, e.g. Joselu" autocomplete="off" />
+        <div class="autocomplete-list" id="player-list"></div>
+      </div>
+    </section>
+
+    <section class="card" id="timeline-section" hidden>
+      <div id="player-header"></div>
+      <div class="timeline-chart-wrap" id="timeline-chart-wrap"></div>
+      <div class="timeline-legend">
+        <span><span class="legend-dot legend-dot-permanent"></span> Permanent transfer</span>
+        <span><span class="legend-dot legend-dot-loan"></span> Loan</span>
+        <span class="legend-note">Colored by score - green high, red low</span>
+      </div>
+
+      <div class="table-wrap">
+        <table class="transfers-table" id="stops-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Route</th>
+              <th>Type</th>
+              <th>Age</th>
+              <th>Score</th>
+            </tr>
+          </thead>
+          <tbody id="stops-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card" id="empty-state">
+      <p class="surprises-intro">Search for a player above to see their career timeline - every scored transfer and loan spell, in order.</p>
+    </section>
+  </main>
+
+  <div class="modal-backdrop" id="card-modal-backdrop">
+    <div class="modal-box" role="dialog" aria-modal="true" aria-label="Transfer details">
+      <button class="modal-close" id="card-modal-close" aria-label="Close">&times;</button>
+      <div id="card-modal-content">Loading...</div>
+    </div>
+  </div>
+
+  <script src="/settings.js?v=33"></script>
+  <script src="/player.js?v=33"></script>
+</body>
+</html>

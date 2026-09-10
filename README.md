@@ -22,7 +22,7 @@ scripts/train_model.py     # trains the deployed model + comparable-transfers in
 scripts/compute_prediction_surprises.py  # 5-fold held-out predictions for every transfer -> data/prediction_surprises.csv (the Biggest Surprises page)
 scripts/build_lookups.py   # small player/club search tables for the web app
 app/main.py                 # FastAPI backend (serves the API + the static frontend)
-app/static/                 # vanilla HTML/CSS/JS frontend (index/browse/loans/compare/surprises/clubs)
+app/static/                 # vanilla HTML/CSS/JS frontend (index/browse/loans/compare/surprises/clubs/player)
 data/                        # committed: small derived CSVs only (~8MB total)
 tests/                       # pytest suite - runs against committed artifacts only
 ```
@@ -124,8 +124,10 @@ transfer's `success_score` matches its stored sub-components recomputed
 through `score_weights.json`, no nulls/out-of-range values) and
 `tests/test_app.py` (every API endpoint, including accent-insensitive
 search, the compare/predict flows, `/api/surprises`' sort directions and
-held-out-only filtering, and `/api/clubs/leaderboard`'s minimum-sample
-thresholds and name-alias merging).
+held-out-only filtering, `/api/clubs/leaderboard`'s minimum-sample
+thresholds and name-alias merging, and `/api/players/{id}/career`'s
+transfer+loan merge and graceful handling of a player missing from
+`players_lookup.csv`).
 
 ## How it works
 
@@ -281,6 +283,15 @@ not an on-pitch one — the note says so explicitly).
   before a rate-based ranking includes it. Click a club for its full report
   card (best/worst signing, best/worst flip, best/worst departure) and a
   link to its complete transfer history on Browse.
+- **`/player.html`** — search a player to see their whole scored career as
+  a timeline: one point per permanent transfer or loan, positioned by its
+  real date (not just evenly spaced) and colored by score, connected in
+  chronological order. A loan renders as a hollow ring instead of a solid
+  dot - same color scale, visually distinct without a second legend. Click
+  any point (or the table row below it) for that stop's full breakdown
+  card. Search covers every player with a scored transfer or loan, not
+  just the smaller set the Predict page's autocomplete can see (see Known
+  limitations).
 
 ## Known limitations
 
@@ -364,6 +375,16 @@ not an on-pitch one — the note says so explicitly).
   club names here - a club whose nickname/official-name split was never
   spot-checked still shows up as two or more separate identities everywhere
   it appears, each missing part of the real history.
+- **`players_lookup.csv` covers far fewer players than have real scored
+  history** - it's filtered to a market-value threshold for the Predict
+  form's autofill (see `build_lookups.py`), which excludes ~59% of every
+  player with a scored transfer or loan (checked directly), mostly
+  retired or lower-value players. `/player.html`'s search
+  (`/api/players/career-search`) works around this by searching
+  `transfers_df`/`loans_df` directly instead, but a career page for one of
+  those players still can't show a position or current club in its header
+  - both come from `players_lookup.csv` and are simply absent for players
+  missing from it.
 - **League-adjustment feeds the historical label, not the predict
   model's own features** — tested directly as additional model inputs
   (league baselines, a league-adjusted performance number) and it didn't
@@ -438,6 +459,16 @@ the git history.
   symmetric playing-time rule that doesn't apply to loans).
 
 **Frontend**
+- Added Player Timelines (`/player.html` + `/api/players/{id}/career` +
+  `/api/players/career-search`): search any player to see their whole
+  scored career as one chronological, real-date-scaled chart - permanent
+  transfers as solid dots, loans as hollow rings, both colored by score.
+  Added a dedicated search endpoint rather than reusing the Predict form's
+  player autocomplete, since that one is filtered to `players_lookup.csv`'s
+  market-value threshold and would have silently hidden ~59% of players
+  with real scored history (checked directly) - mostly retired or
+  lower-value players, exactly the kind of long, uneven career this page
+  exists to show.
 - Added Club Report Cards (`/clubs.html` + `/api/clubs/leaderboard`): every
   club ranked as a recruiter (incoming transfers, spend, buy-develop-resell
   profit, how departing players did elsewhere). Found and fixed a real bug

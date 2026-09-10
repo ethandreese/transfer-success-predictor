@@ -1613,6 +1613,89 @@ def search_players(q: str, limit: int = 10):
     return records
 
 
+@app.get("/api/players/career-search")
+def search_players_for_career(q: str, limit: int = 10):
+    """
+    Accent-insensitive player-name search over every player with at least
+    one scored permanent transfer or loan (the union of transfers_df and
+    loans_df), for the Player Timelines page's search box. Deliberately
+    broader than /api/players/search: that one is filtered to
+    players_lookup.csv, which only covers players above a market-value
+    threshold (see build_lookups.py) - fine for the Predict form's
+    autofill, but it would silently hide most retired or lower-value
+    players from a page whose entire point is showing real career history
+    (~59% of players with a scored transfer/loan aren't in that lookup at
+    all - checked directly).
+    """
+    if len(q) < 2:
+        return []
+    limit = max(1, min(limit, 50))
+    q_fold = fold_accents(q)
+    combined = pd.concat([
+        transfers_df[["player_id", "name", "_name_fold"]],
+        loans_df[["player_id", "name", "_name_fold"]],
+    ])
+    matches = combined[combined["_name_fold"].str.contains(q_fold, na=False)]
+    matches = matches.drop_duplicates(subset="player_id").head(limit)
+    return matches[["player_id", "name"]].to_dict(orient="records")
+
+
+@app.get("/api/players/{player_id}/career")
+def player_career(player_id: int):
+    """
+    Every scored permanent transfer and loan spell for one player, in
+    chronological order - the data behind the Player Timelines page's
+    career chart. Combines transfers_df and loans_df (tagging each stop
+    with its own "type") since many real careers include both, e.g. a
+    young player loaned out several times before a permanent breakthrough
+    move - score is normalized to one shared "score" field either way
+    (success_score / loan_success_score) so the frontend chart doesn't
+    need to know which table a given stop came from, only how to route a
+    click on it to the right detail endpoint.
+    """
+    permanent = transfers_df[transfers_df["player_id"] == player_id]
+    loan_rows = loans_df[loans_df["player_id"] == player_id]
+    if permanent.empty and loan_rows.empty:
+        raise HTTPException(status_code=404, detail="no scored transfers or loans found for this player")
+
+    stops = []
+    for _, r in permanent.iterrows():
+        stops.append({
+            "type": "permanent",
+            "transfer_date": str(r["transfer_date"])[:10],
+            "from_club": r["from_club_name"],
+            "to_club": r["to_club_name"],
+            "age_at_transfer": round(float(r["age_at_transfer"]), 1),
+            "score": float(r["success_score"]),
+        })
+    for _, r in loan_rows.iterrows():
+        stops.append({
+            "type": "loan",
+            "transfer_date": str(r["transfer_date"])[:10],
+            "from_club": r["from_club_name"],
+            "to_club": r["to_club_name"],
+            "age_at_transfer": round(float(r["age_at_transfer"]), 1),
+            "score": float(r["loan_success_score"]),
+        })
+    stops.sort(key=lambda s: s["transfer_date"])
+
+    name = (permanent["name"] if not permanent.empty else loan_rows["name"]).iloc[0]
+    player_row = players_df[players_df["player_id"] == player_id]
+    # Most players with real scored history are missing from players_lookup.csv
+    # (see search_players_for_career) - position/current_club are a nice-to-have
+    # header, not required, so this degrades to just the name and timeline.
+    position = str(player_row["position"].iloc[0]) if not player_row.empty and pd.notna(player_row["position"].iloc[0]) else None
+    current_club = str(player_row["current_club_name"].iloc[0]) if not player_row.empty and pd.notna(player_row["current_club_name"].iloc[0]) else None
+
+    return {
+        "player_id": player_id,
+        "name": name,
+        "position": position,
+        "current_club": current_club,
+        "stops": stops,
+    }
+
+
 @app.get("/api/clubs/search")
 def search_clubs(q: str, limit: int = 10):
     """Accent-insensitive substring search over clubs_lookup.csv, for the destination-club autocomplete."""

@@ -485,6 +485,38 @@ button.predict-btn:disabled {
 #clubs-table th:nth-child(7), #clubs-table td:nth-child(7) { width: 7%; }
 #clubs-table th:nth-child(8), #clubs-table td:nth-child(8) { width: 13%; }
 
+#stops-table { min-width: 600px; }
+#stops-table th:nth-child(1), #stops-table td:nth-child(1) { width: 15%; }
+#stops-table th:nth-child(2), #stops-table td:nth-child(2) { width: 45%; }
+#stops-table th:nth-child(3), #stops-table td:nth-child(3) { width: 15%; }
+#stops-table th:nth-child(4), #stops-table td:nth-child(4) { width: 10%; }
+#stops-table th:nth-child(5), #stops-table td:nth-child(5) { width: 15%; }
+
+.timeline-chart-wrap { margin: 1rem 0 0.5rem; }
+
+.timeline-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.2rem;
+  align-items: center;
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin: 0 0 1rem;
+}
+
+.legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 0.35rem;
+  vertical-align: middle;
+}
+.legend-dot-permanent { background: var(--accent); }
+.legend-dot-loan { background: var(--panel); border: 2px solid var(--accent); box-sizing: border-box; }
+
+.legend-note { font-style: italic; }
+
 .transfers-table th {
   text-align: left;
   color: var(--muted);

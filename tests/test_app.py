@@ -745,3 +745,66 @@ def test_clubs_leaderboard_filters_endpoint():
     data = res.json()
     assert len(data["leagues"]) > 0
     assert all("id" in l and "name" in l for l in data["leagues"])
+
+
+def test_career_search_finds_players_missing_from_the_predict_autocomplete():
+    """
+    /api/players/career-search must cover players below players_lookup.csv's
+    market-value threshold (see search_players_for_career) - a real gap
+    that would otherwise hide most of a player's career history from this
+    page specifically. "Mert Yılmaz" is a real, verified case: has scored
+    transfer/loan history but is entirely missing from players_lookup.csv,
+    so /api/players/search never finds him at all.
+    """
+    res = client.get("/api/players/career-search", params={"q": "Mert Yılmaz"})
+    assert res.status_code == 200
+    names = [p["name"] for p in res.json()]
+    assert "Mert Yılmaz" in names
+
+    narrow_res = client.get("/api/players/search", params={"q": "Mert Yılmaz"})
+    assert not any(p["name"] == "Mert Yılmaz" for p in narrow_res.json())
+
+
+def test_career_search_is_accent_insensitive():
+    """The search box should match accented names via the plain-ASCII query too."""
+    res = client.get("/api/players/career-search", params={"q": "Dembele"})
+    names = [p["name"] for p in res.json()]
+    assert any("Dembélé" in n for n in names)
+
+
+def test_career_search_deduplicates_by_player():
+    """A player with several transfers/loans must appear once in search results, not once per row."""
+    res = client.get("/api/players/career-search", params={"q": "Joselu"})
+    player_ids = [p["player_id"] for p in res.json()]
+    assert len(player_ids) == len(set(player_ids))
+
+
+def test_player_career_combines_transfers_and_loans_chronologically():
+    """A player with both permanent transfers and loans should get one merged, date-sorted timeline, each stop tagged with which table it came from."""
+    res = client.get("/api/players/81999/career")  # Joselu
+    assert res.status_code == 200
+    data = res.json()
+    assert data["name"] == "Joselu"
+    stops = data["stops"]
+    assert len(stops) >= 5
+    assert {"permanent", "loan"} <= {s["type"] for s in stops}
+    dates = [s["transfer_date"] for s in stops]
+    assert dates == sorted(dates)
+    for s in stops:
+        assert 0 <= s["score"] <= 100
+
+
+def test_player_career_404_for_unknown_player():
+    """A player_id with no scored transfer or loan at all should 404, not return an empty timeline."""
+    res = client.get("/api/players/999999999/career")
+    assert res.status_code == 404
+
+
+def test_player_career_degrades_gracefully_without_players_lookup_entry():
+    """A player missing from players_lookup.csv entirely (see search_players_for_career) should still return a full timeline, just with position/current_club as null instead of a 500."""
+    res = client.get("/api/players/393217/career")  # Mert Yılmaz - confirmed missing from players_lookup.csv
+    assert res.status_code == 200
+    data = res.json()
+    assert len(data["stops"]) > 0
+    assert data["position"] is None
+    assert data["current_club"] is None
