@@ -13,21 +13,19 @@
   <meta name="twitter:title" content="Predict a Transfer - Transfer Success Predictor" />
   <meta name="twitter:description" content="Predict how a football transfer is likely to go, trained on ~7,800 real historical transfers." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="stylesheet" href="/style.css?v=35" />
+  <link rel="stylesheet" href="/style.css?v=36" />
 </head>
 <body>
   <header>
     <h1>⚽ Transfer Success Predictor</h1>
     <p>
-      Predicts how a football transfer is likely to go, trained on ~7,800 real permanent
-      transfers (2013&ndash;2026, nearly the full scored dataset - a small remainder lacks
-      a required pre-transfer stat, e.g. an undisclosed fee) using pre-transfer
-      performance, age, fee, and destination club strength. Success
-      score blends performance level and change, market-value growth, playing time, and
-      value for money, measured over the player's <em>entire</em> tenure at the new club,
-      not just year one. Loan spells are scored separately (see
-      <a href="/loans.html">Browse loans</a>) since they aren't a permanent-transfer
-      decision.
+      Search a real player and a destination club to see how a hypothetical transfer might
+      score. Trained on ~7,800 real permanent transfers (2013&ndash;2026), the model only
+      ever sees information available <em>before</em> a move happens - age, recent form,
+      fee, and the two clubs involved - the same constraint a real prediction has to live
+      with. Loan moves are judged differently and scored on their own formula (see
+      <a href="/loans.html">Browse loans</a>); see <a href="/about.html">About</a> for what
+      the 0&ndash;100 score itself measures.
     </p>
     <nav class="topnav">
       <a href="/">Home</a>
@@ -112,7 +110,7 @@
     </section>
   </main>
 
-  <script src="/settings.js?v=35"></script>
-  <script src="/app.js?v=35"></script>
+  <script src="/settings.js?v=36"></script>
+  <script src="/app.js?v=36"></script>
 </body>
 </html>

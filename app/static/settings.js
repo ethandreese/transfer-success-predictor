@@ -247,35 +247,57 @@ function injectSettingsUI() {
 
 /**
  * Wire every grouped nav item (.nav-dropdown, e.g. "Predict"/"Browse"/
- * "Insights" in the topnav) to open/close on click rather than hover -
- * hover-only menus don't work on touch, and every other popover on this
- * site (Settings, the player/club autocompletes) is already click-driven,
- * so this matches. Only one menu open at a time; clicking outside any
- * dropdown or pressing Escape closes whichever is open. Call once, after
- * the DOM is ready.
+ * "Insights" in the topnav) to open on hover *and* on click - hover for a
+ * mouse user (the expected way a grouped nav item behaves), click as the
+ * fallback that also works for touch and for a keyboard user tabbing to
+ * the toggle and pressing Enter/Space (a native <button> already turns
+ * that into a "click"). Only one menu open at a time; leaving the
+ * dropdown, clicking outside it, or pressing Escape closes whichever is
+ * open.
+ *
+ * Closing on mouseleave is delayed (CLOSE_DELAY_MS), not immediate: the
+ * menu sits visually just below the toggle (see .nav-dropdown-menu's
+ * margin-top), but that gap isn't part of either element's own hit-test
+ * area - moving the mouse from the toggle straight down into the menu
+ * passes over that dead zone, which without the delay fires mouseleave
+ * (closing the menu) before mouseenter on the menu ever has a chance to
+ * fire. The delay gives normal mouse movement enough time to land back
+ * inside the dropdown before the close actually happens; entering the
+ * dropdown again (or a click) cancels the pending close.
  */
 function initNavDropdowns() {
+  const CLOSE_DELAY_MS = 150;
   const dropdowns = [...document.querySelectorAll(".nav-dropdown")].map(el => ({
-    toggle: el.querySelector(".nav-dropdown-toggle"),
-    menu: el.querySelector(".nav-dropdown-menu"),
+    el, toggle: el.querySelector(".nav-dropdown-toggle"), menu: el.querySelector(".nav-dropdown-menu"),
   }));
+  let closeTimer = null;
 
   function closeAll() {
+    clearTimeout(closeTimer);
     dropdowns.forEach(({ toggle, menu }) => {
       menu.classList.remove("open");
       toggle.setAttribute("aria-expanded", "false");
     });
   }
 
-  dropdowns.forEach(({ toggle, menu }) => {
-    toggle.addEventListener("click", (e) => {
+  function openOnly(target) {
+    clearTimeout(closeTimer);
+    dropdowns.forEach(d => {
+      const isTarget = d === target;
+      d.menu.classList.toggle("open", isTarget);
+      d.toggle.setAttribute("aria-expanded", String(isTarget));
+    });
+  }
+
+  dropdowns.forEach(d => {
+    d.el.addEventListener("mouseenter", () => openOnly(d));
+    d.el.addEventListener("mouseleave", () => {
+      closeTimer = setTimeout(closeAll, CLOSE_DELAY_MS);
+    });
+    d.toggle.addEventListener("click", (e) => {
       e.stopPropagation();
-      const isOpen = menu.classList.contains("open");
-      closeAll();
-      if (!isOpen) {
-        menu.classList.add("open");
-        toggle.setAttribute("aria-expanded", "true");
-      }
+      const isOpen = d.menu.classList.contains("open");
+      isOpen ? closeAll() : openOnly(d);
     });
   });
 
