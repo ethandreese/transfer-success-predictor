@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>League Trends - Transfer Success Predictor</title>
+  <meta name="description" content="Every major league's fees and transfer success over time - are fees inflating faster than performance?" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="League Trends - Transfer Success Predictor" />
+  <meta property="og:description" content="Every major league's fees and transfer success over time - are fees inflating faster than performance?" />
+  <meta property="og:url" content="https://transfer-success-predictor.onrender.com/leagues.html" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="League Trends - Transfer Success Predictor" />
+  <meta name="twitter:description" content="Every major league's fees and transfer success over time." />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="stylesheet" href="/style.css?v=34" />
+</head>
+<body>
+  <header>
+    <h1>⚽ Transfer Success Predictor</h1>
+    <p>Are transfer fees inflating faster than on-pitch success? League by league, early years vs. recent years.</p>
+    <nav class="topnav">
+      <a href="/">Predict</a>
+      <a href="/browse.html">Browse all transfers</a>
+      <a href="/loans.html">Browse loans</a>
+      <a href="/compare.html">Compare two transfers</a>
+      <a href="/surprises.html">Biggest surprises</a>
+      <a href="/clubs.html">Club report cards</a>
+      <a href="/player.html">Player timelines</a>
+      <a href="/leagues.html" class="active">League trends</a>
+      <a href="/about.html">About</a>
+    </nav>
+  </header>
+
+  <main class="wide">
+    <section class="card">
+      <p class="surprises-intro">
+        Every league with at least 15 scored permanent transfers, comparing its earliest 3
+        complete years against its most recent 3 complete years (the current, still-in-progress
+        year is excluded from every average - it runs far below a normal season's transfer count).
+        A league needs at least 6 complete years of history before a trend can be shown at all;
+        any single year shown in the chart still needs at least 5 transfers of its own to avoid a
+        noisy one-transfer average.
+      </p>
+    </section>
+
+    <section class="card">
+      <div class="browse-controls">
+        <div class="field">
+          <label for="sort-select">Rank by</label>
+          <select id="sort-select">
+            <option value="transfers:desc">Most transfers</option>
+            <option value="fee_growth_pct:desc">Biggest fee growth</option>
+            <option value="fee_growth_pct:asc">Biggest fee decline</option>
+            <option value="score_change:desc">Biggest score improvement</option>
+            <option value="score_change:asc">Biggest score decline</option>
+            <option value="avg_score:desc">Highest avg score</option>
+            <option value="avg_fee:desc">Highest avg fee</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="transfers-table" id="leagues-table">
+          <thead>
+            <tr>
+              <th>League</th>
+              <th>Transfers</th>
+              <th>Avg score</th>
+              <th>Avg fee</th>
+              <th>Fee growth</th>
+              <th>Score change</th>
+            </tr>
+          </thead>
+          <tbody id="table-body">
+            <tr><td colspan="6">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal-backdrop" id="card-modal-backdrop">
+    <div class="modal-box" role="dialog" aria-modal="true" aria-label="League trend details">
+      <button class="modal-close" id="card-modal-close" aria-label="Close">&times;</button>
+      <div id="card-modal-content">Loading...</div>
+    </div>
+  </div>
+
+  <script src="/settings.js?v=34"></script>
+  <script src="/leagues.js?v=34"></script>
+</body>
+</html>

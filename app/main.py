@@ -362,6 +362,95 @@ def build_club_report_cards(df):
 club_report_cards_df = build_club_report_cards(transfers_df)
 
 
+MIN_LEAGUE_TRANSFERS = 15
+MIN_LEAGUE_YEAR_SAMPLE = 5
+TREND_WINDOW_YEARS = 3
+
+
+def build_league_trends(df):
+    """
+    For every destination league with at least MIN_LEAGUE_TRANSFERS
+    permanent transfers, compare its earliest TREND_WINDOW_YEARS complete
+    years against its most recent TREND_WINDOW_YEARS complete years - "is
+    spending outpacing performance" needs two real eras to compare, not
+    just one all-time average. The dataset's own most recent year is
+    always excluded from that comparison (and from the by-year chart data)
+    as an in-progress season - checked directly that it runs far below a
+    normal year's transfer count for every league (e.g. ~12 vs ~90/year
+    for the Premier League), which would otherwise show up as a sudden,
+    misleading collapse at the end of every trend line.
+
+    by_year only includes years with at least MIN_LEAGUE_YEAR_SAMPLE
+    transfers in that specific league - even a "major" league has some
+    thin early years, and a single-digit sample swings an average wildly
+    (see MIN_LEAGUE_SAMPLE in train_model.py for the same idea applied to
+    a whole-league baseline instead of one league-year).
+
+    Precomputed once at startup into league_trends_df below; the
+    /api/leagues/trends endpoint only filters/sorts it - each row already
+    carries its own by_year series, so the frontend's trend chart needs no
+    second request.
+    """
+    df = df.copy()
+    df["year"] = pd.to_datetime(df["transfer_date"]).dt.year
+    current_year = int(df["year"].max())
+
+    rows = []
+    for league_id, g in df.groupby("to_domestic_competition_id"):
+        if len(g) < MIN_LEAGUE_TRANSFERS:
+            continue
+        row = {
+            "league_id": league_id,
+            "transfers": len(g),
+            "avg_score": float(g["success_score"].mean()),
+            "avg_fee": float(g["transfer_fee"].fillna(0).mean()),
+            "early_years": None, "recent_years": None,
+            "early_avg_fee": None, "recent_avg_fee": None, "fee_growth_pct": None,
+            "early_avg_score": None, "recent_avg_score": None, "score_change": None,
+            "by_year": [],
+        }
+
+        complete = g[g["year"] < current_year]
+        years = sorted(complete["year"].unique())
+        if len(years) >= 2 * TREND_WINDOW_YEARS:
+            # Below this, there isn't enough real history for two
+            # non-overlapping eras to mean anything - the league still
+            # gets a row (basic stats above), just with no trend to show.
+            early_years, recent_years = years[:TREND_WINDOW_YEARS], years[-TREND_WINDOW_YEARS:]
+            early = complete[complete["year"].isin(early_years)]
+            recent = complete[complete["year"].isin(recent_years)]
+
+            by_year = (
+                complete.groupby("year")
+                .agg(avg_score=("success_score", "mean"), avg_fee=("transfer_fee", lambda s: s.fillna(0).mean()), count=("success_score", "size"))
+                .reset_index()
+            )
+            by_year = by_year[by_year["count"] >= MIN_LEAGUE_YEAR_SAMPLE]
+
+            early_avg_fee, recent_avg_fee = early["transfer_fee"].fillna(0).mean(), recent["transfer_fee"].fillna(0).mean()
+            early_avg_score, recent_avg_score = early["success_score"].mean(), recent["success_score"].mean()
+
+            row.update({
+                "early_years": f"{min(early_years)}–{max(early_years)}",
+                "recent_years": f"{min(recent_years)}–{max(recent_years)}",
+                "early_avg_fee": float(early_avg_fee),
+                "recent_avg_fee": float(recent_avg_fee),
+                "fee_growth_pct": float((recent_avg_fee - early_avg_fee) / early_avg_fee * 100) if early_avg_fee > 0 else None,
+                "early_avg_score": float(early_avg_score),
+                "recent_avg_score": float(recent_avg_score),
+                "score_change": float(recent_avg_score - early_avg_score),
+                "by_year": [
+                    {"year": int(r["year"]), "avg_score": float(r["avg_score"]), "avg_fee": float(r["avg_fee"]), "count": int(r["count"])}
+                    for _, r in by_year.iterrows()
+                ],
+            })
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+league_trends_df = build_league_trends(transfers_df)
+
+
 NUMERIC_FEATURES = metadata["numeric_features"]
 CATEGORICAL_FEATURES = metadata["categorical_features"]
 
@@ -1789,6 +1878,45 @@ def clubs_leaderboard_filters():
         key=lambda x: x["name"],
     )
     return {"leagues": leagues}
+
+
+LEAGUE_TREND_SORT_FIELDS = {"transfers", "avg_score", "avg_fee", "fee_growth_pct", "score_change"}
+
+
+@app.get("/api/leagues/trends")
+def leagues_trends(sort: str = "transfers", order: str = "desc"):
+    """
+    Every league with at least MIN_LEAGUE_TRANSFERS transfers (see
+    build_league_trends), sorted for the League Trends page - a couple
+    dozen leagues at most, so unlike the other leaderboards this returns
+    every row rather than paginating. Sorting by fee_growth_pct or
+    score_change drops leagues with no trend data (not enough real
+    history for the early/recent era comparison) rather than showing them
+    at an arbitrary position.
+    """
+    df = league_trends_df
+    sort_field = sort if sort in LEAGUE_TREND_SORT_FIELDS else "transfers"
+    df = df.dropna(subset=[sort_field]).sort_values(sort_field, ascending=(order == "asc"))
+
+    results = []
+    for _, r in df.iterrows():
+        results.append({
+            "league_id": r["league_id"],
+            "league": league_display_name(r["league_id"]),
+            "transfers": int(r["transfers"]),
+            "avg_score": round(float(r["avg_score"]), 1),
+            "avg_fee": float(r["avg_fee"]),
+            "early_years": r["early_years"],
+            "recent_years": r["recent_years"],
+            "early_avg_fee": r["early_avg_fee"],
+            "recent_avg_fee": r["recent_avg_fee"],
+            "fee_growth_pct": None if pd.isna(r["fee_growth_pct"]) else round(float(r["fee_growth_pct"]), 1),
+            "early_avg_score": None if pd.isna(r["early_avg_score"]) else round(float(r["early_avg_score"]), 1),
+            "recent_avg_score": None if pd.isna(r["recent_avg_score"]) else round(float(r["recent_avg_score"]), 1),
+            "score_change": None if pd.isna(r["score_change"]) else round(float(r["score_change"]), 1),
+            "by_year": r["by_year"],
+        })
+    return {"total": len(results), "results": results}
 
 
 @app.get("/api/clubs/{club_id}")

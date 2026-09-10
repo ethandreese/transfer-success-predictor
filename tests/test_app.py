@@ -3,11 +3,13 @@ End-to-end tests for the FastAPI app, using the already-committed model
 and data artifacts (app/model/*.joblib, data/*.csv) - no dependency on the
 raw Transfermarkt dataset.
 """
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import (
-    CLUB_NAME_ALIASES, app, build_feature_row, eur_m, explain_prediction, pipeline, predict_marginalized_recent_performance, PredictRequest,
+    CLUB_NAME_ALIASES, MIN_LEAGUE_TRANSFERS, app, build_feature_row, eur_m, explain_prediction, league_trends_df,
+    pipeline, predict_marginalized_recent_performance, PredictRequest,
 )
 
 client = TestClient(app)
@@ -808,3 +810,57 @@ def test_player_career_degrades_gracefully_without_players_lookup_entry():
     assert len(data["stops"]) > 0
     assert data["position"] is None
     assert data["current_club"] is None
+
+
+def test_league_trends_excludes_thin_leagues():
+    """Every league in league_trends_df must have at least MIN_LEAGUE_TRANSFERS - a league with a handful of transfers shouldn't get a report card at all, let alone a noisy year-by-year trend."""
+    assert len(league_trends_df) > 0
+    assert (league_trends_df["transfers"] >= MIN_LEAGUE_TRANSFERS).all()
+
+
+def test_league_trends_current_partial_year_excluded_from_by_year():
+    """The dataset's own most recent (still in-progress) year must never appear in a league's by_year series - it runs far below a full season's transfer count and would show up as a misleading collapse."""
+    current_year = pd.read_csv("data/transfers_processed.csv")["transfer_date"].str[:4].astype(int).max()
+    for _, row in league_trends_df.iterrows():
+        for point in row["by_year"]:
+            assert point["year"] < current_year
+
+
+def test_league_trends_early_and_recent_windows_are_real_and_disjoint():
+    """A league with trend data must compare two genuinely different, non-overlapping multi-year windows, not the same years against themselves."""
+    with_trend = league_trends_df[league_trends_df["early_years"].notna()]
+    assert len(with_trend) > 0
+    for _, row in with_trend.iterrows():
+        early_start, early_end = (int(y) for y in row["early_years"].split("–"))
+        recent_start, recent_end = (int(y) for y in row["recent_years"].split("–"))
+        assert early_end < recent_start
+
+
+def test_leagues_trends_endpoint_returns_every_qualifying_league():
+    """/api/leagues/trends has few enough rows to return all of them unpaginated."""
+    res = client.get("/api/leagues/trends")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["total"] == len(data["results"]) == len(league_trends_df)
+    for r in data["results"]:
+        assert r["transfers"] >= MIN_LEAGUE_TRANSFERS
+
+
+def test_leagues_trends_sort_by_fee_growth_drops_leagues_with_no_trend():
+    """Sorting by fee_growth_pct must never return a league whose fee_growth_pct is null (not enough history for the early/recent comparison)."""
+    res = client.get("/api/leagues/trends", params={"sort": "fee_growth_pct", "order": "desc"})
+    data = res.json()
+    assert len(data["results"]) > 0
+    values = [r["fee_growth_pct"] for r in data["results"]]
+    assert all(v is not None for v in values)
+    assert values == sorted(values, reverse=True)
+
+
+def test_leagues_trends_row_has_no_second_request_needed_fields():
+    """Every row must already carry its own by_year series so the frontend's trend-chart modal needs no second request."""
+    res = client.get("/api/leagues/trends")
+    for r in res.json()["results"]:
+        assert "by_year" in r
+        if r["fee_growth_pct"] is not None:
+            assert len(r["by_year"]) > 0
+            assert all({"year", "avg_score", "avg_fee", "count"} <= set(point.keys()) for point in r["by_year"])

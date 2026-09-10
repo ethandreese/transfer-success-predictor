@@ -492,6 +492,14 @@ button.predict-btn:disabled {
 #stops-table th:nth-child(4), #stops-table td:nth-child(4) { width: 10%; }
 #stops-table th:nth-child(5), #stops-table td:nth-child(5) { width: 15%; }
 
+#leagues-table { min-width: 700px; }
+#leagues-table th:nth-child(1), #leagues-table td:nth-child(1) { width: 30%; }
+#leagues-table th:nth-child(2), #leagues-table td:nth-child(2) { width: 14%; }
+#leagues-table th:nth-child(3), #leagues-table td:nth-child(3) { width: 14%; }
+#leagues-table th:nth-child(4), #leagues-table td:nth-child(4) { width: 14%; }
+#leagues-table th:nth-child(5), #leagues-table td:nth-child(5) { width: 14%; }
+#leagues-table th:nth-child(6), #leagues-table td:nth-child(6) { width: 14%; }
+
 .timeline-chart-wrap { margin: 1rem 0 0.5rem; }
 
 .timeline-legend {

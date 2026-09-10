@@ -22,7 +22,7 @@ scripts/train_model.py     # trains the deployed model + comparable-transfers in
 scripts/compute_prediction_surprises.py  # 5-fold held-out predictions for every transfer -> data/prediction_surprises.csv (the Biggest Surprises page)
 scripts/build_lookups.py   # small player/club search tables for the web app
 app/main.py                 # FastAPI backend (serves the API + the static frontend)
-app/static/                 # vanilla HTML/CSS/JS frontend (index/browse/loans/compare/surprises/clubs/player)
+app/static/                 # vanilla HTML/CSS/JS frontend (index/browse/loans/compare/surprises/clubs/player/leagues)
 data/                        # committed: small derived CSVs only (~8MB total)
 tests/                       # pytest suite - runs against committed artifacts only
 ```
@@ -125,9 +125,11 @@ through `score_weights.json`, no nulls/out-of-range values) and
 `tests/test_app.py` (every API endpoint, including accent-insensitive
 search, the compare/predict flows, `/api/surprises`' sort directions and
 held-out-only filtering, `/api/clubs/leaderboard`'s minimum-sample
-thresholds and name-alias merging, and `/api/players/{id}/career`'s
+thresholds and name-alias merging, `/api/players/{id}/career`'s
 transfer+loan merge and graceful handling of a player missing from
-`players_lookup.csv`).
+`players_lookup.csv`, and `/api/leagues/trends`' minimum-sample
+thresholds, disjoint early/recent windows, and exclusion of the current
+in-progress year).
 
 ## How it works
 
@@ -292,6 +294,15 @@ not an on-pitch one — the note says so explicitly).
   card. Search covers every player with a scored transfer or loan, not
   just the smaller set the Predict page's autocomplete can see (see Known
   limitations).
+- **`/leagues.html`** — every league with at least 15 scored permanent
+  transfers, ranked by transfer volume, average score/fee, or the change
+  between its earliest and most recent 3 complete years (the current,
+  in-progress year is excluded from every average). Click a league for a
+  chart indexing average fee and average success score to the same
+  early-period baseline, plus a plain-language verdict sentence - answers
+  "are fees inflating faster than performance?" directly rather than
+  leaving two differently-scaled numbers for the reader to compare
+  themselves.
 
 ## Known limitations
 
@@ -385,6 +396,18 @@ not an on-pitch one — the note says so explicitly).
   those players still can't show a position or current club in its header
   - both come from `players_lookup.csv` and are simply absent for players
   missing from it.
+- **League Trends buckets by calendar year, not by season**, and only ever
+  compares the destination league's own earliest/most recent 3-year
+  windows against each other - it doesn't control for anything else that
+  changed across a league's whole football economy over a decade (transfer
+  windows shifting, financial fair play rules, a different mix of buying
+  clubs), so "fees grew faster than success" is a real, checked pattern in
+  this data, not a claim about *why*. Only 14 of the dataset's 23 leagues
+  have enough transfers (≥15) to appear at all, and only those 14 also
+  happen to have enough year-span (≥6 complete years) for a trend - true
+  for every league today, but `build_league_trends` still handles a future
+  league that clears the first bar without the second, showing its basic
+  stats with no chart rather than disappearing it outright.
 - **League-adjustment feeds the historical label, not the predict
   model's own features** — tested directly as additional model inputs
   (league baselines, a league-adjusted performance number) and it didn't
@@ -459,6 +482,16 @@ the git history.
   symmetric playing-time rule that doesn't apply to loans).
 
 **Frontend**
+- Added League Trends (`/leagues.html` + `/api/leagues/trends`): every
+  major league's average fee and average success score, comparing its
+  earliest against its most recent 3 complete years (its current
+  in-progress year, checked directly to run far below a normal season's
+  volume, is excluded from every average). Indexes both series to the same
+  early-period baseline so a euro amount and a 0-100 score can share one
+  honest chart. Real result across nearly every league: fees have grown
+  30-320% while average success score has barely moved (often within a
+  couple of points) - a genuine "spending is outpacing performance"
+  pattern in this data, not an assumption going in.
 - Added Player Timelines (`/player.html` + `/api/players/{id}/career` +
   `/api/players/career-search`): search any player to see their whole
   scored career as one chronological, real-date-scaled chart - permanent
