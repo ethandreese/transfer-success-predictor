@@ -245,9 +245,48 @@ function injectSettingsUI() {
   });
 }
 
+/**
+ * Wire every grouped nav item (.nav-dropdown, e.g. "Predict"/"Browse"/
+ * "Insights" in the topnav) to open/close on click rather than hover -
+ * hover-only menus don't work on touch, and every other popover on this
+ * site (Settings, the player/club autocompletes) is already click-driven,
+ * so this matches. Only one menu open at a time; clicking outside any
+ * dropdown or pressing Escape closes whichever is open. Call once, after
+ * the DOM is ready.
+ */
+function initNavDropdowns() {
+  const dropdowns = [...document.querySelectorAll(".nav-dropdown")].map(el => ({
+    toggle: el.querySelector(".nav-dropdown-toggle"),
+    menu: el.querySelector(".nav-dropdown-menu"),
+  }));
+
+  function closeAll() {
+    dropdowns.forEach(({ toggle, menu }) => {
+      menu.classList.remove("open");
+      toggle.setAttribute("aria-expanded", "false");
+    });
+  }
+
+  dropdowns.forEach(({ toggle, menu }) => {
+    toggle.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const isOpen = menu.classList.contains("open");
+      closeAll();
+      if (!isOpen) {
+        menu.classList.add("open");
+        toggle.setAttribute("aria-expanded", "true");
+      }
+    });
+  });
+
+  document.addEventListener("click", closeAll);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAll(); });
+}
+
 applyTheme();
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", injectSettingsUI);
+  document.addEventListener("DOMContentLoaded", () => { injectSettingsUI(); initNavDropdowns(); });
 } else {
   injectSettingsUI();
+  initNavDropdowns();
 }

@@ -13,21 +13,37 @@
   <meta name="twitter:title" content="About - Transfer Success Predictor" />
   <meta name="twitter:description" content="How the Transfer Success Predictor's scoring model works, in plain language." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="stylesheet" href="/style.css?v=34" />
+  <link rel="stylesheet" href="/style.css?v=35" />
 </head>
 <body>
   <header>
     <h1>⚽ Transfer Success Predictor</h1>
     <p>What this site does, and how the numbers are actually computed.</p>
     <nav class="topnav">
-      <a href="/">Predict</a>
-      <a href="/browse.html">Browse all transfers</a>
-      <a href="/loans.html">Browse loans</a>
+      <a href="/">Home</a>
+      <div class="nav-dropdown">
+        <button class="nav-dropdown-toggle" aria-expanded="false" aria-haspopup="true">Predict <span class="nav-caret">&#9662;</span></button>
+        <div class="nav-dropdown-menu">
+      <a href="/predict.html">Predict a transfer</a>
       <a href="/compare.html">Compare two transfers</a>
+        </div>
+      </div>
+      <div class="nav-dropdown">
+        <button class="nav-dropdown-toggle" aria-expanded="false" aria-haspopup="true">Browse <span class="nav-caret">&#9662;</span></button>
+        <div class="nav-dropdown-menu">
+      <a href="/browse.html">All transfers</a>
+      <a href="/loans.html">Loans</a>
+        </div>
+      </div>
+      <div class="nav-dropdown">
+        <button class="nav-dropdown-toggle" aria-expanded="false" aria-haspopup="true">Insights <span class="nav-caret">&#9662;</span></button>
+        <div class="nav-dropdown-menu">
       <a href="/surprises.html">Biggest surprises</a>
       <a href="/clubs.html">Club report cards</a>
       <a href="/player.html">Player timelines</a>
       <a href="/leagues.html">League trends</a>
+        </div>
+      </div>
       <a href="/about.html" class="active">About</a>
     </nav>
   </header>
@@ -46,7 +62,7 @@
         reports, not predictions.
       </p>
       <p>
-        <strong>Predictions</strong> (the homepage and Compare page) estimate how a
+        <strong>Predictions</strong> (the Predict and Compare pages) estimate how a
         <em>hypothetical</em> transfer might go, using only information available before the
         move: age, recent form, fee, market value, and the clubs involved. Nothing
         about what actually happened afterward is used, since a real prediction can't see
@@ -80,7 +96,7 @@
       <p>
         Predicting how a brand-new transfer will play out over years, from nothing but
         pre-transfer stats, is hard: injuries, tactics, and squad fit matter
-        as much as the numbers a model can see. The homepage states the model's real,
+        as much as the numbers a model can see. The Predict page states the model's real,
         measured error rate on every prediction rather than presenting a single number as
         gospel, and shows a likely range based on similar historical transfers instead of a
         false-precision point estimate.
@@ -108,6 +124,6 @@
     </section>
   </main>
 
-  <script src="/settings.js?v=34"></script>
+  <script src="/settings.js?v=35"></script>
 </body>
 </html>

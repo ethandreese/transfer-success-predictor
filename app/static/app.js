@@ -55,52 +55,6 @@ function scoreColor(score) {
   return "var(--accent-bad)";
 }
 
-/** Render one transfer's score-component breakdown (label + bar + hover tooltip) as HTML, from the `breakdown` array the API returns. Descriptions run through convertMoneyInText since the backend always formats euro amounts in its prose. */
-function renderBreakdown(breakdown) {
-  return breakdown.map(b => `
-    <div class="breakdown-row">
-      <span class="tooltip-wrap breakdown-label">
-        ${b.label}
-        <span class="tooltip-box">
-          ${convertMoneyInText(b.description)}
-          ${b.stats ? `<ul class="tooltip-stats">${b.stats.map(s => `<li>${convertMoneyInText(s)}</li>`).join("")}</ul>` : ""}
-        </span>
-      </span>
-      <div class="breakdown-bar-track">
-        <div class="breakdown-bar-fill" style="width:${b.value}%; background:${scoreColor(b.value)}"></div>
-      </div>
-      <span class="breakdown-value">${b.value}</span>
-    </div>
-  `).join("");
-}
-
-/** Fetch the curated homepage cards from /api/examples and render them into #examples. */
-async function loadExamples() {
-  const el = document.getElementById("examples");
-  try {
-    const res = await fetch("/api/examples");
-    const data = await res.json();
-    if (!data.length) {
-      el.textContent = "No examples available.";
-      return;
-    }
-    const years = (days) => (days / 365.25).toFixed(1);
-    el.innerHTML = data.map(ex => `
-      <div class="example-card">
-        <div class="name">${ex.name}</div>
-        <div class="route">${ex.from_club} &rarr; ${ex.to_club} (${ex.transfer_date.slice(0, 7)})</div>
-        <div class="score" style="color:${scoreColor(ex.success_score)}">${ex.success_score}</div>
-        <div class="tenure-note">
-          Scored over ${years(ex.tenure_days)} years at the club${ex.still_at_club ? " (still there)" : " (before leaving)"}
-        </div>
-        <div class="breakdown">${renderBreakdown(ex.breakdown)}</div>
-      </div>
-    `).join("");
-  } catch (e) {
-    el.textContent = "Failed to load examples.";
-  }
-}
-
 /**
  * Wire a text input to a debounced search-as-you-type dropdown: on input,
  * queries `endpoint?q=...`, renders each result via `renderLabel`, and
@@ -351,13 +305,10 @@ document.getElementById("predict-btn").addEventListener("click", async () => {
 });
 
 // A settings change (currency, ...) doesn't change the underlying data,
-// just how it's displayed - reload the examples grid, redisplay the fee
-// input in the new currency, and, if a prediction is already showing,
-// re-render it from the cached response rather than re-predicting.
+// just how it's displayed - redisplay the fee input in the new currency,
+// and, if a prediction is already showing, re-render it from the cached
+// response rather than re-predicting.
 document.addEventListener("settingschange", () => {
-  loadExamples();
   updateFeeCurrencyDisplay(feeLabel, feeInput);
   if (state.lastPredictData) renderPredictResult(state.lastPredictData);
 });
-
-loadExamples();

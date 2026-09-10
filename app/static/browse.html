@@ -13,21 +13,37 @@
   <meta name="twitter:title" content="Browse Transfers - Transfer Success Predictor" />
   <meta name="twitter:description" content="Browse, filter, and search ~8,300 real scored football transfers." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="stylesheet" href="/style.css?v=34" />
+  <link rel="stylesheet" href="/style.css?v=35" />
 </head>
 <body>
   <header>
     <h1>⚽ Transfer Success Predictor</h1>
     <p>Browse all ~8,300 scored transfers: filter, search, and sort.</p>
     <nav class="topnav">
-      <a href="/">Predict</a>
-      <a href="/browse.html" class="active">Browse all transfers</a>
-      <a href="/loans.html">Browse loans</a>
+      <a href="/">Home</a>
+      <div class="nav-dropdown">
+        <button class="nav-dropdown-toggle" aria-expanded="false" aria-haspopup="true">Predict <span class="nav-caret">&#9662;</span></button>
+        <div class="nav-dropdown-menu">
+      <a href="/predict.html">Predict a transfer</a>
       <a href="/compare.html">Compare two transfers</a>
+        </div>
+      </div>
+      <div class="nav-dropdown">
+        <button class="nav-dropdown-toggle active" aria-expanded="false" aria-haspopup="true">Browse <span class="nav-caret">&#9662;</span></button>
+        <div class="nav-dropdown-menu">
+      <a href="/browse.html" class="active">All transfers</a>
+      <a href="/loans.html">Loans</a>
+        </div>
+      </div>
+      <div class="nav-dropdown">
+        <button class="nav-dropdown-toggle" aria-expanded="false" aria-haspopup="true">Insights <span class="nav-caret">&#9662;</span></button>
+        <div class="nav-dropdown-menu">
       <a href="/surprises.html">Biggest surprises</a>
       <a href="/clubs.html">Club report cards</a>
       <a href="/player.html">Player timelines</a>
       <a href="/leagues.html">League trends</a>
+        </div>
+      </div>
       <a href="/about.html">About</a>
     </nav>
   </header>
@@ -97,7 +113,7 @@
     </div>
   </div>
 
-  <script src="/settings.js?v=34"></script>
-  <script src="/browse.js?v=34"></script>
+  <script src="/settings.js?v=35"></script>
+  <script src="/browse.js?v=35"></script>
 </body>
 </html>

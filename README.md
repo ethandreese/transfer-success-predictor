@@ -22,7 +22,7 @@ scripts/train_model.py     # trains the deployed model + comparable-transfers in
 scripts/compute_prediction_surprises.py  # 5-fold held-out predictions for every transfer -> data/prediction_surprises.csv (the Biggest Surprises page)
 scripts/build_lookups.py   # small player/club search tables for the web app
 app/main.py                 # FastAPI backend (serves the API + the static frontend)
-app/static/                 # vanilla HTML/CSS/JS frontend (index/browse/loans/compare/surprises/clubs/player/leagues)
+app/static/                 # vanilla HTML/CSS/JS frontend (index=home/predict/browse/loans/compare/surprises/clubs/player/leagues/about)
 data/                        # committed: small derived CSVs only (~8MB total)
 tests/                       # pytest suite - runs against committed artifacts only
 ```
@@ -253,11 +253,23 @@ not an on-pitch one — the note says so explicitly).
 
 ## Pages
 
-- **`/`** — predict a hypothetical transfer: search a real player, pick a
-  destination club, see a predicted score, a likely range (min/max among
-  the 5 most similar real transfers, since a single point estimate
-  overstates how confident a model this size can be), a "why this score"
-  breakdown, and the nearest historical comparables.
+The nav groups every page under one of three dropdowns (**Predict**,
+**Browse**, **Insights**) plus **Home** and **About** on their own - nine
+pages was too many flat links, so `/` itself became a real landing page
+rather than doubling as the predict form (see Project history).
+
+- **`/`** — the home page: a short pitch, the curated showcase cards (moved
+  here from the old `/`), and a link to every other page grouped the same
+  way as the nav.
+- **`/predict.html`** — predict a hypothetical transfer: search a real
+  player, pick a destination club, see a predicted score, a likely range
+  (min/max among the 5 most similar real transfers, since a single point
+  estimate overstates how confident a model this size can be), a "why this
+  score" breakdown, and the nearest historical comparables.
+- **`/compare.html`** — set up two hypothetical transfers side by side
+  (same player to two different clubs, or two different players entirely)
+  and see both predictions, ranges, and top factors together with the
+  point gap between them.
 - **`/browse.html`** — every scored transfer (~8,300), filterable by
   position and destination league, searchable by player/club name, sortable
   by score/date/fee/age, paginated. Click any row to open that transfer's
@@ -266,10 +278,6 @@ not an on-pitch one — the note says so explicitly).
   search/click-to-view-card experience as `/browse.html`, but scored on the
   loan-specific formula above (no fee/resale rows in the breakdown, and
   duration shown in months rather than years).
-- **`/compare.html`** — set up two hypothetical transfers side by side
-  (same player to two different clubs, or two different players entirely)
-  and see both predictions, ranges, and top factors together with the
-  point gap between them.
 - **`/surprises.html`** — every scored permanent transfer with a held-out
   prediction (~93% of them - see `compute_prediction_surprises.py`), ranked
   by how far the real outcome diverged from what a model that never saw
@@ -303,6 +311,8 @@ not an on-pitch one — the note says so explicitly).
   "are fees inflating faster than performance?" directly rather than
   leaving two differently-scaled numbers for the reader to compare
   themselves.
+- **`/about.html`** — what the site does and how the numbers are computed,
+  in plain language.
 
 ## Known limitations
 
@@ -482,6 +492,14 @@ the git history.
   symmetric playing-time rule that doesn't apply to loans).
 
 **Frontend**
+- Restructured the nav into three dropdowns (Predict, Browse, Insights)
+  plus Home and About, and split `/` into a real home page (the curated
+  showcase cards, moved here, plus a linked directory of every page) with
+  the predict form moved to its own `/predict.html` - nine flat nav links
+  had become too many for one row. `settings.js` gained the shared
+  click-to-open/close dropdown behavior (`initNavDropdowns`) every page
+  loads; `app.js` dropped the now-dead `loadExamples`/`renderBreakdown`
+  it no longer needed once the showcase cards left the predict page.
 - Added League Trends (`/leagues.html` + `/api/leagues/trends`): every
   major league's average fee and average success score, comparing its
   earliest against its most recent 3 complete years (its current
