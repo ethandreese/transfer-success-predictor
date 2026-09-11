@@ -3,22 +3,22 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Biggest Surprises - Transfer Success Predictor</title>
-  <meta name="description" content="The real transfers that most defied a held-out model's pre-transfer-only prediction - the biggest overachievers and busts." />
+  <title>Model vs Reality - Transfer Success Predictor</title>
+  <meta name="description" content="How real transfers compare to a held-out model's pre-transfer-only prediction - the biggest overachievers, the biggest busts, and the calls it got closest to right." />
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="Biggest Surprises - Transfer Success Predictor" />
-  <meta property="og:description" content="The real transfers that most defied a held-out model's pre-transfer-only prediction - the biggest overachievers and busts." />
+  <meta property="og:title" content="Model vs Reality - Transfer Success Predictor" />
+  <meta property="og:description" content="How real transfers compare to a held-out model's pre-transfer-only prediction - the biggest overachievers, the biggest busts, and the calls it got closest to right." />
   <meta property="og:url" content="https://transfer-success-predictor.onrender.com/surprises.html" />
   <meta name="twitter:card" content="summary" />
-  <meta name="twitter:title" content="Biggest Surprises - Transfer Success Predictor" />
-  <meta name="twitter:description" content="The real transfers that most defied a held-out model's pre-transfer-only prediction." />
+  <meta name="twitter:title" content="Model vs Reality - Transfer Success Predictor" />
+  <meta name="twitter:description" content="How real transfers compare to a held-out model's pre-transfer-only prediction." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="stylesheet" href="/style.css?v=42" />
 </head>
 <body>
   <header>
     <h1>⚽ Transfer Success Predictor</h1>
-    <p>Where the model's pre-transfer prediction and the real outcome disagree the most.</p>
+    <p>How the model's pre-transfer prediction stacks up against the real outcome.</p>
     <nav class="topnav">
       <a href="/">Home</a>
       <div class="nav-dropdown">
@@ -38,7 +38,7 @@
       <div class="nav-dropdown">
         <button class="nav-dropdown-toggle active" aria-expanded="false" aria-haspopup="true">Insights <span class="nav-caret">&#9662;</span></button>
         <div class="nav-dropdown-menu">
-      <a href="/surprises.html" class="active">Biggest surprises</a>
+      <a href="/surprises.html" class="active">Model vs reality</a>
       <a href="/clubs.html">Club report cards</a>
       <a href="/player.html">Player timelines</a>
       <a href="/leagues.html">League trends</a>
@@ -53,11 +53,13 @@
       <p class="surprises-intro">
         For every scored permanent transfer, a version of the model that never saw that
         transfer's own outcome (5-fold cross-validated, using only pre-transfer data) made
-        its best guess. This page ranks the biggest gaps between that guess and what actually
-        happened - <strong>overachievers</strong> the model's pre-transfer numbers didn't see
-        coming, and <strong>busts</strong> it didn't see coming either, the other direction.
-        Not every transfer has a prediction here - the same handful missing a required
-        feature (fee, height, origin league) are excluded from the model's training too.
+        its best guess. This page ranks transfers by the gap between that guess and what
+        actually happened - <strong>overachievers</strong> the model's pre-transfer numbers
+        didn't see coming, <strong>busts</strong> it didn't see coming either, the other
+        direction, and, via the Show filter below, the calls it got <strong>closest</strong>
+        to right. Not every transfer has a prediction here - the same handful missing a
+        required feature (fee, height, origin league) are excluded from the model's
+        training too.
       </p>
     </section>
 
@@ -80,6 +82,7 @@
           <select id="sort-select">
             <option value="surprise_delta:desc">Biggest overachievers first</option>
             <option value="surprise_delta:asc">Biggest busts first</option>
+            <option value="abs_surprise_delta:asc">Most accurate predictions first</option>
             <option value="success_score:desc">Actual score (high to low)</option>
             <option value="transfer_date:desc">Date (newest first)</option>
             <option value="transfer_date:asc">Date (oldest first)</option>

@@ -341,6 +341,10 @@ transfers_df = pd.read_csv(os.path.join(DATA_DIR, "transfers_processed.csv"))
 # still needs it.
 prediction_surprises_df = pd.read_csv(os.path.join(DATA_DIR, "prediction_surprises.csv"))
 transfers_df = transfers_df.merge(prediction_surprises_df, on=["player_id", "transfer_date"], how="left")
+# Lets the Model vs Reality page sort by "most accurate predictions first"
+# (order=asc on this column) alongside its overachiever/bust sorts on the
+# signed surprise_delta.
+transfers_df["abs_surprise_delta"] = transfers_df["surprise_delta"].abs()
 loans_df = pd.read_csv(os.path.join(DATA_DIR, "loans_processed.csv"))
 players_df = pd.read_csv(os.path.join(DATA_DIR, "players_lookup.csv"))
 clubs_df = pd.read_csv(os.path.join(DATA_DIR, "clubs_lookup.csv"))
@@ -2253,7 +2257,7 @@ def list_transfers(
     return {"total": total, "limit": limit, "offset": offset, "results": results}
 
 
-SURPRISE_SORT_FIELDS = {"surprise_delta", "success_score", "predicted_score", "transfer_date", "age_at_transfer"}
+SURPRISE_SORT_FIELDS = {"surprise_delta", "abs_surprise_delta", "success_score", "predicted_score", "transfer_date", "age_at_transfer"}
 
 
 @app.get("/api/surprises")
@@ -2273,7 +2277,10 @@ def list_surprises(
     (success_score minus predicted_score) by default: order=desc surfaces
     the biggest overachievers (a model that never saw this transfer's
     outcome predicted a flop from pre-transfer data alone, the player
-    thrived anyway); order=asc surfaces the biggest busts.
+    thrived anyway); order=asc surfaces the biggest busts. sort=
+    abs_surprise_delta&order=asc instead surfaces the model's most accurate
+    calls - the transfers where the held-out prediction landed closest to
+    what actually happened.
     """
     df = transfers_df[transfers_df["predicted_score"].notna()]
     if position:

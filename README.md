@@ -19,7 +19,7 @@ scripts/fetch_pretransfer_fotmob_stats.py # (optional) backfills data/raw/pretra
 scripts/fetch_current_fotmob_stats.py     # (optional) backfills data/raw/current_fotmob_stats_cache.csv - live predictions' "current form" FotMob signal
 scripts/build_dataset.py   # raw Transfermarkt CSVs -> data/transfers_processed.csv + data/loans_processed.csv
 scripts/train_model.py     # trains the deployed model + comparable-transfers index
-scripts/compute_prediction_surprises.py  # 5-fold held-out predictions for every transfer -> data/prediction_surprises.csv (the Biggest Surprises page)
+scripts/compute_prediction_surprises.py  # 5-fold held-out predictions for every transfer -> data/prediction_surprises.csv (the Model vs Reality page)
 scripts/build_lookups.py   # small player/club search tables for the web app
 app/main.py                 # FastAPI backend (serves the API + the static frontend)
 app/static/                 # vanilla HTML/CSS/JS frontend (index=home/predict/browse/loans/compare/surprises/clubs/player/leagues/about)
@@ -101,7 +101,7 @@ degrades to.
 
 `compute_prediction_surprises.py` is **not** optional like the four above -
 `app/main.py` loads `data/prediction_surprises.csv` unconditionally at
-startup (the Biggest Surprises page's data source). It reuses
+startup (the Model vs Reality page's data source). It reuses
 `train_model.py`'s exact feature-engineering functions and feature lists,
 swapping 5-fold cross-validation in for that script's one temporal split,
 so every transfer gets a `predicted_score` from a model that never saw that
@@ -278,13 +278,14 @@ rather than doubling as the predict form (see Project history).
   search/click-to-view-card experience as `/browse.html`, but scored on the
   loan-specific formula above (no fee/resale rows in the breakdown, and
   duration shown in months rather than years).
-- **`/surprises.html`** — every scored permanent transfer with a held-out
-  prediction (~93% of them - see `compute_prediction_surprises.py`), ranked
-  by how far the real outcome diverged from what a model that never saw
-  that transfer's own result would have guessed from pre-transfer data
-  alone: the biggest overachievers and the biggest busts. Same filter/
-  search/click-to-view-card experience as Browse, plus the model's own
-  number shown alongside the real one.
+- **`/surprises.html`** ("Model vs Reality") — every scored permanent
+  transfer with a held-out prediction (~93% of them - see
+  `compute_prediction_surprises.py`), ranked by how far the real outcome
+  diverged from what a model that never saw that transfer's own result
+  would have guessed from pre-transfer data alone: the biggest
+  overachievers, the biggest busts, or (via the Show filter) the calls it
+  got closest to right. Same filter/search/click-to-view-card experience as
+  Browse, plus the model's own number shown alongside the real one.
 - **`/clubs.html`** — every club that's bought or sold at least one scored
   permanent transfer, ranked as a recruiter: incoming transfers and their
   average score, total spent, buy-develop-resell profit on the subset it
@@ -359,7 +360,7 @@ rather than doubling as the predict form (see Project history).
 - **Predicting a new hypothetical transfer is meaningfully less reliable**
   than the historical scores shown for known transfers, since the model
   only ever sees pre-transfer information by construction.
-- **The Biggest Surprises page's `predicted_score` isn't the deployed
+- **The Model vs Reality page's `predicted_score` isn't the deployed
   model.** It comes from 5-fold cross-validation (see
   `compute_prediction_surprises.py`), so every transfer's number is honest
   in the sense that matters for ranking "how surprising was this" (no
@@ -419,7 +420,7 @@ rather than doubling as the predict form (see Project history).
   `to_club_name`/`from_club_name` in both `transfers_df` and `loans_df`
   (and to `comparables["meta"]`, the nearest-neighbors index behind
   Predict's "similar historical transfers"), so every page - Browse, Loans,
-  Biggest Surprises, Predict, Compare, and Club Report Cards - shows the
+  Model vs Reality, Predict, Compare, and Club Report Cards - shows the
   same name for the same club. Neither list is exhaustive across all ~700+
   club names here - a club whose nickname/official-name split was never
   spot-checked still shows up as two or more separate identities everywhere
@@ -520,6 +521,12 @@ the git history.
   symmetric playing-time rule that doesn't apply to loans).
 
 **Frontend**
+- Renamed the "Biggest Surprises" page to "Model vs Reality" and added a
+  "Most accurate predictions first" option to its Show filter (sorting by
+  `abs_surprise_delta` - the new backend field is `|surprise_delta|`,
+  computed once alongside the existing merge in `app/main.py`), since the
+  old name undersold a page that can now also surface the model's closest
+  calls, not just its biggest misses.
 - Ran a third club-name sweep, this time matching on string similarity
   (`difflib`) instead of shared whole words, to catch the abbreviation/typo
   pairs the second sweep's method structurally couldn't ("Y.
