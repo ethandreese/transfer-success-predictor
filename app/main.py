@@ -90,6 +90,21 @@ CLUB_NAME_STRIP_TOKENS = {
 # stopped appearing) while leaving bare "Metalist" and "Metalist 1925" split,
 # since which of those two is the "real" continuation is a live dispute, not
 # something this data can settle.
+#
+# A third pass, this time by string-similarity rather than shared whole
+# words (to catch abbreviation/typo-style variants like "Man City" that the
+# second pass's word-sharing check would miss), found one more contested
+# case with the exact same shape as Metalist: Belgian "Beerschot AC" (only
+# ever mentioned in 2013) went bankrupt that year, and the club playing
+# under the Beerschot name from 2018 onward ("Beerschot VA") is a later,
+# separately-reformed entity - per user confirmation, only "Beerschot VA"
+# and its punctuation variant "Beerschot V.A." are merged; "Beerschot AC" is
+# left split. Also rejected in this pass: "Metalurg D."/"Metalurg Z." (two
+# different Ukrainian clubs - Donetsk and Zaporizhzhia - that happen to
+# share a country with only one top flight, so the league-match check that
+# works elsewhere doesn't discriminate here) and "Al-Wehda"/"Al-Wahda"
+# (likely a Saudi club and a UAE club respectively, not enough data on the
+# second spelling to confirm either way).
 CLUB_NICKNAME_GROUPS = [
     {"Man City", "Manchester City"},
     {"Man Utd", "Manchester United"},
@@ -126,7 +141,7 @@ CLUB_NICKNAME_GROUPS = [
     {"Huddersfield", "Huddersfield Town"},
     {"Wolves", "Wolverhampton Wanderers"},
     {"QPR", "Queens Park Rangers"},
-    {"Nottingham Forest", "Nott'm Forest"},
+    {"Nottingham Forest", "Nott'm Forest", "Nottm Forest"},
     {"Frankfurt", "Eintracht Frankfurt", "E. Frankfurt"},
     {"Mönchengladbach", "Borussia Mönchengladbach", "Bor. M'gladbach"},
     {"Hoffenheim", "TSG Hoffenheim", "TSG 1899 Hoffenheim"},
@@ -214,6 +229,21 @@ CLUB_NICKNAME_GROUPS = [
     {"SC Cambuur", "SC Cambuur Leeuwarden"},
     {"Évian", "Thonon Évian Grand Genève FC"},
     {"Partizan", "FK Partizan Belgrade"},
+    {"Apollon Smyrnis", "Apollon Smyrni"},
+    {"Ionikos Nikeas", "Ionikos Nikea"},
+    {"FC Mariupol", "FK Mariupol", "FSC Mariupol"},
+    {"Dynamo Moscow", "Dinamo Moscow"},
+    {"Beerschot VA", "Beerschot V.A."},
+    {"FC Helsingör", "FC Helsingør"},
+    {"Niki Volou", "Niki Volos"},
+    {"PFC Lviv", "PFK Lviv"},
+    {"Yeni Malatyaspor", "Y. Malatyaspor"},
+    {"GFC Ajaccio", "G. Ajaccio"},
+    {"Aris Saloniki", "Aris Thessalonikis"},
+    {"Arm. Bielefeld", "Arminia Bielefeld"},
+    {"Sint-Truiden", "Sint-Truidense VV"},
+    {"A.G.S Asteras Tripolis", "Asteras Tripoli"},
+    {"Aalesund", "Aalesunds FK"},
 ]
 CLUB_NICKNAME_KEYS = {name: f"nickname:{i}" for i, group in enumerate(CLUB_NICKNAME_GROUPS) for name in group}
 

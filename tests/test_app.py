@@ -943,6 +943,57 @@ def test_club_name_aliases_metalist_cluster_merges_only_the_confirmed_pair():
     assert CLUB_NAME_ALIASES.get("Metalist", "Metalist") != CLUB_NAME_ALIASES.get("Metalist 1925", "Metalist 1925")
 
 
+@pytest.mark.parametrize("a,b", [
+    ("Apollon Smyrnis", "Apollon Smyrni"),
+    ("Ionikos Nikeas", "Ionikos Nikea"),
+    ("Nott'm Forest", "Nottm Forest"),
+    ("FC Mariupol", "FSC Mariupol"),
+    ("Dynamo Moscow", "Dinamo Moscow"),
+    ("Beerschot VA", "Beerschot V.A."),
+    ("FC Helsingör", "FC Helsingør"),
+    ("Niki Volou", "Niki Volos"),
+    ("PFC Lviv", "PFK Lviv"),
+    ("Yeni Malatyaspor", "Y. Malatyaspor"),
+    ("GFC Ajaccio", "G. Ajaccio"),
+    ("Aris Saloniki", "Aris Thessalonikis"),
+    ("Arm. Bielefeld", "Arminia Bielefeld"),
+    ("Sint-Truiden", "Sint-Truidense VV"),
+    ("A.G.S Asteras Tripolis", "Asteras Tripoli"),
+    ("Aalesund", "Aalesunds FK"),
+])
+def test_club_name_aliases_merge_fuzzy_spelling_variants(a, b):
+    """
+    Found by a third pass matching on string similarity rather than shared
+    whole words (the second sweep's method would miss an abbreviation/typo
+    pair like "Man City"/"Manchester City" or "Y. Malatyaspor"/"Yeni
+    Malatyaspor" if it hadn't already been caught another way) - same
+    per-pair league/date verification as every other entry in
+    CLUB_NICKNAME_GROUPS.
+    """
+    assert CLUB_NAME_ALIASES.get(a, a) == CLUB_NAME_ALIASES.get(b, b)
+
+
+@pytest.mark.parametrize("a,b", [
+    ("Atalanta", "Atlanta"),
+    ("Metalurg D.", "Metalurg Z."),
+    ("Al-Wehda", "Al-Wahda"),
+    ("Beerschot AC", "Beerschot VA"),
+])
+def test_club_name_aliases_rejects_fuzzy_look_alike_traps(a, b):
+    """
+    More same-trap-as-Racing rejections from the string-similarity pass:
+    "Atalanta"/"Atlanta" is Italy's Atalanta BC vs. MLS's Atlanta United
+    (different leagues, confirmed); "Metalurg D."/"Metalurg Z." are two
+    different Ukrainian clubs (Donetsk and Zaporizhzhia) that just happen to
+    share a country with a single top flight, so the usual league-match
+    check can't discriminate them; "Al-Wehda"/"Al-Wahda" is likely a Saudi
+    club and a UAE club respectively; and "Beerschot AC" (bankrupt 2013) is
+    left split from the later-reformed "Beerschot VA" per the same kind of
+    user-confirmed call as the Metalist cluster.
+    """
+    assert CLUB_NAME_ALIASES.get(a, a) != CLUB_NAME_ALIASES.get(b, b)
+
+
 def test_clubs_leaderboard_filters_endpoint():
     """/api/clubs/leaderboard/filters should list at least one league, each with an id and a display name."""
     res = client.get("/api/clubs/leaderboard/filters")

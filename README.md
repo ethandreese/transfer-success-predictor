@@ -381,7 +381,7 @@ rather than doubling as the predict form (see Project history).
   that share no token at all ("Man City"/"Manchester City",
   "PSG"/"Paris Saint-Germain", "Bor. Dortmund"/"Borussia
   Dortmund"/"Dortmund", "Sporting"/"Sporting CP", "Swansea"/"Swansea City",
-  "Wolves"/"Wolverhampton Wanderers", and ~115 more) - each entry
+  "Wolves"/"Wolverhampton Wanderers", and ~130 more) - each entry
   individually verified against the real data (matching
   `domestic_competition_id` on both sides, a non-contradictory
   `transfer_date` range) rather than assumed from football knowledge alone,
@@ -406,7 +406,16 @@ rather than doubling as the predict form (see Project history).
   to the name - came back a genuine, still-contested identity dispute rather
   than a clean call; per user confirmation, only "Metalist Kharkiv" and its
   dissolution-marked spelling are merged, and bare "Metalist"/"Metalist
-  1925" are left split. Applied once at startup to
+  1925" are left split. A third pass matched on string similarity instead of
+  shared whole words (to catch abbreviation/typo-style pairs the second
+  pass's method would miss, like "Y. Malatyaspor"/"Yeni Malatyaspor" or a
+  genuine data-entry inconsistency like "FC Helsingör"/"FC Helsingør") and
+  found 16 more genuine merges, plus the same kind of rejections: "Atalanta"/
+  "Atlanta" (Italy's Atalanta BC vs. MLS's Atlanta United), "Metalurg D."/
+  "Metalurg Z." (two different Ukrainian clubs that just share a
+  single-top-flight country), and another contested-history case - Belgian
+  "Beerschot AC" (bankrupt 2013) left split from the later-reformed
+  "Beerschot VA", the same shape as the Metalist call. Applied once at startup to
   `to_club_name`/`from_club_name` in both `transfers_df` and `loans_df`
   (and to `comparables["meta"]`, the nearest-neighbors index behind
   Predict's "similar historical transfers"), so every page - Browse, Loans,
@@ -511,6 +520,22 @@ the git history.
   symmetric playing-time rule that doesn't apply to loans).
 
 **Frontend**
+- Ran a third club-name sweep, this time matching on string similarity
+  (`difflib`) instead of shared whole words, to catch the abbreviation/typo
+  pairs the second sweep's method structurally couldn't ("Y.
+  Malatyaspor"/"Yeni Malatyaspor" share no whole word; neither do "Aalesund"/
+  "Aalesunds FK" once the trailing "s" is accounted for). Added 16 more
+  verified `CLUB_NICKNAME_GROUPS` entries, one genuine data-entry
+  inconsistency ("FC Helsingör"/"FC Helsingør" - two different Nordic
+  letters for the same Danish club), and rejected "Atalanta"/"Atlanta"
+  (Italy's Atalanta BC vs. MLS's Atlanta United - different leagues),
+  "Metalurg D."/"Metalurg Z." (two different Ukrainian clubs sharing a
+  single-top-flight country, so the usual league check can't tell them
+  apart), and "Al-Wehda"/"Al-Wahda" (likely different Saudi/UAE clubs).
+  Found a second Metalist-shaped case too: Belgian "Beerschot AC" only
+  appears in 2013, the year the club went bankrupt - flagged to the user,
+  who confirmed merging just the later "Beerschot VA"/"Beerschot V.A."
+  spellings and leaving "Beerschot AC" split.
 - Ran a second full club-name sweep after a user report that "Swansea" and
   "Swansea City" still showed as two rows on Club Report Cards. Checked
   every pair of names in the dataset sharing a whole word (not just the
