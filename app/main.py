@@ -29,7 +29,12 @@ def fold_accents(value):
     return "".join(c for c in normalized if not unicodedata.combining(c)).lower()
 
 
-CLUB_NAME_STRIP_TOKENS = {"fc", "cf", "sc", "ac", "afc", "club", "de", "football", "vfl", "vfb", "tsv", "sv", "ssv", "us"}
+CLUB_NAME_STRIP_TOKENS = {
+    "fc", "cf", "cfc", "acf", "ssc", "uc", "bc", "as", "gd", "cd", "ud", "kv", "krc", "rc", "fk",
+    "sc", "ac", "afc", "club", "de", "football", "calcio",
+    "vfl", "vfb", "tsv", "sv", "ssv", "us",
+    "spor", "kulubu", "jimnastik",
+}
 
 # Nickname/official-name pairs that share no common token after
 # CLUB_NAME_STRIP_TOKENS stripping, so build_club_name_aliases' mechanical
@@ -53,6 +58,38 @@ CLUB_NAME_STRIP_TOKENS = {"fc", "cf", "sc", "ac", "afc", "club", "de", "football
 # limitations for what's still open, e.g. any second-division or
 # less-followed club whose nickname/official-name split was never looked
 # at).
+#
+# A second full sweep (triggered by "Swansea"/"Swansea City" still showing
+# as two rows) went through every pair of names in the dataset that share a
+# whole word after folding, and added every verified match below the first
+# 28 groups. Also checked and rejected in that sweep, same as "Racing"
+# above - looks related, isn't: "Barcelona"/"RCD Espanyol Barcelona" (two
+# different Barcelona clubs, not a spelling variant), "Arsenal"/"Arsenal
+# Tula"/"Arsenal Kyiv" (unrelated clubs that happen to share the English
+# club's name), "Rangers"/"Queens Park Rangers" (Glasgow Rangers, not QPR),
+# "Sporting"/"Sporting Gijón" and "Sporting"/"Royal Charleroi Sporting Club"
+# (every bare "Sporting" row is league PO1 - see the note on the existing
+# "Sporting"/"Sporting CP" entry below - these two aren't), "Nacional"/"Atl.
+# Nacional" (Portuguese CD Nacional vs. Colombian Atlético Nacional), and
+# "Athletic"/"Wigan Athletic"/"Forfar Athletic" (every bare "Athletic" row
+# is league ES1 - it's Athletic Bilbao, not Wigan's or Forfar's). Also
+# "Krasnodar"/"Kuban Krasnodar" despite sharing a league and a city: FC
+# Krasnodar (founded 2008) and the dissolved Kuban Krasnodar are two
+# separate real clubs, the same trap as Manchester City/United or Dundee
+# FC/United. And reserve/youth sides ("Benfica"/"Benfica B", "Barcelona"/
+# "Barcelona B", "Tottenham"/"Tottenham U21", "Villarreal"/"FC Villarreal
+# C", "Krasnodar"/"Krasnodar 2", "Utrecht"/"Utrecht U21", "FC Cartagena"/
+# "FC Cartagena B") were left split on purpose - a club's B/youth team runs
+# its own transfer history, not the first team's.
+#
+# One cluster came back genuinely contested rather than a clean
+# same-club-or-not call: Ukrainian "Metalist Kharkiv" went bankrupt around
+# 2016, and two separately-run organizations have since both laid claim to
+# the name/legacy - the user confirmed merging only "Metalist Kharkiv" with
+# "Metalist Kharkiv (- 2016)" (same name, just marking when that spelling
+# stopped appearing) while leaving bare "Metalist" and "Metalist 1925" split,
+# since which of those two is the "real" continuation is a live dispute, not
+# something this data can settle.
 CLUB_NICKNAME_GROUPS = [
     {"Man City", "Manchester City"},
     {"Man Utd", "Manchester United"},
@@ -71,7 +108,7 @@ CLUB_NICKNAME_GROUPS = [
     {"LOSC Lille", "Lille"},
     {"Nice", "OGC Nice"},
     {"Real Betis", "Real Betis Balompié"},
-    {"Athletic Bilbao", "Athletic Club"},
+    {"Athletic Bilbao", "Athletic Club", "Athletic"},
     {"Ajax", "Ajax Amsterdam"},
     {"Feyenoord", "Feyenoord Rotterdam"},
     {"PSV", "PSV Eindhoven"},
@@ -82,6 +119,101 @@ CLUB_NICKNAME_GROUPS = [
     {"Shakhtar D.", "FC Shakhtar Donetsk"},
     {"Sporting", "Sporting CP"},
     {"Inter", "Inter Milan"},
+    {"Swansea", "Swansea City"},
+    {"Cardiff", "Cardiff City"},
+    {"Norwich", "Norwich City"},
+    {"Wigan", "Wigan Athletic"},
+    {"Huddersfield", "Huddersfield Town"},
+    {"Wolves", "Wolverhampton Wanderers"},
+    {"QPR", "Queens Park Rangers"},
+    {"Nottingham Forest", "Nott'm Forest"},
+    {"Frankfurt", "Eintracht Frankfurt", "E. Frankfurt"},
+    {"Mönchengladbach", "Borussia Mönchengladbach", "Bor. M'gladbach"},
+    {"Hoffenheim", "TSG Hoffenheim", "TSG 1899 Hoffenheim"},
+    {"Atlético", "Atlético de Madrid", "Atlético Madrid"},
+    {"Bologna", "Bologna Football Club 1909"},
+    {"Mainz", "1.FSV Mainz 05"},
+    {"Lazio", "Società Sportiva Lazio S.p.A."},
+    {"Panathinaikos", "Panathinaikos Athlitikos Omilos"},
+    {"Willem II", "Willem II Tilburg"},
+    {"Karabükspor", "Kardemir Karabükspor"},
+    {"Ankaragücü", "MKE Ankaragücü"},
+    {"Leipzig", "RB Leipzig"},
+    {"Salzburg", "RB Salzburg"},
+    {"Montpellier", "Montpellier HSC"},
+    {"Twente FC", "FC Twente", "FC Twente Enschede"},
+    {"Estoril", "Estoril Praia", "GD Estoril Praia"},
+    {"Vitesse", "Vitesse Arnhem"},
+    {"Excelsior", "Excelsior Rotterdam"},
+    {"Panionios", "Panionios Athens"},
+    {"SönderjyskE", "Sönderjyske", "Sönderjyske Fodbold"},
+    {"Roda JC", "Roda JC Kerkrade"},
+    {"Dnipro", "Dnipro Dnipropetrovsk (-2020)"},
+    {"Kryvbas", "Kryvbas Kryvyi Rig"},
+    {"Belenenses", "CF Os Belenenses"},
+    {"Chornomorets", "Chornomorets Odesa"},
+    {"Panetolikos", "Panetolikos Agrinio"},
+    {"Platanias", "AO Platanias"},
+    {"Guingamp", "EA Guingamp"},
+    {"PAS Lamia", "PAS Lamia 1964"},
+    {"Marítimo", "CS Marítimo"},
+    {"Panthrakikos", "Panthrakikos Komotini"},
+    {"Iraklis", "Iraklis Thessaloniki"},
+    {"Pescara", "Delfino Pescara 1936"},
+    {"De Graafschap", "De Graafschap Doetinchem"},
+    {"FC Ingolstadt", "FC Ingolstadt 04"},
+    {"Zirka", "Zirka Kropyvnytskyi"},
+    {"Enisey", "Enisey Krasnoyarsk"},
+    {"Dinamo Zagreb", "GNK Dinamo Zagreb"},
+    {"Xanthi", "AO Xanthi"},
+    {"Karagümrük", "Fatih Karagümrük"},
+    {"Coimbra", "Académica Coimbra"},
+    {"Basel", "FC Basel", "FC Basel 1893"},
+    {"Red Star", "Red Star Belgrade"},
+    {"Malmö", "Malmö FF"},
+    {"Young Boys", "BSC Young Boys"},
+    {"Greuther Fürth", "SpVgg Greuther Fürth"},
+    {"Kallithea", "Athens Kallithea"},
+    {"Rosenborg", "Rosenborg Ballklub", "Rosenborg BK"},
+    {"Sarpsborg 08", "Sarpsborg 08 Fotballforening"},
+    {"Ergotelis", "GS Ergotelis"},
+    {"União Madeira", "CF União Madeira (-2021)"},
+    {"Stal Kamyanske", "PFK Stal Kamyanske (-2018)"},
+    {"Ingulets", "Ingulets Petrove"},
+    {"Clermont Foot", "Clermont Foot 63"},
+    {"Desna", "Desna Chernigiv"},
+    {"Tambov", "PFK Tambov (-2021)"},
+    {"Karpaty Lviv", "Karpaty Lviv (-2021)"},
+    {"Anzhi", "Anzhi Makhachkala ( -2022)"},
+    {"KSC Lokeren", "KSC Lokeren (- 2020)"},
+    {"Gaziantepspor", "Gaziantepspor (- 2020)"},
+    {"Mordovia", "Mordovia Saransk (-2020)"},
+    {"Desportivo Aves", "Desportivo Aves (- 2020)"},
+    {"Lierse SK", "Lierse SK (- 2018)"},
+    {"Mouscron", "Royal Excel Mouscron (-2022)"},
+    {"RAEC Mons", "RAEC Mons (- 2015)"},
+    {"Tosno", "FC Tosno (-2018)"},
+    {"SC Paderborn", "SC Paderborn 07"},
+    {"Metalist Kharkiv", "Metalist Kharkiv (- 2016)"},
+    {"Roma", "AS Roma", "Associazione Sportiva Roma"},
+    {"Leverkusen", "Bayer 04 Leverkusen", "B. Leverkusen"},
+    {"Parma", "Parma Calcio 1913"},
+    {"Atromitos", "APS Atromitos Athinon"},
+    {"PAOK", "PAOK Salonika"},
+    {"Akhmat Grozny", "RFK Akhmat Grozny"},
+    {"Alavés", "Deportivo Alavés"},
+    {"Stade Brestois", "Stade Brestois 29"},
+    {"Troyes", "ESTAC Troyes"},
+    {"Ural", "Ural Yekaterinburg"},
+    {"Salernitana", "US Salernitana 1919"},
+    {"Khimki", "FC Khimki (-2025)"},
+    {"Levadiakos", "APO Levadiakos", "APO Levadiakos Football Club"},
+    {"Kuban Krasnodar", "Kuban Krasnodar (-2018)"},
+    {"Dijon", "Dijon FCO"},
+    {"Veres Rivne", "NK Veres Rivne"},
+    {"SC Cambuur", "SC Cambuur Leeuwarden"},
+    {"Évian", "Thonon Évian Grand Genève FC"},
+    {"Partizan", "FK Partizan Belgrade"},
 ]
 CLUB_NICKNAME_KEYS = {name: f"nickname:{i}" for i, group in enumerate(CLUB_NICKNAME_GROUPS) for name in group}
 

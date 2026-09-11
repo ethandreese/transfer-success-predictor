@@ -374,12 +374,14 @@ rather than doubling as the predict form (see Project history).
   City" - a separate, unresolved gap between the two files).
   `build_club_name_aliases` merges same-club spellings two ways:
   mechanically, for a generic legal-entity marker or accent encoding ("FC
-  Barcelona"/"Barcelona", "Fenerbahçe"/"Fenerbahce" - ~75+ clusters,
-  hand-checked one by one before shipping, across both transfers and loans);
-  and via `CLUB_NICKNAME_GROUPS`, a curated list of nickname/official-name
-  pairs that share no token at all ("Man City"/"Manchester City",
+  Barcelona"/"Barcelona", "Fenerbahçe"/"Fenerbahce", "Genoa"/"Genoa CFC",
+  "Beşiktaş Jimnastik Kulübü"/"Besiktas" - ~110+ clusters, hand-checked one
+  by one before shipping, across both transfers and loans); and via
+  `CLUB_NICKNAME_GROUPS`, a curated list of nickname/official-name pairs
+  that share no token at all ("Man City"/"Manchester City",
   "PSG"/"Paris Saint-Germain", "Bor. Dortmund"/"Borussia
-  Dortmund"/"Dortmund", "Sporting"/"Sporting CP", and ~25 more) - each entry
+  Dortmund"/"Dortmund", "Sporting"/"Sporting CP", "Swansea"/"Swansea City",
+  "Wolves"/"Wolverhampton Wanderers", and ~115 more) - each entry
   individually verified against the real data (matching
   `domestic_competition_id` on both sides, a non-contradictory
   `transfer_date` range) rather than assumed from football knowledge alone,
@@ -389,7 +391,22 @@ rather than doubling as the predict form (see Project history).
   ambiguous case it looks like at a glance - and, in the other direction,
   that a mechanical strip of the generic word "club" would have wrongly
   merged "Racing" with the unrelated Argentine "Racing Club" (`ARG1`),
-  force-split instead (`CLUB_NAME_FORCE_SPLIT`). Applied once at startup to
+  force-split instead (`CLUB_NAME_FORCE_SPLIT`). A second full sweep (see
+  the comment above `CLUB_NICKNAME_GROUPS` in `app/main.py`), triggered by
+  "Swansea"/"Swansea City" still showing as two rows, checked every pair of
+  names in the dataset sharing a whole word and turned up ~95 more genuine
+  merges, plus several look-alike traps rejected the same way "Racing" was:
+  "Barcelona"/"RCD Espanyol Barcelona" (two different Barcelona clubs),
+  "Rangers"/"Queens Park Rangers" (Glasgow Rangers, not QPR), "Krasnodar"/
+  "Kuban Krasnodar" (FC Krasnodar and the dissolved Kuban Krasnodar are two
+  different clubs from the same city), and a club's B/reserve/youth side
+  ("Benfica"/"Benfica B" and six more), which runs its own transfer history
+  and was left split on purpose. One cluster - Ukrainian "Metalist Kharkiv",
+  which went bankrupt around 2016 with two organizations since laying claim
+  to the name - came back a genuine, still-contested identity dispute rather
+  than a clean call; per user confirmation, only "Metalist Kharkiv" and its
+  dissolution-marked spelling are merged, and bare "Metalist"/"Metalist
+  1925" are left split. Applied once at startup to
   `to_club_name`/`from_club_name` in both `transfers_df` and `loans_df`
   (and to `comparables["meta"]`, the nearest-neighbors index behind
   Predict's "similar historical transfers"), so every page - Browse, Loans,
@@ -494,6 +511,22 @@ the git history.
   symmetric playing-time rule that doesn't apply to loans).
 
 **Frontend**
+- Ran a second full club-name sweep after a user report that "Swansea" and
+  "Swansea City" still showed as two rows on Club Report Cards. Checked
+  every pair of names in the dataset sharing a whole word (not just the
+  original ~103 clusters) and added ~35 more mechanical `CLUB_NAME_STRIP_TOKENS`
+  (generic markers like "AS", "Calcio", "Spor Kulübü") and ~95 more
+  `CLUB_NICKNAME_GROUPS` entries, each individually verified the same way as
+  the original set. Also caught and rejected several look-alike traps the
+  same way "Racing"/"Racing Club" was originally: "Barcelona"/"RCD Espanyol
+  Barcelona" (two different clubs), "Rangers"/"Queens Park Rangers" (Glasgow
+  Rangers, not QPR), "Krasnodar"/"Kuban Krasnodar" (two different clubs from
+  the same city, the dissolved one marked with a trailing year), and seven
+  club-vs-its-own-B/youth-team pairs, left split since a reserve side runs
+  its own transfer history. One cluster - Ukrainian "Metalist Kharkiv",
+  which has a real, still-contested ownership dispute after its 2016
+  bankruptcy - was flagged to the user rather than guessed; only the
+  confirmed-safe half of that cluster was merged.
 - Made Club Report Cards' six highlights (best/worst signing, best/worst
   flip, best/worst departure) clickable - each one now drills into that
   specific transfer's own full breakdown card in the same modal, with a

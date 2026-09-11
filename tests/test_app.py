@@ -746,6 +746,84 @@ def test_club_name_aliases_does_not_merge_distinct_clubs():
     ("Shakhtar D.", "FC Shakhtar Donetsk"),
     ("Sporting", "Sporting CP"),
     ("Inter", "Inter Milan"),
+    # Second sweep, triggered by "Swansea"/"Swansea City" still showing as
+    # two rows on /clubs.html - see the comment above CLUB_NICKNAME_GROUPS.
+    ("Swansea", "Swansea City"),
+    ("Cardiff", "Cardiff City"),
+    ("Norwich", "Norwich City"),
+    ("Wigan", "Wigan Athletic"),
+    ("Huddersfield", "Huddersfield Town"),
+    ("Wolves", "Wolverhampton Wanderers"),
+    ("QPR", "Queens Park Rangers"),
+    ("Nottingham Forest", "Nott'm Forest"),
+    ("Frankfurt", "Eintracht Frankfurt"),
+    ("Mönchengladbach", "Borussia Mönchengladbach"),
+    ("Hoffenheim", "TSG 1899 Hoffenheim"),
+    ("Atlético", "Atlético Madrid"),
+    ("Lazio", "Società Sportiva Lazio S.p.A."),
+    ("Panathinaikos", "Panathinaikos Athlitikos Omilos"),
+    ("Willem II", "Willem II Tilburg"),
+    ("Karabükspor", "Kardemir Karabükspor"),
+    ("Ankaragücü", "MKE Ankaragücü"),
+    ("Leipzig", "RB Leipzig"),
+    ("Salzburg", "RB Salzburg"),
+    ("Montpellier", "Montpellier HSC"),
+    ("FC Twente", "FC Twente Enschede"),
+    ("Estoril", "GD Estoril Praia"),
+    ("Vitesse", "Vitesse Arnhem"),
+    ("Excelsior", "Excelsior Rotterdam"),
+    ("Panionios", "Panionios Athens"),
+    ("SönderjyskE", "Sönderjyske Fodbold"),
+    ("Roda JC", "Roda JC Kerkrade"),
+    ("Dnipro", "Dnipro Dnipropetrovsk (-2020)"),
+    ("Kryvbas", "Kryvbas Kryvyi Rig"),
+    ("Belenenses", "CF Os Belenenses"),
+    ("Chornomorets", "Chornomorets Odesa"),
+    ("Panetolikos", "Panetolikos Agrinio"),
+    ("Guingamp", "EA Guingamp"),
+    ("Marítimo", "CS Marítimo"),
+    ("Iraklis", "Iraklis Thessaloniki"),
+    ("De Graafschap", "De Graafschap Doetinchem"),
+    ("Dinamo Zagreb", "GNK Dinamo Zagreb"),
+    ("Xanthi", "AO Xanthi"),
+    ("Karagümrük", "Fatih Karagümrük"),
+    ("Coimbra", "Académica Coimbra"),
+    ("Basel", "FC Basel 1893"),
+    ("Red Star", "Red Star Belgrade"),
+    ("Malmö", "Malmö FF"),
+    ("Young Boys", "BSC Young Boys"),
+    ("Greuther Fürth", "SpVgg Greuther Fürth"),
+    ("Rosenborg", "Rosenborg BK"),
+    ("Sarpsborg 08", "Sarpsborg 08 Fotballforening"),
+    ("Ergotelis", "GS Ergotelis"),
+    ("Ingulets", "Ingulets Petrove"),
+    ("Clermont Foot", "Clermont Foot 63"),
+    ("Desna", "Desna Chernigiv"),
+    ("Karpaty Lviv", "Karpaty Lviv (-2021)"),
+    ("Anzhi", "Anzhi Makhachkala ( -2022)"),
+    ("Mordovia", "Mordovia Saransk (-2020)"),
+    ("Mouscron", "Royal Excel Mouscron (-2022)"),
+    ("SC Paderborn", "SC Paderborn 07"),
+    ("Metalist Kharkiv", "Metalist Kharkiv (- 2016)"),
+    ("Roma", "Associazione Sportiva Roma"),
+    ("Leverkusen", "Bayer 04 Leverkusen"),
+    ("Parma", "Parma Calcio 1913"),
+    ("Atromitos", "APS Atromitos Athinon"),
+    ("PAOK", "PAOK Salonika"),
+    ("Akhmat Grozny", "RFK Akhmat Grozny"),
+    ("Alavés", "Deportivo Alavés"),
+    ("Stade Brestois", "Stade Brestois 29"),
+    ("Troyes", "ESTAC Troyes"),
+    ("Ural", "Ural Yekaterinburg"),
+    ("Salernitana", "US Salernitana 1919"),
+    ("Levadiakos", "APO Levadiakos Football Club"),
+    ("Kuban Krasnodar", "Kuban Krasnodar (-2018)"),
+    ("Dijon", "Dijon FCO"),
+    ("Veres Rivne", "NK Veres Rivne"),
+    ("SC Cambuur", "SC Cambuur Leeuwarden"),
+    ("Athletic", "Athletic Bilbao"),
+    ("Évian", "Thonon Évian Grand Genève FC"),
+    ("Partizan", "FK Partizan Belgrade"),
 ])
 def test_club_name_aliases_merge_verified_nickname_pairs(a, b):
     """
@@ -759,11 +837,110 @@ def test_club_name_aliases_merge_verified_nickname_pairs(a, b):
     assert CLUB_NAME_ALIASES.get(a, a) == CLUB_NAME_ALIASES.get(b, b)
 
 
+@pytest.mark.parametrize("a,b", [
+    ("Genoa", "Genoa CFC"),
+    ("Fiorentina", "ACF Fiorentina"),
+    ("Besiktas", "Beşiktaş Jimnastik Kulübü"),
+    ("Napoli", "SSC Napoli"),
+    ("Atalanta", "Atalanta BC"),
+    ("Sampdoria", "UC Sampdoria"),
+    ("Club Brugge", "Club Brugge KV"),
+    ("Udinese", "Udinese Calcio"),
+    ("Genk", "KRC Genk"),
+    ("Rostov", "FK Rostov"),
+    ("Krasnodar", "FK Krasnodar"),
+    ("Cagliari", "Cagliari Calcio"),
+    ("Basaksehir", "Basaksehir FK"),
+    ("Genclerbirligi", "Gençlerbirliği Spor Kulübü"),
+    ("Sochi", "FK Sochi"),
+    ("Lens", "RC Lens"),
+    ("FC Oleksandriya", "FK Oleksandriya"),
+    ("Ufa", "FK Ufa"),
+    ("Santa Clara", "CD Santa Clara"),
+    ("Chaves", "GD Chaves"),
+    ("Nacional", "CD Nacional"),
+    ("Frosinone", "Frosinone Calcio"),
+    ("Benevento", "Benevento Calcio"),
+    ("Tondela", "CD Tondela"),
+    ("FC Minaj", "FK Minaj"),
+    ("Feirense", "CD Feirense"),
+    ("Brescia", "Brescia Calcio"),
+    ("FC Mariupol", "FK Mariupol"),
+    ("Nizhny Novgorod", "FK Nizhny Novgorod"),
+    ("Osmanlispor", "Osmanlispor FK"),
+    ("Qarabağ", "Qarabag FK"),
+])
+def test_club_name_aliases_merge_mechanical_suffix_variants(a, b):
+    """
+    Unlike the nickname pairs above, these merge purely from
+    CLUB_NAME_STRIP_TOKENS (generic legal-entity markers like "CFC", "AS",
+    "Calcio", "Spor Kulübü") stripping down to an identical remainder - no
+    CLUB_NICKNAME_GROUPS entry needed. Still individually league/date
+    verified during the same sweep to rule out same-city-different-club
+    collisions (see the comment above CLUB_NICKNAME_GROUPS).
+    """
+    assert CLUB_NAME_ALIASES.get(a, a) == CLUB_NAME_ALIASES.get(b, b)
+
+
 def test_club_name_aliases_keeps_distinct_sporting_clubs_separate():
     """'Sporting' alone is only merged into Sporting CP (verified via league PO1) - Sporting Gijón (Spain) and Royal Charleroi Sporting Club (Belgium) are different real clubs and must stay their own rows."""
     sporting_cp_canonical = CLUB_NAME_ALIASES.get("Sporting CP", "Sporting CP")
     assert CLUB_NAME_ALIASES.get("Sporting Gijón", "Sporting Gijón") != sporting_cp_canonical
     assert CLUB_NAME_ALIASES.get("Royal Charleroi Sporting Club", "Royal Charleroi Sporting Club") != sporting_cp_canonical
+
+
+@pytest.mark.parametrize("a,b", [
+    ("Arsenal", "Arsenal Tula"),
+    ("Arsenal", "Arsenal Kyiv"),
+    ("Barcelona", "RCD Espanyol Barcelona"),
+    ("Rangers", "Queens Park Rangers"),
+    ("Nacional", "Atl. Nacional"),
+    ("Athletic", "Wigan Athletic"),
+    ("Athletic", "Forfar Athletic"),
+    ("Krasnodar", "Kuban Krasnodar"),
+    ("Krasnodar", "Kuban Krasnodar (-2018)"),
+])
+def test_club_name_aliases_rejects_same_name_different_club_traps(a, b):
+    """
+    Each pair here shares a word (sometimes a whole name) but is a genuinely
+    different real club - the same trap as Manchester City/United or Dundee
+    FC/United, caught in the second sweep by checking domestic_competition_id
+    (Arsenal Tula/Kyiv are a different league from Arsenal FC) or football
+    domain knowledge (Rangers is Glasgow Rangers, not QPR; FC Krasnodar and
+    the dissolved Kuban Krasnodar are two different Krasnodar clubs). Must
+    stay separate rows.
+    """
+    assert CLUB_NAME_ALIASES.get(a, a) != CLUB_NAME_ALIASES.get(b, b)
+
+
+@pytest.mark.parametrize("first_team,reserve_or_youth", [
+    ("Benfica", "Benfica B"),
+    ("Barcelona", "Barcelona B"),
+    ("Tottenham", "Tottenham U21"),
+    ("Villarreal", "FC Villarreal C"),
+    ("Krasnodar", "Krasnodar 2"),
+    ("Utrecht", "Utrecht U21"),
+    ("FC Cartagena", "FC Cartagena B"),
+])
+def test_club_name_aliases_keeps_reserve_and_youth_sides_separate(first_team, reserve_or_youth):
+    """A club's B/reserve/youth side runs its own transfer history, separate from the first team's - merging them would misattribute one squad's transfers to the other."""
+    assert CLUB_NAME_ALIASES.get(first_team, first_team) != CLUB_NAME_ALIASES.get(reserve_or_youth, reserve_or_youth)
+
+
+def test_club_name_aliases_metalist_cluster_merges_only_the_confirmed_pair():
+    """
+    Ukrainian "Metalist Kharkiv" went bankrupt around 2016, and two
+    separately-run organizations have since both laid claim to the
+    name/legacy - a real, contested identity dispute. Per explicit user
+    confirmation, only "Metalist Kharkiv" and "Metalist Kharkiv (- 2016)"
+    (the same name, just marking when that spelling stopped appearing) are
+    merged; bare "Metalist" and "Metalist 1925" stay their own separate rows.
+    """
+    kharkiv_canonical = CLUB_NAME_ALIASES.get("Metalist Kharkiv (- 2016)", "Metalist Kharkiv (- 2016)")
+    assert CLUB_NAME_ALIASES.get("Metalist Kharkiv", "Metalist Kharkiv") == kharkiv_canonical
+    assert CLUB_NAME_ALIASES.get("Metalist", "Metalist") != kharkiv_canonical
+    assert CLUB_NAME_ALIASES.get("Metalist 1925", "Metalist 1925") != kharkiv_canonical
+    assert CLUB_NAME_ALIASES.get("Metalist", "Metalist") != CLUB_NAME_ALIASES.get("Metalist 1925", "Metalist 1925")
 
 
 def test_clubs_leaderboard_filters_endpoint():
