@@ -143,18 +143,21 @@ function resetAndLoad() {
 }
 
 /**
- * One highlight row (best/worst signing, flip, or departure) as a
- * clickable, labeled line, or nothing if this club has no data for it. A
- * signing/departure highlight carries success_score and gets a "scored X"
- * clause; a flip highlight (see `extra`) describes itself purely in fees
- * bought/resold for and has no success_score at all - appending an empty
- * "scored" clause for those would read as a sentence trailing off into
- * nothing. Every highlight is a real row of transfers_df now (see
- * transfer_highlight/flip_highlight in build_club_report_cards), so each
- * one carries player_id - rendered as a button wired up after insertion
- * (see showCard) to open that exact transfer's full breakdown card, the
- * same (player_id, transfer_date) lookup Browse/Loans/Surprises/Player
- * Timelines already use.
+ * One highlight row (best/worst signing, flip, or departure) as a labeled
+ * line, or nothing if this club has no data for it. A signing/departure
+ * highlight carries success_score and gets a "scored X" clause; a flip
+ * highlight (see `extra`) describes itself purely in fees bought/resold
+ * for and has no success_score at all - appending an empty "scored"
+ * clause for those would read as a sentence trailing off into nothing.
+ *
+ * Only the player's own name is the click target (a <button>, wired up
+ * after insertion - see showCard), not the whole row: every highlight is
+ * a real row of transfers_df now (see transfer_highlight/flip_highlight
+ * in build_club_report_cards) and carries player_id for that button to
+ * open via /api/transfers/detail, the same lookup Browse/Loans/Surprises/
+ * Player Timelines already use - but the label/date/score around it are
+ * plain descriptive text, not part of the link, so hovering them
+ * shouldn't light up as if they were too.
  */
 function highlightLine(label, h, extra) {
   if (!h) return "";
@@ -162,9 +165,11 @@ function highlightLine(label, h, extra) {
     ? `, scored <strong style="color:${scoreColor(h.success_score)}">${h.success_score}</strong>`
     : "";
   return `
-    <button type="button" class="highlight-row" data-player-id="${h.player_id}" data-transfer-date="${h.transfer_date}" aria-label="View transfer details: ${h.name}">
-      <span class="highlight-label">${label}</span> <span class="highlight-name">${h.name}</span> (${h.transfer_date.slice(0, 7)})${extra ? ` - ${extra(h)}` : ""}${scoreClause}
-    </button>
+    <div class="highlight-row">
+      <span class="highlight-label">${label}:</span>
+      <button type="button" class="highlight-name" data-player-id="${h.player_id}" data-transfer-date="${h.transfer_date}" aria-label="View transfer details: ${h.name}">${h.name}</button>
+      (${h.transfer_date.slice(0, 7)})${extra ? ` - ${extra(h)}` : ""}${scoreClause}
+    </div>
   `;
 }
 
@@ -267,8 +272,8 @@ function showCard(club) {
       <a class="browse-link" href="/browse.html?q=${encodeURIComponent(club.club_name)}">View every transfer involving ${club.club_name} on Browse &rarr;</a>
     </div>
   `;
-  [...content.querySelectorAll(".highlight-row")].forEach(row => {
-    row.addEventListener("click", () => showTransferDetail(row.dataset.playerId, row.dataset.transferDate));
+  [...content.querySelectorAll(".highlight-name")].forEach(btn => {
+    btn.addEventListener("click", () => showTransferDetail(btn.dataset.playerId, btn.dataset.transferDate));
   });
   cardModal.open();
 }

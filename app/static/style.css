@@ -235,34 +235,29 @@ h2 {
 .example-card h3 { font-size: 0.9rem; margin: 1rem 0 0.3rem; }
 .example-card p { font-size: 0.85rem; color: var(--muted); margin: 0.2rem 0; }
 
-.highlight-row {
-  display: block;
-  width: 100%;
-  text-align: left;
+.highlight-row { font-size: 0.82rem; color: var(--muted); margin: 0.15rem 0; }
+.highlight-label { color: var(--text); }
+
+/* The player's own name is the only clickable part of the row - a plain
+   inline <button>, not the whole line, so hovering the surrounding label/
+   date/score text (which isn't part of the link) doesn't light up as if
+   it were too. Colored like every other link on the site (.browse-link,
+   .feature-card) so it reads as clickable at a glance, not just on hover. */
+.highlight-name {
+  display: inline;
   background: none;
   border: none;
-  border-radius: 6px;
-  padding: 0.15rem 0.35rem;
-  margin: 0.1rem -0.35rem;
-  font-size: 0.82rem;
-  font-family: inherit;
-  color: var(--muted);
-  cursor: pointer;
-}
-.highlight-row:hover { background: var(--panel-2); color: var(--text); }
-.highlight-label { color: var(--text); margin-right: 0.3rem; }
-
-/* The player's own name is the clickable target's real subject - colored
-   like every other link on the site (.browse-link, .feature-card) so the
-   row reads as clickable at a glance, not just on hover. */
-.highlight-name {
+  padding: 0;
+  margin: 0;
+  font: inherit;
   color: var(--accent);
   font-weight: 600;
+  cursor: pointer;
   text-decoration: underline;
   text-decoration-color: transparent;
   transition: text-decoration-color 0.15s;
 }
-.highlight-row:hover .highlight-name { text-decoration-color: var(--accent); }
+.highlight-name:hover, .highlight-name:focus-visible { text-decoration-color: var(--accent); }
 
 .browse-link {
   display: block;
