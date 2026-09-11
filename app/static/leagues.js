@@ -87,7 +87,7 @@ function buildTrendSVG(byYear, earlyAvgFee, earlyAvgScore) {
 
   const yearLabels = years.map((yr, i) => `<text x="${x(i)}" y="${H - 6}" text-anchor="middle" font-size="10" fill="var(--muted)">${yr}</text>`).join("");
 
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="240" role="img" aria-label="Fee and score index trend chart">
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="Fee and score index trend chart">
     ${baseline}
     ${seriesPath(feeIdx, "var(--accent-mid)", "Avg fee index")}
     ${seriesPath(scoreIdx, "var(--accent)", "Avg score index")}
@@ -97,10 +97,15 @@ function buildTrendSVG(byYear, earlyAvgFee, earlyAvgScore) {
 
 /** Plain-language summary of the early-vs-recent comparison, in the same "back the number with a real comparison" style as the rest of the site's explanations. */
 function verdictSentence(r) {
-  const feeDir = r.fee_growth_pct >= 0 ? "grew" : "fell";
   const scoreDir = r.score_change >= 0 ? "rose" : "dropped";
-  return `Between ${r.early_years} and ${r.recent_years}, the average fee in ${r.league} ${feeDir} from
-    ${formatMoney(r.early_avg_fee)} to ${formatMoney(r.recent_avg_fee)} (${signed(r.fee_growth_pct, "%")}),
+  // fee_growth_pct is null when the early-period average fee was 0 (e.g.
+  // every early transfer there was free) - the growth rate is undefined in
+  // that case, not "+null%", so this clause drops the percentage instead
+  // of rendering it.
+  const feeClause = r.fee_growth_pct === null
+    ? `the average fee in ${r.league} went from ${formatMoney(r.early_avg_fee)} to ${formatMoney(r.recent_avg_fee)} (not enough paid transfers early on to measure a growth rate)`
+    : `the average fee in ${r.league} ${r.fee_growth_pct >= 0 ? "grew" : "fell"} from ${formatMoney(r.early_avg_fee)} to ${formatMoney(r.recent_avg_fee)} (${signed(r.fee_growth_pct, "%")})`;
+  return `Between ${r.early_years} and ${r.recent_years}, ${feeClause},
     while the average success score ${scoreDir} from ${r.early_avg_score} to ${r.recent_avg_score}
     (${signed(r.score_change)} pts).`;
 }

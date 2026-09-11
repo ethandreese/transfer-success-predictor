@@ -636,6 +636,17 @@ def test_clubs_leaderboard_resale_profit_direction_is_the_buying_club():
     assert "Cristiano Ronaldo" not in flip_names
 
 
+def test_clubs_leaderboard_best_and_worst_flip_are_the_real_extremes():
+    """best_flip/worst_flip and total_resale_profit are all derived from the same per-club profit Series (computed once - see build_club_report_cards) - best_flip's own profit must be >= worst_flip's, and both must be real resales this club actually made."""
+    res = client.get("/api/clubs/leaderboard", params={"q": "Real Madrid", "sort": "total_spent"})
+    real_madrid = next(r for r in res.json()["results"] if r["club_name"] == "Real Madrid")
+    assert real_madrid["resales_count"] >= 2
+    best, worst = real_madrid["best_flip"], real_madrid["worst_flip"]
+    best_profit = best["fee_received"] - best["fee_paid"]
+    worst_profit = worst["fee_received"] - worst["fee_paid"]
+    assert best_profit >= worst_profit
+
+
 def test_clubs_leaderboard_search_filters_by_name():
     """The search box should filter to clubs whose name contains the query."""
     res = client.get("/api/clubs/leaderboard", params={"q": "Real Madrid"})
@@ -781,6 +792,29 @@ def test_career_search_deduplicates_by_player():
     assert len(player_ids) == len(set(player_ids))
 
 
+def test_career_search_uses_the_precomputed_table():
+    """search_players_for_career must filter the startup-precomputed PLAYER_CAREER_SEARCH_DF, not rebuild it per request - a stale/wrong table would still return results, just not the real ones."""
+    from app.main import PLAYER_CAREER_SEARCH_DF
+    assert len(PLAYER_CAREER_SEARCH_DF) > 0
+    assert PLAYER_CAREER_SEARCH_DF["player_id"].duplicated().sum() == 0
+
+
+@pytest.mark.parametrize("endpoint,extra_params", [
+    ("/api/players/career-search", {}),
+    ("/api/clubs/leaderboard", {}),
+    ("/api/surprises", {}),
+    ("/api/transfers", {}),
+    ("/api/loans", {}),
+    ("/api/players/search", {}),
+    ("/api/clubs/search", {}),
+])
+def test_search_endpoints_do_not_500_on_regex_metacharacters(endpoint, extra_params):
+    """A query box that treats the query as a plain substring (not a regex) must not 500 when the query happens to contain an unbalanced regex metacharacter - a real risk for a search-as-you-type box firing on every keystroke."""
+    for bad_query in ["(", "[", "a{2,", "*abc", "a)b"]:
+        res = client.get(endpoint, params={"q": bad_query, **extra_params})
+        assert res.status_code == 200, f"{endpoint}?q={bad_query!r} returned {res.status_code}"
+
+
 def test_player_career_combines_transfers_and_loans_chronologically():
     """A player with both permanent transfers and loans should get one merged, date-sorted timeline, each stop tagged with which table it came from."""
     res = client.get("/api/players/81999/career")  # Joselu
@@ -854,6 +888,35 @@ def test_leagues_trends_sort_by_fee_growth_drops_leagues_with_no_trend():
     values = [r["fee_growth_pct"] for r in data["results"]]
     assert all(v is not None for v in values)
     assert values == sorted(values, reverse=True)
+
+
+def test_leagues_trends_endpoint_never_leaks_raw_nan(monkeypatch):
+    """
+    A league with no trend-eligible history has early_avg_fee/recent_avg_fee
+    as None in league_trends_df (see build_league_trends) - once collected
+    into a float64 DataFrame column alongside real leagues' real values,
+    None becomes np.nan. The endpoint must serialize that as JSON null like
+    its sibling fields already do, not leak the raw NaN token: Python's own
+    json module silently accepts NaN as a non-standard extension, but a
+    browser's strict JSON.parse does not, and would fail the whole page's
+    fetch over one league's missing trend data.
+    """
+    import app.main as main
+    synthetic_row = {
+        "league_id": "ZZ9", "transfers": 20, "avg_score": 50.0, "avg_fee": 1_000_000.0,
+        "early_years": None, "recent_years": None,
+        "early_avg_fee": None, "recent_avg_fee": None, "fee_growth_pct": None,
+        "early_avg_score": None, "recent_avg_score": None, "score_change": None,
+        "by_year": [],
+    }
+    monkeypatch.setattr(main, "league_trends_df", pd.DataFrame([synthetic_row]))
+
+    res = client.get("/api/leagues/trends")
+    assert res.status_code == 200
+    assert "NaN" not in res.text
+    row = res.json()["results"][0]
+    assert row["early_avg_fee"] is None
+    assert row["recent_avg_fee"] is None
 
 
 def test_leagues_trends_row_has_no_second_request_needed_fields():

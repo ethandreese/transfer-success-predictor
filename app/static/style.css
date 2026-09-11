@@ -98,14 +98,20 @@ header p {
 .nav-dropdown-menu {
   display: none;
   position: absolute;
+  /* top: 100% with no margin, unlike an earlier version of this rule -
+     a margin here would sit outside both the toggle's and .nav-dropdown's
+     own hit-test box, so a mouse moving from the toggle straight down
+     into the menu would cross a real dead zone and fire mouseleave before
+     ever reaching the menu. The visual breathing room moves to padding-top
+     below instead, which is inside the menu's own box and so stays
+     hoverable the whole way down. */
   top: 100%;
   left: 50%;
   transform: translateX(-50%);
-  margin-top: 0.6rem;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 0.4rem;
+  padding: 0.6rem 0.4rem 0.4rem;
   min-width: 200px;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
   z-index: 30;

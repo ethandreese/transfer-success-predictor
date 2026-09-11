@@ -255,15 +255,15 @@ function injectSettingsUI() {
  * dropdown, clicking outside it, or pressing Escape closes whichever is
  * open.
  *
- * Closing on mouseleave is delayed (CLOSE_DELAY_MS), not immediate: the
- * menu sits visually just below the toggle (see .nav-dropdown-menu's
- * margin-top), but that gap isn't part of either element's own hit-test
- * area - moving the mouse from the toggle straight down into the menu
- * passes over that dead zone, which without the delay fires mouseleave
- * (closing the menu) before mouseenter on the menu ever has a chance to
- * fire. The delay gives normal mouse movement enough time to land back
- * inside the dropdown before the close actually happens; entering the
- * dropdown again (or a click) cancels the pending close.
+ * Closing on mouseleave is delayed (CLOSE_DELAY_MS), not immediate. The
+ * menu sits directly against the toggle with no gap between them (see
+ * .nav-dropdown-menu in style.css - an earlier version used a margin-top
+ * there, which sat outside both elements' hit-test area and caused a real
+ * dead zone; the visual breathing room now comes from padding-top instead,
+ * which stays inside the menu's own hoverable box). The delay is just a
+ * small courtesy buffer on top of that fix, for a jittery mouse or a
+ * diagonal move that briefly overshoots the menu's edge - entering the
+ * dropdown again (or a click) cancels the pending close either way.
  */
 function initNavDropdowns() {
   const CLOSE_DELAY_MS = 150;

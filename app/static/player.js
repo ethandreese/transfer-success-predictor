@@ -8,9 +8,18 @@ function scoreColor(score) {
   return "var(--accent-bad)";
 }
 
-/** "3.1y" / "8mo" - permanent tenures read better in years, loans (almost always under a year) in months. Mirrors browse.js/loans.js's own tenure formatting for the two card types. */
+/**
+ * "3.1y" / "8mo". A permanent transfer always renders in years, matching
+ * browse.js's tenureDisplay exactly (no duration threshold there - every
+ * permanent stop is scored over at least the whole first season by
+ * construction). A loan picks the unit by actual duration, matching
+ * loans.js's durationDisplay (days >= 365 -> years, else months) - a
+ * duration threshold matters there since most loans are under a year but
+ * a real minority run multi-year.
+ */
 function tenureDisplay(days, type) {
-  return type === "loan" ? `${Math.round(days / 30.44)}mo` : `${(days / 365.25).toFixed(1)}y`;
+  if (type !== "loan") return `${(days / 365.25).toFixed(1)}y`;
+  return days >= 365 ? `${(days / 365.25).toFixed(1)}y` : `${Math.round(days / 30.44)}mo`;
 }
 
 /**
@@ -155,7 +164,7 @@ function buildTimelineSVG(stops) {
     <text x="${W - padR}" y="${H - 6}" text-anchor="end" font-size="10" fill="var(--muted)">${lastYear}</text>
   `;
 
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="220" role="img" aria-label="Career timeline chart">
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="Career timeline chart">
     ${gridlines}
     ${line}
     ${dots}

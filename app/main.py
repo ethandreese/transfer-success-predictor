@@ -297,9 +297,8 @@ def build_club_report_cards(df):
         r = g.loc[g["success_score"].idxmax() if best else g["success_score"].idxmin()]
         return {"name": r["name"], "success_score": float(r["success_score"]), "transfer_date": str(r["transfer_date"])[:10]}
 
-    def flip_highlight(resold, best):
-        """The most (best=True) or least profitable buy-then-resell in this already-resold-only group."""
-        profit = resold["next_transfer_fee"] - resold["transfer_fee"].fillna(0)
+    def flip_highlight(resold, profit, best):
+        """The most (best=True) or least profitable buy-then-resell in this already-resold-only group. `profit` is precomputed once by the caller and shared across both calls, rather than each call redoing the same subtraction."""
         r = resold.loc[profit.idxmax() if best else profit.idxmin()]
         return {
             "name": r["name"], "bought_from": r["from_club_name"],
@@ -312,6 +311,7 @@ def build_club_report_cards(df):
     for club, g in df.groupby("to_club_name"):
         mode = g["to_domestic_competition_id"].mode()
         resold = g[g["has_resale_data"]]
+        profit = resold["next_transfer_fee"] - resold["transfer_fee"].fillna(0)
         rows[club] = {
             "club_name": club,
             "league_id": mode.iat[0] if not mode.empty else None,
@@ -322,9 +322,9 @@ def build_club_report_cards(df):
             "worst_signing": transfer_highlight(g, best=False),
             "resales_count": len(resold),
             "avg_resale_profit_pct": float(resold["resale_profit_pct"].mean()) if len(resold) else None,
-            "total_resale_profit": float((resold["next_transfer_fee"] - resold["transfer_fee"].fillna(0)).sum()),
-            "best_flip": flip_highlight(resold, best=True) if len(resold) else None,
-            "worst_flip": flip_highlight(resold, best=False) if len(resold) else None,
+            "total_resale_profit": float(profit.sum()),
+            "best_flip": flip_highlight(resold, profit, best=True) if len(resold) else None,
+            "worst_flip": flip_highlight(resold, profit, best=False) if len(resold) else None,
         }
 
     for club, g in df.groupby("from_club_name"):
@@ -449,6 +449,16 @@ def build_league_trends(df):
 
 
 league_trends_df = build_league_trends(transfers_df)
+
+# Every (player_id, name, _name_fold) mention across both transfers_df and
+# loans_df, deduplicated to one row per player - built once here rather
+# than in search_players_for_career itself, which used to redo this same
+# concat+dedup over ~12,700 rows on every request (the Player Timelines
+# search box fires it on nearly every keystroke).
+PLAYER_CAREER_SEARCH_DF = pd.concat([
+    transfers_df[["player_id", "name", "_name_fold"]],
+    loans_df[["player_id", "name", "_name_fold"]],
+]).drop_duplicates(subset="player_id")
 
 
 NUMERIC_FEATURES = metadata["numeric_features"]
@@ -1719,13 +1729,8 @@ def search_players_for_career(q: str, limit: int = 10):
     if len(q) < 2:
         return []
     limit = max(1, min(limit, 50))
-    q_fold = fold_accents(q)
-    combined = pd.concat([
-        transfers_df[["player_id", "name", "_name_fold"]],
-        loans_df[["player_id", "name", "_name_fold"]],
-    ])
-    matches = combined[combined["_name_fold"].str.contains(q_fold, na=False)]
-    matches = matches.drop_duplicates(subset="player_id").head(limit)
+    mask = PLAYER_CAREER_SEARCH_DF["_name_fold"].str.contains(fold_accents(q), na=False, regex=False)
+    matches = PLAYER_CAREER_SEARCH_DF[mask].head(limit)
     return matches[["player_id", "name"]].to_dict(orient="records")
 
 
@@ -1833,7 +1838,7 @@ def clubs_leaderboard(
     if league:
         df = df[df["league_id"] == league]
     if q:
-        df = df[df["_name_fold"].str.contains(fold_accents(q), na=False)]
+        df = df[df["_name_fold"].str.contains(fold_accents(q), na=False, regex=False)]
 
     sort_field = sort if sort in CLUB_SORT_FIELDS else "avg_incoming_score"
     min_field, min_count = CLUB_SORT_FIELDS[sort_field]
@@ -1908,8 +1913,8 @@ def leagues_trends(sort: str = "transfers", order: str = "desc"):
             "avg_fee": float(r["avg_fee"]),
             "early_years": r["early_years"],
             "recent_years": r["recent_years"],
-            "early_avg_fee": r["early_avg_fee"],
-            "recent_avg_fee": r["recent_avg_fee"],
+            "early_avg_fee": None if pd.isna(r["early_avg_fee"]) else float(r["early_avg_fee"]),
+            "recent_avg_fee": None if pd.isna(r["recent_avg_fee"]) else float(r["recent_avg_fee"]),
             "fee_growth_pct": None if pd.isna(r["fee_growth_pct"]) else round(float(r["fee_growth_pct"]), 1),
             "early_avg_score": None if pd.isna(r["early_avg_score"]) else round(float(r["early_avg_score"]), 1),
             "recent_avg_score": None if pd.isna(r["recent_avg_score"]) else round(float(r["recent_avg_score"]), 1),
@@ -2037,9 +2042,9 @@ def list_transfers(
     if q:
         q_fold = fold_accents(q)
         mask = (
-            df["_name_fold"].str.contains(q_fold, na=False)
-            | df["_to_club_fold"].str.contains(q_fold, na=False)
-            | df["_from_club_fold"].str.contains(q_fold, na=False)
+            df["_name_fold"].str.contains(q_fold, na=False, regex=False)
+            | df["_to_club_fold"].str.contains(q_fold, na=False, regex=False)
+            | df["_from_club_fold"].str.contains(q_fold, na=False, regex=False)
         )
         df = df[mask]
 
@@ -2100,9 +2105,9 @@ def list_surprises(
     if q:
         q_fold = fold_accents(q)
         mask = (
-            df["_name_fold"].str.contains(q_fold, na=False)
-            | df["_to_club_fold"].str.contains(q_fold, na=False)
-            | df["_from_club_fold"].str.contains(q_fold, na=False)
+            df["_name_fold"].str.contains(q_fold, na=False, regex=False)
+            | df["_to_club_fold"].str.contains(q_fold, na=False, regex=False)
+            | df["_from_club_fold"].str.contains(q_fold, na=False, regex=False)
         )
         df = df[mask]
 
@@ -2165,9 +2170,9 @@ def list_loans(
     if q:
         q_fold = fold_accents(q)
         mask = (
-            df["_name_fold"].str.contains(q_fold, na=False)
-            | df["_to_club_fold"].str.contains(q_fold, na=False)
-            | df["_from_club_fold"].str.contains(q_fold, na=False)
+            df["_name_fold"].str.contains(q_fold, na=False, regex=False)
+            | df["_to_club_fold"].str.contains(q_fold, na=False, regex=False)
+            | df["_from_club_fold"].str.contains(q_fold, na=False, regex=False)
         )
         df = df[mask]
 
