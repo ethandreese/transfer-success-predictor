@@ -671,6 +671,21 @@ def test_clubs_leaderboard_row_has_no_second_request_needed_fields():
         assert "name" in r["worst_signing"] and "success_score" in r["worst_signing"]
 
 
+def test_clubs_leaderboard_highlights_are_clickable_into_transfer_detail():
+    """Every highlight (signing/flip/departure) must carry a player_id, and that (player_id, transfer_date) pair must resolve on /api/transfers/detail - the report card's highlights link into the same real transfer record the rest of the site uses."""
+    res = client.get("/api/clubs/leaderboard", params={"q": "Real Madrid", "sort": "total_spent"})
+    real_madrid = next(r for r in res.json()["results"] if r["club_name"] == "Real Madrid")
+    for key in ["best_signing", "worst_signing", "best_flip", "worst_flip", "best_departure", "worst_departure"]:
+        highlight = real_madrid[key]
+        assert highlight is not None, key
+        assert "player_id" in highlight, key
+        detail = client.get("/api/transfers/detail", params={
+            "player_id": highlight["player_id"], "transfer_date": highlight["transfer_date"],
+        })
+        assert detail.status_code == 200, key
+        assert detail.json()["name"] == highlight["name"], key
+
+
 def test_eur_m_formats_billions_above_the_threshold():
     """No individual transfer fee reaches a billion, but a club's aggregate spend (see build_club_report_cards) can - eur_m() should switch to 'b' at that point instead of an unwieldy 4-digit million count."""
     assert eur_m(2_049_250_000) == "€2.05b"

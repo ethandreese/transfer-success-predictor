@@ -291,8 +291,10 @@ rather than doubling as the predict form (see Project history).
   later sold on again, and how players it let go performed at their *next*
   club. A club needs at least 5 transfers (3 for resale-profit ranking)
   before a rate-based ranking includes it. Click a club for its full report
-  card (best/worst signing, best/worst flip, best/worst departure) and a
-  link to its complete transfer history on Browse.
+  card (best/worst signing, best/worst flip, best/worst departure) - each
+  of those six highlights is itself clickable, drilling into that specific
+  transfer's own full breakdown card (with a link back to the club view) -
+  and a link to its complete transfer history on Browse.
 - **`/player.html`** — search a player to see their whole scored career as
   a timeline: one point per permanent transfer or loan, positioned by its
   real date (not just evenly spaced) and colored by score, connected in
@@ -492,6 +494,13 @@ the git history.
   symmetric playing-time rule that doesn't apply to loans).
 
 **Frontend**
+- Made Club Report Cards' six highlights (best/worst signing, best/worst
+  flip, best/worst departure) clickable - each one now drills into that
+  specific transfer's own full breakdown card in the same modal, with a
+  "← Back" link to return to the club view. Required adding `player_id` to
+  `build_club_report_cards`' highlight dicts in `app/main.py`, since they
+  previously only carried enough to describe themselves, not enough to
+  look themselves up via `/api/transfers/detail`.
 - Restructured the nav into three dropdowns (Predict, Browse, Insights)
   plus Home and About, and split `/` into a real home page (the curated
   showcase cards, moved here, plus a linked directory of every page) with

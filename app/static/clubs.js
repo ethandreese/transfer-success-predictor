@@ -1,4 +1,4 @@
-const state = { offset: 0, total: 0, rows: [], openClub: null };
+const state = { offset: 0, total: 0, rows: [], openClub: null, openTransfer: null };
 const cardModal = makeModalAccessible(document.getElementById("card-modal-backdrop"));
 
 /** Green/amber/red for a 0-100 score, shared by every score display on the page - resale/departure numbers are on the same 0-100 scale as success_score, so they reuse it too. */
@@ -143,19 +143,83 @@ function resetAndLoad() {
 }
 
 /**
- * One highlight row (best/worst signing, flip, or departure) as a labeled
- * line, or nothing if this club has no data for it. A signing/departure
- * highlight carries success_score and gets a "scored X" clause; a flip
- * highlight (see `extra`) describes itself purely in fees bought/resold
- * for and has no success_score at all - appending an empty "scored"
- * clause for those would read as a sentence trailing off into nothing.
+ * One highlight row (best/worst signing, flip, or departure) as a
+ * clickable, labeled line, or nothing if this club has no data for it. A
+ * signing/departure highlight carries success_score and gets a "scored X"
+ * clause; a flip highlight (see `extra`) describes itself purely in fees
+ * bought/resold for and has no success_score at all - appending an empty
+ * "scored" clause for those would read as a sentence trailing off into
+ * nothing. Every highlight is a real row of transfers_df now (see
+ * transfer_highlight/flip_highlight in build_club_report_cards), so each
+ * one carries player_id - rendered as a button wired up after insertion
+ * (see showCard) to open that exact transfer's full breakdown card, the
+ * same (player_id, transfer_date) lookup Browse/Loans/Surprises/Player
+ * Timelines already use.
  */
 function highlightLine(label, h, extra) {
   if (!h) return "";
   const scoreClause = h.success_score !== undefined
     ? `, scored <strong style="color:${scoreColor(h.success_score)}">${h.success_score}</strong>`
     : "";
-  return `<div class="highlight-row"><span class="highlight-label">${label}</span> ${h.name} (${h.transfer_date.slice(0, 7)})${extra ? ` - ${extra(h)}` : ""}${scoreClause}</div>`;
+  return `
+    <button type="button" class="highlight-row" data-player-id="${h.player_id}" data-transfer-date="${h.transfer_date}" aria-label="View transfer details: ${h.name}">
+      <span class="highlight-label">${label}</span> <span class="highlight-name">${h.name}</span> (${h.transfer_date.slice(0, 7)})${extra ? ` - ${extra(h)}` : ""}${scoreClause}
+    </button>
+  `;
+}
+
+/** Render one transfer's score-component breakdown (label + bar + hover tooltip), same shape as browse.js/loans.js/player.js. */
+function renderBreakdown(breakdown) {
+  return breakdown.map(b => `
+    <div class="breakdown-row">
+      <span class="tooltip-wrap breakdown-label">
+        ${b.label}
+        <span class="tooltip-box">
+          ${convertMoneyInText(b.description)}
+          ${b.stats ? `<ul class="tooltip-stats">${b.stats.map(s => `<li>${convertMoneyInText(s)}</li>`).join("")}</ul>` : ""}
+        </span>
+      </span>
+      <div class="breakdown-bar-track">
+        <div class="breakdown-bar-fill" style="width:${b.value}%; background:${scoreColor(b.value)}"></div>
+      </div>
+      <span class="breakdown-value">${b.value}</span>
+    </div>
+  `).join("");
+}
+
+/**
+ * Fetch and render one highlighted transfer's full breakdown card in place
+ * of the club report card currently showing - a "← Back" link returns to
+ * it (state.openClub is still intact, this never leaves the modal).
+ */
+async function showTransferDetail(playerId, transferDate) {
+  state.openTransfer = { playerId, transferDate };
+  const content = document.getElementById("card-modal-content");
+  content.innerHTML = "Loading...";
+  try {
+    const res = await fetch(`/api/transfers/detail?player_id=${playerId}&transfer_date=${transferDate}`);
+    if (!res.ok) throw new Error("Could not load this transfer.");
+    const ex = await res.json();
+    const years = (ex.tenure_days / 365.25).toFixed(1);
+    content.innerHTML = `
+      <div class="example-card" style="border:none; padding:1.25rem;">
+        <a href="#" class="browse-link" id="back-to-club" style="margin:0 0 0.75rem;">&larr; Back to ${state.openClub.club_name} report card</a>
+        <div class="name">${ex.name}</div>
+        <div class="route">${ex.from_club} &rarr; ${ex.to_club} (${ex.transfer_date.slice(0, 7)})</div>
+        <div class="score" style="color:${scoreColor(ex.success_score)}">${ex.success_score}</div>
+        <div class="tenure-note">
+          Scored over ${years} years at the club${ex.still_at_club ? " (still there)" : " (before leaving)"}
+        </div>
+        <div class="breakdown">${renderBreakdown(ex.breakdown)}</div>
+      </div>
+    `;
+    document.getElementById("back-to-club").addEventListener("click", (e) => {
+      e.preventDefault();
+      showCard(state.openClub);
+    });
+  } catch (e) {
+    content.innerHTML = `<div class="error-box">${e.message}</div>`;
+  }
 }
 
 /**
@@ -166,6 +230,7 @@ function highlightLine(label, h, extra) {
  */
 function showCard(club) {
   state.openClub = club;
+  state.openTransfer = null;
   const content = document.getElementById("card-modal-content");
   const buyerSection = club.transfers_in ? `
     <h3>As a buyer</h3>
@@ -202,12 +267,16 @@ function showCard(club) {
       <a class="browse-link" href="/browse.html?q=${encodeURIComponent(club.club_name)}">View every transfer involving ${club.club_name} on Browse &rarr;</a>
     </div>
   `;
+  [...content.querySelectorAll(".highlight-row")].forEach(row => {
+    row.addEventListener("click", () => showTransferDetail(row.dataset.playerId, row.dataset.transferDate));
+  });
   cardModal.open();
 }
 
 /** Close the report-card modal. */
 function closeCard() {
   state.openClub = null;
+  state.openTransfer = null;
   cardModal.close();
 }
 
@@ -251,7 +320,13 @@ document.getElementById("page-info").addEventListener("keydown", (e) => {
 // refresh the open card, if any, rather than requiring a manual refresh.
 document.addEventListener("settingschange", () => {
   resetAndLoad();
-  if (state.openClub) showCard(state.openClub);
+  if (state.openTransfer) {
+    // Re-render in place without going through showCard (which would
+    // clear state.openTransfer and drop the user back to the club view).
+    showTransferDetail(state.openTransfer.playerId, state.openTransfer.transferDate);
+  } else if (state.openClub) {
+    showCard(state.openClub);
+  }
 });
 
 loadFilters();

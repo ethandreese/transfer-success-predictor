@@ -293,15 +293,31 @@ def build_club_report_cards(df):
     /api/clubs/leaderboard endpoint only filters/sorts/paginates it.
     """
     def transfer_highlight(g, best):
-        """The best (best=True) or worst transfer in this group, by success_score."""
+        """
+        The best (best=True) or worst transfer in this group, by
+        success_score. Carries player_id alongside transfer_date so the
+        frontend can open this exact transfer's full breakdown card via
+        /api/transfers/detail, the same (player_id, transfer_date) key
+        every other click-to-view-card page already uses.
+        """
         r = g.loc[g["success_score"].idxmax() if best else g["success_score"].idxmin()]
-        return {"name": r["name"], "success_score": float(r["success_score"]), "transfer_date": str(r["transfer_date"])[:10]}
+        return {
+            "player_id": int(r["player_id"]), "name": r["name"],
+            "success_score": float(r["success_score"]), "transfer_date": str(r["transfer_date"])[:10],
+        }
 
     def flip_highlight(resold, profit, best):
-        """The most (best=True) or least profitable buy-then-resell in this already-resold-only group. `profit` is precomputed once by the caller and shared across both calls, rather than each call redoing the same subtraction."""
+        """
+        The most (best=True) or least profitable buy-then-resell in this
+        already-resold-only group. `profit` is precomputed once by the
+        caller and shared across both calls, rather than each call redoing
+        the same subtraction. Carries player_id for the same click-to-view
+        reason as transfer_highlight above - a flip is still just a row of
+        transfers_df, the same table /api/transfers/detail looks up.
+        """
         r = resold.loc[profit.idxmax() if best else profit.idxmin()]
         return {
-            "name": r["name"], "bought_from": r["from_club_name"],
+            "player_id": int(r["player_id"]), "name": r["name"], "bought_from": r["from_club_name"],
             "fee_paid": float(r["transfer_fee"]) if pd.notna(r["transfer_fee"]) else 0.0,
             "fee_received": float(r["next_transfer_fee"]),
             "transfer_date": str(r["transfer_date"])[:10],
