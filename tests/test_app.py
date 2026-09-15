@@ -1170,3 +1170,64 @@ def test_leagues_trends_row_has_no_second_request_needed_fields():
         if r["fee_growth_pct"] is not None:
             assert len(r["by_year"]) > 0
             assert all({"year", "avg_score", "avg_fee", "count"} <= set(point.keys()) for point in r["by_year"])
+
+
+def test_analytics_scatter_columns_are_all_the_same_length():
+    """scatter is columnar (one array per field) - every array must have exactly one entry per transfer, in the same order, or the frontend would zip mismatched rows together."""
+    res = client.get("/api/analytics")
+    assert res.status_code == 200
+    scatter = res.json()["scatter"]
+    lengths = {len(v) for v in scatter.values()}
+    assert len(lengths) == 1
+    assert lengths.pop() == len(pd.read_csv("data/transfers_processed.csv"))
+
+
+def test_analytics_scatter_player_id_and_date_resolve_via_transfers_detail():
+    """scatter's player_id/transfer_date exist so a clicked chart point can open its full card - each pair must actually resolve through /api/transfers/detail, the same lookup every other list page's click-through uses."""
+    res = client.get("/api/analytics")
+    scatter = res.json()["scatter"]
+    for i in (0, len(scatter["player_id"]) // 2, -1):
+        detail_res = client.get("/api/transfers/detail", params={
+            "player_id": scatter["player_id"][i], "transfer_date": scatter["transfer_date"][i],
+        })
+        assert detail_res.status_code == 200
+        assert detail_res.json()["name"] == scatter["name"][i]
+
+
+def test_analytics_scatter_nulls_are_json_null_not_nan():
+    """transfer_fee/market_value_in_eur are missing for some transfers - the response must serialize those as JSON null, not leak a raw NaN token that a browser's strict JSON.parse would choke on."""
+    res = client.get("/api/analytics")
+    assert "NaN" not in res.text
+    scatter = res.json()["scatter"]
+    assert None in scatter["transfer_fee"]
+    assert None in scatter["market_value_in_eur"]
+    assert None not in scatter["age_at_transfer"]
+    assert None not in scatter["success_score"]
+
+
+def test_analytics_fee_trend_excludes_free_transfers_and_is_sorted():
+    """fee_trend buckets transfer_fee on a log scale, so a free (0/null-fee) transfer must never pull a bucket down to x=0; buckets should come back sorted ascending for the trend line to draw correctly."""
+    res = client.get("/api/analytics")
+    fee_trend = res.json()["fee_trend"]
+    assert len(fee_trend) > 0
+    xs = [p["x"] for p in fee_trend]
+    assert all(x > 0 for x in xs)
+    assert xs == sorted(xs)
+
+
+def test_analytics_age_trend_shows_younger_transfers_score_higher():
+    """Sanity-checks the actual shape of the data, not just the plumbing: the youngest age bucket's average score should beat the oldest's, matching every other page's framing that younger transfers tend to pay off more."""
+    res = client.get("/api/analytics")
+    age_trend = res.json()["age_trend"]
+    assert len(age_trend) >= 2
+    assert age_trend[0]["avg_score"] > age_trend[-1]["avg_score"]
+
+
+def test_analytics_by_year_excludes_current_partial_year():
+    """Same reasoning as league_trends_df's by_year: the dataset's own most recent (still in-progress) year runs far below a full year's transfer count and must not appear, or it reads as a sudden market collapse."""
+    current_year = pd.read_csv("data/transfers_processed.csv")["transfer_date"].str[:4].astype(int).max()
+    res = client.get("/api/analytics")
+    years = [r["year"] for r in res.json()["by_year"]]
+    assert len(years) > 0
+    assert current_year not in years
+    assert years == sorted(years)

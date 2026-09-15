@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Analytics - Transfer Success Predictor</title>
+  <meta name="description" content="Four charts across every scored transfer: fee vs. success, age vs. success, fee vs. market value, and the market over time." />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Analytics - Transfer Success Predictor" />
+  <meta property="og:description" content="Four charts across every scored transfer: fee vs. success, age vs. success, fee vs. market value, and the market over time." />
+  <meta property="og:url" content="https://transfer-success-predictor.onrender.com/analytics.html" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Analytics - Transfer Success Predictor" />
+  <meta name="twitter:description" content="Four charts across every scored transfer, from fee vs. success to the market over time." />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="stylesheet" href="/style.css?v=43" />
+</head>
+<body>
+  <header>
+    <h1>⚽ Transfer Success Predictor</h1>
+    <p>Every scored transfer, plotted a few different ways.</p>
+    <nav class="topnav">
+      <a href="/">Home</a>
+      <div class="nav-dropdown">
+        <button class="nav-dropdown-toggle" aria-expanded="false" aria-haspopup="true">Predict <span class="nav-caret">&#9662;</span></button>
+        <div class="nav-dropdown-menu">
+      <a href="/predict.html">Predict a transfer</a>
+      <a href="/compare.html">Compare two transfers</a>
+        </div>
+      </div>
+      <div class="nav-dropdown">
+        <button class="nav-dropdown-toggle" aria-expanded="false" aria-haspopup="true">Browse <span class="nav-caret">&#9662;</span></button>
+        <div class="nav-dropdown-menu">
+      <a href="/browse.html">All transfers</a>
+      <a href="/loans.html">Loans</a>
+        </div>
+      </div>
+      <div class="nav-dropdown">
+        <button class="nav-dropdown-toggle active" aria-expanded="false" aria-haspopup="true">Insights <span class="nav-caret">&#9662;</span></button>
+        <div class="nav-dropdown-menu">
+      <a href="/surprises.html">Model vs reality</a>
+      <a href="/clubs.html">Club report cards</a>
+      <a href="/player.html">Player timelines</a>
+      <a href="/leagues.html">League trends</a>
+      <a href="/analytics.html" class="active">Analytics</a>
+        </div>
+      </div>
+      <a href="/about.html">About</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="card">
+      <p class="surprises-intro">
+        Four charts drawn from every scored permanent transfer (~8,300 of them). On the three
+        scatter charts, hover a point for a quick look or click/tap it for that transfer's full
+        breakdown card. Fee and market value are missing for some transfers (a free/undisclosed
+        fee, or no market-value snapshot at the time) - those charts plot only the transfers
+        that have the number they need.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>Fee vs. success score</h2>
+      <p class="surprises-intro" id="fee-score-desc">Loading...</p>
+      <div class="timeline-chart-wrap" id="fee-score-chart"></div>
+    </section>
+
+    <section class="card">
+      <h2>Age vs. success score</h2>
+      <p class="surprises-intro" id="age-score-desc">Loading...</p>
+      <div class="timeline-chart-wrap" id="age-score-chart"></div>
+    </section>
+
+    <section class="card">
+      <h2>Fee vs. market value</h2>
+      <p class="surprises-intro" id="fee-value-desc">Loading...</p>
+      <div class="timeline-chart-wrap" id="fee-value-chart"></div>
+      <div class="timeline-legend">
+        <span><span class="legend-dot" style="background:var(--muted); border:none;"></span> Paid = market value</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>The market over time</h2>
+      <p class="surprises-intro" id="volume-desc">Loading...</p>
+      <div class="timeline-chart-wrap" id="volume-chart"></div>
+      <div class="timeline-legend" id="volume-legend"></div>
+    </section>
+  </main>
+
+  <div class="modal-backdrop" id="card-modal-backdrop">
+    <div class="modal-box" role="dialog" aria-modal="true" aria-label="Transfer details">
+      <button class="modal-close" id="card-modal-close" aria-label="Close">&times;</button>
+      <div id="card-modal-content">Loading...</div>
+    </div>
+  </div>
+
+  <div id="chart-tooltip" role="status" hidden></div>
+
+  <script src="/settings.js?v=43"></script>
+  <script src="/analytics.js?v=43"></script>
+</body>
+</html>

@@ -2397,6 +2397,109 @@ def loan_detail(player_id: int, transfer_date: str):
     return build_loan_card(match.iloc[0])
 
 
+def binned_trend(df, col, q):
+    """
+    Split df[col] into q roughly-equal-sized buckets (pandas qcut, so each
+    bucket gets a comparable sample rather than a fixed-width range that
+    could leave a bucket with a handful of transfers) and return each
+    bucket's median `col` value, average success_score, and sample size -
+    the points a fee-vs-score or age-vs-score chart draws its trend line
+    through. `duplicates="drop"` collapses buckets that end up sharing an
+    edge (e.g. many transfers at the exact same low fee), so q is an upper
+    bound on the number of points returned, not a guarantee.
+    """
+    d = df[[col, "success_score"]].dropna()
+    buckets = pd.qcut(d[col], q=q, duplicates="drop")
+    grouped = (
+        d.groupby(buckets, observed=True)
+        .agg(x=(col, "median"), avg_score=("success_score", "mean"), n=("success_score", "size"))
+        .reset_index(drop=True)
+        .sort_values("x")
+    )
+    return [
+        {"x": float(r["x"]), "avg_score": round(float(r["avg_score"]), 1), "n": int(r["n"])}
+        for _, r in grouped.iterrows()
+    ]
+
+
+@app.get("/api/analytics")
+def get_analytics():
+    """
+    Aggregate data for the Analytics page's four charts, computed fresh on
+    every call (transfers_df is small enough - ~8,300 rows - that there's
+    no need to precompute at startup the way league_trends_df is).
+
+    - scatter: every permanent transfer's player_id/transfer_date/name/
+      position/fee/market value/age/score, columnar (one array per field,
+      not one object per row) - cuts the JSON payload roughly in half by
+      not repeating eight field names 8,300 times. player_id/transfer_date
+      let the frontend open a clicked point's full /api/transfers/detail
+      card, the same way every other list page on the site does. Numeric
+      values are rounded before serializing (fee/market value to the
+      nearest €1k, age/score to 1 decimal) since the frontend
+      only plots them, never needs full precision. Fee and market value
+      are left null for the transfers missing them (the same ~1.6%/39%
+      gaps documented on prediction_surprises.csv's merge above) rather
+      than dropped, so the age-vs-score chart - which needs neither - still
+      gets every transfer; each chart filters out its own nulls client-side.
+    - fee_trend/age_trend: binned_trend() over fee>0 transfers (fee can't
+      sit on a log axis at 0) and all transfers respectively - the line
+      overlaid on those two scatter charts.
+    - by_year: transfer count and average fee (free/unknown transfers
+      counted as €0, same convention as league_trends_df's avg_fee) per
+      year, excluding the current in-progress year - same reasoning as
+      league_trends_df's `current_year` handling above, an in-progress
+      year runs far below a normal year's count and would read as a
+      sudden collapse rather than the incomplete data it is.
+    """
+    df = transfers_df
+
+    def numeric_column(series, ndigits=None):
+        """
+        A float column as a plain JSON-safe list: NaN -> None (DataFrame.where(cond, None)
+        on a float64 column casts None right back to NaN to keep the column's dtype,
+        so it can't be used for this - see the test this was caught by), everything else
+        -> a real Python float, optionally rounded, since a scatter chart never needs
+        more precision than that and unrounded fees/values roughly double the payload size.
+        """
+        return [None if pd.isna(v) else float(round(v, ndigits) if ndigits is not None else v) for v in series]
+
+    scatter = {
+        "player_id": df["player_id"].astype(int).tolist(),
+        "transfer_date": [str(v)[:10] for v in df["transfer_date"]],
+        "name": df["name"].tolist(),
+        "position": df["position"].tolist(),
+        "transfer_fee": numeric_column(df["transfer_fee"], ndigits=-3),
+        "market_value_in_eur": numeric_column(df["market_value_in_eur"], ndigits=-3),
+        "age_at_transfer": numeric_column(df["age_at_transfer"], ndigits=1),
+        "success_score": numeric_column(df["success_score"], ndigits=1),
+    }
+
+    fee_trend = binned_trend(df[df["transfer_fee"] > 0], "transfer_fee", q=10)
+    age_trend = binned_trend(df, "age_at_transfer", q=12)
+
+    year_df = df.copy()
+    year_df["year"] = pd.to_datetime(year_df["transfer_date"]).dt.year
+    current_year = int(year_df["year"].max())
+    by_year_grouped = (
+        year_df[year_df["year"] < current_year]
+        .groupby("year")
+        .agg(transfers=("success_score", "size"), avg_fee=("transfer_fee", lambda s: s.fillna(0).mean()))
+        .reset_index()
+    )
+    by_year = [
+        {"year": int(r["year"]), "transfers": int(r["transfers"]), "avg_fee": round(float(r["avg_fee"]))}
+        for _, r in by_year_grouped.iterrows()
+    ]
+
+    return {
+        "scatter": scatter,
+        "fee_trend": fee_trend,
+        "age_trend": age_trend,
+        "by_year": by_year,
+    }
+
+
 class NoCacheStaticFiles(StaticFiles):
     """
     StaticFiles that tells the browser never to cache a response at all

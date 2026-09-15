@@ -8,6 +8,12 @@
   --accent: #4ade80;
   --accent-bad: #f87171;
   --accent-mid: #fbbf24;
+  /* The Analytics page's binned-average trend line overlaid on a scatter
+     chart - a light, saturated blue so it reads as one clear reference
+     series threading through the red/amber/green dots underneath, not
+     (as var(--text) previously was) a flat black/white slash competing
+     with them for attention. */
+  --trend-line: #7dd3fc;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
@@ -22,6 +28,7 @@
   --accent: #16a34a;
   --accent-bad: #dc2626;
   --accent-mid: #d97706;
+  --trend-line: #0369a1;
 }
 
 * { box-sizing: border-box; }
@@ -357,6 +364,29 @@ h2 {
   opacity: 1;
 }
 
+/*
+ * The Analytics page's click/tap-triggered chart tooltip (trend-line
+ * markers, box-plot marks) - unlike .tooltip-box above, this isn't
+ * anchored to a wrapping element via CSS :hover, since a hover-only
+ * tooltip never fires on a touch device at all. One shared element,
+ * positioned in JS near the click point (see showChartTooltip() in
+ * analytics.js) and shown/hidden by toggling [hidden].
+ */
+#chart-tooltip {
+  position: fixed;
+  z-index: 60;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--text);
+  max-width: 240px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
 /* A component with multiple sub-stats (e.g. Attacking: goals, xG, xA, chances
    created) lists them here instead of running them into the description as
    one comma-separated sentence - see describe_fotmob_component() in
@@ -630,6 +660,24 @@ button.predict-btn:disabled {
 #leagues-table th:nth-child(6), #leagues-table td:nth-child(6) { width: 14%; }
 
 .timeline-chart-wrap { margin: 1rem 0 0.5rem; }
+
+/*
+ * Every hand-drawn chart on the site (Player Timelines, League Trends,
+ * Analytics) sets width="100%" but a fixed pixel height="H" on its <svg>,
+ * matching its viewBox's aspect ratio only when the card is exactly as
+ * wide as the viewBox itself. Below that width (any narrow/mobile
+ * viewport), the browser's default preserveAspectRatio scales the
+ * viewBox content down to fit the narrower width while the element's
+ * rendered box stays the full fixed height - stranding the now-smaller
+ * chart in a box with a large dead gap above and below it, and making
+ * every point on it smaller and harder to tap than the reserved space
+ * suggests. height:auto here overrides that fixed attribute (CSS wins
+ * over a presentation attribute) and lets the intrinsic viewBox aspect
+ * ratio drive the rendered height instead, so the chart just scales down
+ * as one piece, same as the fee/market-value numbers in the copy above it
+ * already reflow.
+ */
+.timeline-chart-wrap svg { width: 100%; height: auto; display: block; }
 
 .timeline-legend {
   display: flex;

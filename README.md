@@ -22,7 +22,7 @@ scripts/train_model.py     # trains the deployed model + comparable-transfers in
 scripts/compute_prediction_surprises.py  # 5-fold held-out predictions for every transfer -> data/prediction_surprises.csv (the Model vs Reality page)
 scripts/build_lookups.py   # small player/club search tables for the web app
 app/main.py                 # FastAPI backend (serves the API + the static frontend)
-app/static/                 # vanilla HTML/CSS/JS frontend (index=home/predict/browse/loans/compare/surprises/clubs/player/leagues/about)
+app/static/                 # vanilla HTML/CSS/JS frontend (index=home/predict/browse/loans/compare/surprises/clubs/player/leagues/analytics/about)
 data/                        # committed: small derived CSVs only (~8MB total)
 tests/                       # pytest suite - runs against committed artifacts only
 ```
@@ -314,6 +314,21 @@ rather than doubling as the predict form (see Project history).
   "are fees inflating faster than performance?" directly rather than
   leaving two differently-scaled numbers for the reader to compare
   themselves.
+- **`/analytics.html`** — four hand-drawn SVG charts over every scored
+  permanent transfer (`/api/analytics`, computed fresh per request - the
+  dataset's small enough that there's no need to precompute at startup):
+  fee vs. success score and age vs. success score (both scatter plots with
+  a binned trend line overlaid), fee vs. market value (log-log scatter
+  with a y=x reference line, dots still colored by outcome), and transfer
+  count vs. average fee by year (both indexed to the first year = 100, the
+  same trick League Trends' own chart uses to share one axis between two
+  differently-scaled series). No table or filters, but every chart is
+  click/tap-interactive: a scatter point opens that transfer's full
+  `/api/transfers/detail` card, and a trend-line/yearly point shows a
+  small tooltip with its exact numbers (see `showChartTooltip()` in
+  `analytics.js` - a native `<title>` hover tooltip is also present as a
+  free bonus on desktop, but never fires on a touch device, so it isn't
+  the thing actually relied on).
 - **`/about.html`** — what the site does and how the numbers are computed,
   in plain language.
 
@@ -521,6 +536,47 @@ the git history.
   symmetric playing-time rule that doesn't apply to loans).
 
 **Frontend**
+- Removed the Analytics page's success-score-by-position box plot (down
+  to four charts) and replaced every chart's hover-only `<title>`
+  tooltip - the trend-line markers, the yearly points on the market-over-
+  time chart - with a real click/tap-triggered tooltip (`#chart-tooltip`,
+  positioned in JS near the click point via `showChartTooltip()` in
+  `analytics.js`). `<title>` alone never fires on a touch device (there's
+  no hover state to trigger it) and has a real delay even on desktop;
+  `<title>` is kept alongside the new `data-tooltip` attribute as a free
+  bonus for a patient mouse user, but it's no longer the thing relied on.
+- Fixed every hand-drawn chart on the site (Player Timelines, League
+  Trends, Analytics) rendering tiny and stranded in a large dead gap
+  below a narrow viewport - each `<svg>` set `width="100%"` but a fixed
+  pixel `height`, which only matches its `viewBox`'s aspect ratio at
+  exactly the viewBox's own width; narrower than that, the browser scales
+  the chart down to fit the width while the element's box keeps the old
+  fixed height. `.timeline-chart-wrap svg { width: 100%; height: auto; }`
+  in `style.css` fixes all of them from one place, no per-chart JS
+  changes needed. Also made the Analytics page's three scatter charts
+  (fee vs. score, age vs. score, fee vs. market value) clickable - each
+  point now opens its full `/api/transfers/detail` card, the same as
+  every other list page, via one delegated click listener per chart
+  rather than one per point; a larger invisible circle on top of each
+  small visible dot gives touch a real target to hit. And restyled the
+  fee/age trend line from a flat `var(--text)` line (black in light
+  theme, competing with the scoreColor'd dots for attention) to a dashed
+  light-blue line (`--trend-line`) with small hoverable markers at each
+  underlying bucket, reading as its own series rather than a slash across
+  the chart.
+- Added an Analytics page (`/analytics.html` + `/api/analytics`): five
+  hand-drawn SVG charts (fee vs. score, age vs. score, score by position,
+  fee vs. market value, market volume over time) in the same no-library
+  inline-SVG style as Player Timelines' career chart and League Trends'
+  index chart, rather than pulling in a charting dependency for one page.
+  Caught along the way: `DataFrame.where(cond, None)` on a float64 column
+  casts `None` straight back to `NaN` to preserve the column's dtype
+  instead of promoting it to `object` - silently reintroducing the exact
+  raw-NaN-leak bug a `/api/leagues/trends` test already guards against on
+  a different endpoint. Fixed by converting each scatter column
+  explicitly (`None if pd.isna(v) else float(v)`, per value) instead of
+  trusting a whole-DataFrame `.where()`, and added the equivalent test for
+  this endpoint.
 - Renamed the "Biggest Surprises" page to "Model vs Reality" and added a
   "Most accurate predictions first" option to its Show filter (sorting by
   `abs_surprise_delta` - the new backend field is `|surprise_delta|`,
