@@ -1575,10 +1575,20 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_data_f
             typical_pos_label = "a typical goalkeeper's" if is_goalkeeper else f"a typical {POSITION_PLURAL.get(position, position).rstrip('s')}'s"
             if has_real_data and len(raw_feats) > 1:
                 # Multiple sub-stats: a bulleted list, same as
-                # describe_fotmob_component's own multi-stat rows.
+                # describe_fotmob_component's own multi-stat rows. The
+                # composite itself can have real data even when one specific
+                # raw sub-stat doesn't - e.g. an attacker's clearance count -
+                # same reasoning as describe_fotmob_component's own parts()
+                # helper, which this mirrors: only the sub-stats actually
+                # present get a bullet, rather than formatting a None
+                # straight into the string (previously a 400 - predict()'s
+                # try/except turns the resulting TypeError into an HTTP
+                # error - on any transfer where this happened, caught
+                # testing Compare by hand).
                 stats = [
                     f"{PRETRANSFER_FOTMOB_STAT_LABELS[rf]}: {format_feature_value(rf, feature_row[rf].iloc[0], context)}"
                     for rf in raw_feats
+                    if pd.notna(feature_row[rf].iloc[0])
                 ]
                 detail = f"{ordinal(actual_value)} percentile vs. {typical_pos_label} recent numbers, {direction} the score by {abs(contribution)} pts"
             elif has_real_data:
@@ -2208,24 +2218,21 @@ def predict(req: PredictRequest):
     }
 
 
+class CompareScenario(BaseModel):
+    """One hypothetical transfer plus its display label, for CompareRequest.scenarios below."""
+    request: PredictRequest
+    label: str = "Option"
+
+
 class CompareRequest(BaseModel):
-    """Two hypothetical transfers to score side by side, with display labels for the compare page."""
-    a: PredictRequest
-    b: PredictRequest
-    label_a: str = "Option A"
-    label_b: str = "Option B"
+    """2-4 hypothetical transfers to score side by side, for the compare page. No single "delta" field here (unlike the old two-scenario-only shape) - it doesn't generalize past a pair, so the frontend ranks `results` itself instead."""
+    scenarios: list[CompareScenario] = Field(min_length=2, max_length=4)
 
 
 @app.post("/api/compare")
 def compare(req: CompareRequest):
-    """Score both scenarios via predict() and return them together with the point gap between them, for the compare page."""
-    result_a = predict(req.a)
-    result_b = predict(req.b)
-    return {
-        "a": {**result_a, "label": req.label_a},
-        "b": {**result_b, "label": req.label_b},
-        "delta": round(result_a["success_score"] - result_b["success_score"], 1),
-    }
+    """Score every scenario via predict() and return them together, for the compare page."""
+    return {"results": [{**predict(s.request), "label": s.label} for s in req.scenarios]}
 
 
 TRANSFER_SORT_FIELDS = {

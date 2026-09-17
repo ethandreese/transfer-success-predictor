@@ -794,18 +794,58 @@ button.predict-btn:disabled {
   text-align: center;
 }
 
+/*
+ * Up to 4 scenario columns (see compare.html's data-scenario="a".."d" -
+ * "a"/"b" always present, "c"/"d" revealed by "+ Add another option").
+ * auto-fit + minmax scales the column count to whatever's both visible
+ * (a hidden column takes no grid track at all) and fits the viewport,
+ * rather than a fixed 2-column layout that would either waste half the
+ * row with only 2 active or force a 4th column into an already-cramped
+ * width - the same reasoning applies to .compare-results-grid below.
+ */
 .compare-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 2rem;
   align-items: start; /* same reasoning as .form-grid above */
 }
 
-@media (max-width: 720px) {
-  .compare-grid, .compare-results-grid { grid-template-columns: 1fr; }
+.compare-col-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
 }
+.compare-col-header h2 { margin: 0; }
 
 .compare-col h2 { font-size: 1rem; color: var(--muted); margin-top: 0; }
+
+.remove-option-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 6px;
+  width: 22px;
+  height: 22px;
+  line-height: 1;
+  font-size: 1rem;
+  cursor: pointer;
+}
+.remove-option-btn:hover { color: var(--accent-bad); border-color: var(--accent-bad); }
+
+.add-option-btn {
+  display: block;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  margin: 1rem 0 0.75rem;
+}
+.add-option-btn:hover { border-color: var(--accent); }
+.add-option-btn[hidden] { display: none; }
 
 .compare-delta {
   text-align: center;
@@ -820,12 +860,22 @@ button.predict-btn:disabled {
 
 .compare-results-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 2rem;
 }
 
 .compare-result-col h2 { font-size: 1.1rem; margin-top: 0; }
 .compare-result-col h3 { font-size: 0.9rem; color: var(--muted); margin-bottom: 0.4rem; }
+
+/* The highest-scoring option in a finished comparison - a plain accent
+   border rather than a filled background, so it still reads clearly in
+   both themes and doesn't compete with the score's own scoreColor. */
+.compare-result-col.is-winner {
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  padding: 0.9rem;
+  margin: -0.9rem;
+}
 
 .transfers-table tbody tr { cursor: pointer; }
 .transfers-table tbody tr:focus { outline: 2px solid var(--accent); outline-offset: -2px; }

@@ -277,16 +277,18 @@ rather than doubling as the predict form (see Project history).
   success" for each one. Age has no equivalent slider - a player's age at
   a hypothetical transfer isn't something to explore a range of the way a
   fee is, so it stays a plain editable field.
-- **`/compare.html`** — set up two hypothetical transfers side by side
-  (same player to two different clubs, or two different players entirely)
-  and see both predictions, ranges, and top factors together with the
-  point gap between them. A finished comparison syncs both scenarios
-  (player/club/fee/age) to the URL, so it's bookmarkable and shareable -
-  opening that link resolves both players and clubs by id
-  (`/api/players/{id}`, `/api/clubs/{id}`) and re-runs the comparison
-  automatically. A stale or mistyped link (an id that no longer resolves)
-  leaves the form untouched rather than populating whichever scenario
-  happened to succeed while the other sat blank.
+- **`/compare.html`** — set up 2-4 hypothetical transfers side by side
+  (same player to different clubs, or entirely different players) and see
+  every prediction, range, and top factors together, with the highest
+  score highlighted and a plain-English verdict ("X scores highest at Y,
+  Z points ahead of the next best"). Starts with two columns; "+ Add
+  another option" reveals a 3rd and 4th. A finished comparison syncs
+  every active scenario (player/club/fee/age) to the URL, so it's
+  bookmarkable and shareable - opening that link resolves every player
+  and club by id (`/api/players/{id}`, `/api/clubs/{id}`) and re-runs the
+  comparison automatically. A stale or mistyped link (an id that no
+  longer resolves) leaves the form untouched rather than populating
+  whichever scenarios happened to succeed while another sat blank.
 - **`/browse.html`** — every scored transfer (~8,300), filterable by
   position and destination league, searchable by player/club name, sortable
   by score/date/fee/age, paginated. Click any row to open that transfer's
@@ -493,6 +495,19 @@ within each group. Full reasoning and numbers for anything here are in
 the git history.
 
 **Predict model & backend**
+- Fixed `/api/predict` (and everything built on it - Compare, the
+  examples cards) 400ing whenever a composite FotMob feature (e.g.
+  "defensive") had real data overall but one specific raw sub-stat was
+  individually missing - e.g. an attacker with real tackle/interception/
+  recovery numbers but no recorded clearances at all, since attackers
+  rarely attempt any. `explain_prediction`'s bulleted-breakdown builder
+  tried to number-format that one `None` straight into the string and
+  crashed; `describe_fotmob_component()` (the historical-score version of
+  the same breakdown) already handled this correctly by only listing
+  sub-stats that are actually present, so the pre-transfer version now
+  does the same. Not a rare edge case - partial FotMob bucket coverage
+  (~54-67%, per Known limitations) is the common case, not the exception.
+  Caught testing 3-way Compare by hand.
 - Switched the predict model from `GradientBoostingRegressor` to a plain
   `Ridge` regression after benchmarking it against every tree-based
   alternative tried (HistGradientBoosting, RandomForest, ExtraTrees, and
@@ -553,6 +568,21 @@ the git history.
   symmetric playing-time rule that doesn't apply to loans).
 
 **Frontend**
+- Extended Compare from a fixed A/B pair to 2-4 scenarios: "+ Add another
+  option" reveals a 3rd/4th column (each removable), the results grid
+  and "Top factors" breakdowns are now built dynamically per result
+  instead of two hardcoded columns, the highest score gets a highlighted
+  border, and the old single pairwise "delta" sentence became a
+  `verdictSentence()` that ranks all of them and names the winner plus
+  its gap to the runner-up. `/api/compare` changed shape to match (a
+  `scenarios: [{request, label}, ...]` list, 2-4 of them, instead of
+  hardcoded `a`/`b`/`label_a`/`label_b`) - a breaking change with no
+  other consumer to worry about. The URL-sync/restore feature below
+  generalized the same way: `syncURL()` writes every scenario that was
+  actually in the last comparison (dropping a stale 3rd/4th scenario's
+  params if the next comparison only has two), and `restoreFromURL()`
+  reveals however many c/d columns a link specifies before resolving
+  them.
 - Made a finished Compare comparison bookmarkable and shareable: both
   scenarios' player/club/fee/age sync to the URL after a successful
   compare, and opening that link resolves everything and re-runs the

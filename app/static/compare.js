@@ -30,9 +30,22 @@ function pretransferFotmobFeatures(player) {
   };
 }
 
-// Per-scenario ("a"/"b") selection state: the chosen player, that player's
-// *current* club (fetched separately, for origin-league/value context),
-// and the chosen destination club.
+// Up to 4 scenario columns - "a"/"b" are always present, "c"/"d" start
+// hidden and are revealed by "+ Add another option" (see wireAddRemove()
+// near the end of this file).
+const SCENARIO_KEYS = ["a", "b", "c", "d"];
+
+/** The scenario keys whose column is currently visible, in a-b-c-d order - the single source of truth for "how many-way is this comparison right now" (no separate count/list kept in state to drift out of sync with the DOM). */
+function activeScenarioKeys() {
+  return SCENARIO_KEYS.filter(k => !document.querySelector(`.compare-col[data-scenario="${k}"]`).hidden);
+}
+
+// Per-scenario selection state: the chosen player, that player's *current*
+// club (fetched separately, for origin-league/value context), and the
+// chosen destination club. Populated for all 4 keys up front (see
+// setupScenario calls near the end of this file) regardless of which
+// columns are currently visible - activeScenarioKeys() above is what
+// actually decides which of these are used in a comparison.
 const scenarios = {};
 
 /**
@@ -55,9 +68,9 @@ function setupScenario(key) {
   const clubInput = col.querySelector(".club-search");
   const clubList = col.querySelector(".club-list");
 
-  /** Enable the Compare button once every scenario has both a player and a club selected. */
+  /** Enable the Compare button once every *visible* scenario column has both a player and a club selected - a hidden (not-yet-added, or removed) column's state is irrelevant. */
   function updateCompareButton() {
-    const ready = Object.values(scenarios).every(s => s.player && s.club);
+    const ready = activeScenarioKeys().every(k => scenarios[k].player && scenarios[k].club);
     document.getElementById("compare-btn").disabled = !ready;
   }
 
@@ -281,14 +294,9 @@ function buildPayload(key) {
   };
 }
 
-/** Render one scenario's predict() result (score, range, top-3 explanation) into the "a" or "b" result column, per `suffix`. */
-function renderResult(suffix, result) {
-  const scoreEl = document.getElementById(`score-value-${suffix}`);
-  scoreEl.textContent = result.success_score;
-  scoreEl.style.color = scoreColor(result.success_score);
-  const [lo, hi] = result.score_range;
-  document.getElementById(`score-range-note-${suffix}`).textContent = `Likely range: ${lo}–${hi}`;
-  document.getElementById(`explanation-list-${suffix}`).innerHTML = result.explanation.slice(0, 3).map(e => {
+/** One result's "Top factors" explanation list as HTML - same explain-row markup every result column uses, factored out since renderCompareResult() below now builds N of these instead of a fixed "a"/"b" pair. */
+function renderExplanation(explanation) {
+  return explanation.slice(0, 3).map(e => {
     const positive = e.contribution >= 0;
     const width = Math.min(Math.abs(e.contribution) * 4, 100);
     return `
@@ -309,51 +317,83 @@ function renderResult(suffix, result) {
   }).join("");
 }
 
-/** Render a /api/compare response: both scenario results plus the plain-English delta summary. Factored out so a settings change (currency) can re-render the last comparison without re-comparing. */
+/**
+ * A plain-English verdict for a finished comparison's `results` (2-4 of
+ * them, in scenario order - not necessarily score order). Names the top
+ * scorer and, if it's not basically tied with the runner-up, how far
+ * ahead it is - the same "toss-up" framing the original two-scenario-only
+ * version used, generalized past a single pairwise delta (which doesn't
+ * mean much once there are 3+ scores to place).
+ */
+function verdictSentence(results) {
+  const ranked = [...results].sort((a, b) => b.success_score - a.success_score);
+  const [top, second] = ranked;
+  const gap = top.success_score - second.success_score;
+  if (gap < 3) {
+    return results.length === 2
+      ? "These two scenarios score within a few points of each other, roughly a toss-up given the model's error margin."
+      : `${top.label} scores highest at ${top.success_score}, but within a few points of ${second.label} - roughly a toss-up given the model's error margin.`;
+  }
+  return results.length === 2
+    ? `${top.label} scores ${gap.toFixed(1)} points higher than ${second.label}.`
+    : `${top.label} scores highest at ${top.success_score}, ${gap.toFixed(1)} points ahead of the next best (${second.label}).`;
+}
+
+/** Render a /api/compare response: every scenario's result card (score, range, top factors - highest score highlighted) plus a plain-English verdict. Factored out so a settings change (currency) can re-render the last comparison without re-comparing. */
 function renderCompareResult(data) {
   document.getElementById("result").classList.add("open");
-  renderResult("a", data.a);
-  renderResult("b", data.b);
-  const delta = data.delta;
-  const deltaEl = document.getElementById("compare-delta");
-  if (Math.abs(delta) < 3) {
-    deltaEl.textContent = "These two scenarios score within a few points of each other, roughly a toss-up given the model's error margin.";
-  } else if (delta > 0) {
-    deltaEl.textContent = `Option A scores ${delta.toFixed(1)} points higher than Option B.`;
-  } else {
-    deltaEl.textContent = `Option B scores ${Math.abs(delta).toFixed(1)} points higher than Option A.`;
-  }
+  const results = data.results;
+  const topScore = Math.max(...results.map(r => r.success_score));
+  document.getElementById("compare-results-grid").innerHTML = results.map(r => `
+    <div class="compare-result-col ${r.success_score === topScore ? "is-winner" : ""}">
+      <h2>${r.label}</h2>
+      <div class="score-display">
+        <div class="big" style="color:${scoreColor(r.success_score)}">${r.success_score}</div>
+        <div class="score-label">/ 100</div>
+      </div>
+      <div class="score-range-note">Likely range: ${r.score_range[0]}–${r.score_range[1]}</div>
+      <div class="comparables">
+        <h3>Top factors</h3>
+        <div>${renderExplanation(r.explanation)}</div>
+      </div>
+    </div>
+  `).join("");
+  document.getElementById("compare-delta").textContent = verdictSentence(results);
 }
 
 let lastCompareData = null;
+// The scenario keys a comparison was actually run with, so syncURL() (and
+// a later settingschange re-render) always reflect that run - not
+// whatever happens to be visible/filled-in *now*, which can drift after
+// the fact (e.g. the user adds a 3rd option but hasn't re-compared yet).
+let lastCompareKeys = [];
 
-/** Keep the address bar's query string in sync with both scenarios' player/club/fee/age, so a finished comparison is bookmarkable and shareable - see writeURLParams in settings.js. Called only after a successful compare, from the exact values just submitted (not re-read from the form later), so a shared link always reproduces the comparison it was copied from. */
+/** Keep the address bar's query string in sync with every scenario that was actually in the last comparison (player/club/fee/age each) - see writeURLParams in settings.js. Rebuilding the whole query string from lastCompareKeys means a comparison that drops back from 3-way to 2-way also drops the stale 3rd scenario's params, not just adds/overwrites the active ones. */
 function syncURL() {
-  writeURLParams({
-    player_a: scenarios.a.player.player_id,
-    club_a: scenarios.a.club.club_id,
-    fee_a: scenarios.a.feeEurMillions,
-    age_a: document.querySelector('.compare-col[data-scenario="a"] .age-input').value,
-    player_b: scenarios.b.player.player_id,
-    club_b: scenarios.b.club.club_id,
-    fee_b: scenarios.b.feeEurMillions,
-    age_b: document.querySelector('.compare-col[data-scenario="b"] .age-input').value,
+  const params = {};
+  lastCompareKeys.forEach(k => {
+    params[`player_${k}`] = scenarios[k].player.player_id;
+    params[`club_${k}`] = scenarios[k].club.club_id;
+    params[`fee_${k}`] = scenarios[k].feeEurMillions;
+    params[`age_${k}`] = document.querySelector(`.compare-col[data-scenario="${k}"] .age-input`).value;
   });
+  writeURLParams(params);
 }
 
-/** Build both scenarios' payloads, POST them together to /api/compare, and render both results plus a plain-English delta summary. Used both by the "Compare" button and restoreFromURL()'s auto-run of a shared link. */
+/** Build every active scenario's payload, POST them together to /api/compare, and render the results plus a plain-English verdict. Used both by the "Compare" button and restoreFromURL()'s auto-run of a shared link. */
 async function runCompare() {
   const errorBox = document.getElementById("error-box");
   errorBox.textContent = "";
+  const keys = activeScenarioKeys();
   try {
     const res = await fetch("/api/compare", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        a: buildPayload("a"),
-        b: buildPayload("b"),
-        label_a: scenarios.a.player.name + " → " + scenarios.a.club.name,
-        label_b: scenarios.b.player.name + " → " + scenarios.b.club.name,
+        scenarios: keys.map(k => ({
+          request: buildPayload(k),
+          label: scenarios[k].player.name + " → " + scenarios[k].club.name,
+        })),
       }),
     });
     if (!res.ok) {
@@ -361,6 +401,7 @@ async function runCompare() {
       throw new Error(err.detail || "Comparison failed");
     }
     lastCompareData = await res.json();
+    lastCompareKeys = keys;
     renderCompareResult(lastCompareData);
     syncURL();
   } catch (e) {
@@ -377,43 +418,87 @@ document.addEventListener("settingschange", () => {
   if (lastCompareData) renderCompareResult(lastCompareData);
 });
 
-const scenarioControllers = {
-  a: setupScenario("a"),
-  b: setupScenario("b"),
-};
+const scenarioControllers = Object.fromEntries(SCENARIO_KEYS.map(k => [k, setupScenario(k)]));
 
 /**
- * Restore both scenarios from a shared/bookmarked comparison URL and,
- * once both resolve, run the comparison automatically - a shared link's
- * whole point is showing the comparison immediately, not making the
- * recipient re-pick both players/clubs and click Compare themselves.
- * Only attempted when the URL fully specifies both scenarios (all four
- * fields each); a partial or absent URL just leaves the form empty, same
- * as visiting the page directly.
+ * Wire the "+ Add another option"/"×" controls that reveal/hide the c/d
+ * columns. A revealed column starts completely blank (setupScenario's
+ * initial state, never touched) - nothing to restore, since c/d are only
+ * ever reached by a deliberate click here, never pre-filled. Removing a
+ * column resets its scenario state and every visible field/chip too, so
+ * a later "+ Add" doesn't resurrect stale data in a column that looks
+ * freshly added.
+ */
+function wireAddRemove() {
+  const addBtn = document.getElementById("add-option-btn");
+
+  function updateAddButtonVisibility() {
+    addBtn.hidden = activeScenarioKeys().length >= SCENARIO_KEYS.length;
+  }
+
+  addBtn.addEventListener("click", () => {
+    const nextKey = SCENARIO_KEYS.find(k => document.querySelector(`.compare-col[data-scenario="${k}"]`).hidden);
+    if (!nextKey) return;
+    document.querySelector(`.compare-col[data-scenario="${nextKey}"]`).hidden = false;
+    updateAddButtonVisibility();
+    document.getElementById("compare-btn").disabled = true; // the new column has no player/club yet
+  });
+
+  ["c", "d"].forEach(key => {
+    document.querySelector(`.remove-option-btn[data-scenario="${key}"]`).addEventListener("click", () => {
+      const col = document.querySelector(`.compare-col[data-scenario="${key}"]`);
+      col.hidden = true;
+      scenarios[key] = { player: null, playerClub: null, club: null, feeEurMillions: 50 };
+      col.querySelector(".player-search").value = "";
+      col.querySelector(".player-chip").innerHTML = "";
+      col.querySelector(".club-search").value = "";
+      col.querySelector(".club-chip").innerHTML = "";
+      col.querySelector(".age-input").value = "";
+      updateAddButtonVisibility();
+      document.getElementById("compare-btn").disabled = !activeScenarioKeys().every(k => scenarios[k].player && scenarios[k].club);
+    });
+  });
+
+  updateAddButtonVisibility();
+}
+
+wireAddRemove();
+
+/**
+ * Restore every scenario a shared/bookmarked comparison URL specifies
+ * (2-4 of them - player_a/club_a/fee_a/age_a required, player_c.../
+ * player_d... each optional) and, once all resolve, run the comparison
+ * automatically - a shared link's whole point is showing the comparison
+ * immediately, not making the recipient re-pick every player/club and
+ * click Compare themselves. A c/d column the URL specifies is revealed
+ * before it's used, same as a manual "+ Add another option" click would.
  *
- * Resolves both columns' player+club lookups first (fetchScenario, no DOM
- * writes) before applying either one (applyScenario) - a stale/mistyped
- * link where only one id no longer resolves (e.g. after a data refresh)
- * must leave *both* columns untouched, not populate the one that
- * happened to succeed while the other sits blank with no visible reason
- * Compare never ran.
+ * Resolves every column's player+club lookup first (fetchScenario, no DOM
+ * writes) before applying any of them (applyScenario) - a stale/mistyped
+ * link where even one id no longer resolves (e.g. after a data refresh)
+ * must leave *every* column untouched, not populate the ones that
+ * happened to succeed while another sits blank with no visible reason
+ * Compare never ran. Reveals the needed c/d columns up front (so a
+ * failed restore's rollback has something concrete to hide again) but
+ * only actually shows player/club data in them once every lookup across
+ * the whole comparison has succeeded.
  */
 async function restoreFromURL() {
   const params = readURLParams();
-  const hasA = params.player_a && params.club_a && params.fee_a && params.age_a;
-  const hasB = params.player_b && params.club_b && params.fee_b && params.age_b;
-  if (!hasA || !hasB) return;
+  const keys = SCENARIO_KEYS.filter(k => params[`player_${k}`] && params[`club_${k}`] && params[`fee_${k}`] && params[`age_${k}`]);
+  if (keys.length < 2) return;
 
-  const [scenarioA, scenarioB] = await Promise.all([
-    scenarioControllers.a.fetchScenario(params.player_a, params.club_a),
-    scenarioControllers.b.fetchScenario(params.player_b, params.club_b),
-  ]);
-  if (!scenarioA || !scenarioB) return;
+  const revealedNow = keys.filter(k => (k === "c" || k === "d") && document.querySelector(`.compare-col[data-scenario="${k}"]`).hidden);
+  revealedNow.forEach(k => { document.querySelector(`.compare-col[data-scenario="${k}"]`).hidden = false; });
 
-  await Promise.all([
-    scenarioControllers.a.applyScenario(scenarioA, parseFloat(params.fee_a), parseFloat(params.age_a)),
-    scenarioControllers.b.applyScenario(scenarioB, parseFloat(params.fee_b), parseFloat(params.age_b)),
-  ]);
+  const fetched = await Promise.all(keys.map(k => scenarioControllers[k].fetchScenario(params[`player_${k}`], params[`club_${k}`])));
+  if (fetched.some(f => !f)) {
+    revealedNow.forEach(k => { document.querySelector(`.compare-col[data-scenario="${k}"]`).hidden = true; });
+    return;
+  }
+
+  await Promise.all(keys.map((k, i) => scenarioControllers[k].applyScenario(fetched[i], parseFloat(params[`fee_${k}`]), parseFloat(params[`age_${k}`]))));
+  document.getElementById("add-option-btn").hidden = activeScenarioKeys().length >= SCENARIO_KEYS.length;
   runCompare();
 }
 

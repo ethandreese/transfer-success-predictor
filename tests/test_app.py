@@ -236,6 +236,31 @@ def test_predict_playing_time_explained_as_one_group_not_backwards():
     assert all_features["pre_playing_time"]["stats"] is not None  # real data - bulleted breakdown, not the "no data" message
 
 
+def test_predict_handles_composite_with_one_missing_raw_substat(sample_predict_payload):
+    """
+    A composite (e.g. "defensive") can have real data overall from some of
+    its raw sub-stats while one specific one is still missing - e.g. an
+    attacker with real FotMob tackle/interception/recovery numbers but no
+    recorded clearances at all, since attackers rarely attempt any.
+    format_feature_value crashed trying to format that individual raw
+    stat's None, turning this completely normal partial-coverage case
+    (not a rare edge case - the README documents FotMob bucket coverage
+    at only ~54-67% even among transfers with *some* FotMob data) into a
+    400 on the whole prediction. Caught testing 3-way Compare by hand.
+    """
+    payload = dict(
+        sample_predict_payload,
+        pre_fotmob_total_tackle=0.5, pre_fotmob_interception=0.3,
+        pre_fotmob_ball_recovery=2.0, pre_fotmob_effective_clearance=None,
+    )
+    res = client.post("/api/predict", json=payload)
+    assert res.status_code == 200
+
+    defensive = next(e for e in explain_all(payload) if e["stats"] and any("Tackles" in s for s in e["stats"]))
+    assert any("Interceptions" in s for s in defensive["stats"])
+    assert not any("Clearances" in s for s in defensive["stats"])
+
+
 def test_predict_fee_explanation_compares_against_value_expectation_not_flat_average(sample_predict_payload):
     """
     A €50m fee for a player worth €60m isn't remarkable - it should be
@@ -292,18 +317,43 @@ def test_predict_rejects_invalid_payload():
     assert res.status_code == 422
 
 
-def test_compare_returns_both_results_and_delta(sample_predict_payload):
-    """/api/compare should score both scenarios and report a delta consistent with their individual scores."""
+def test_compare_returns_one_result_per_scenario_in_order(sample_predict_payload):
+    """/api/compare should score every scenario and return them in the same order, each carrying its own label."""
     other = dict(sample_predict_payload, transfer_fee=10_000_000.0)
     res = client.post("/api/compare", json={
-        "a": sample_predict_payload, "b": other,
-        "label_a": "Scenario A", "label_b": "Scenario B",
+        "scenarios": [
+            {"request": sample_predict_payload, "label": "Scenario A"},
+            {"request": other, "label": "Scenario B"},
+        ],
     })
     assert res.status_code == 200
-    data = res.json()
-    assert "success_score" in data["a"]
-    assert "success_score" in data["b"]
-    assert data["delta"] == pytest.approx(data["a"]["success_score"] - data["b"]["success_score"], abs=0.05)
+    results = res.json()["results"]
+    assert len(results) == 2
+    assert [r["label"] for r in results] == ["Scenario A", "Scenario B"]
+    assert all("success_score" in r for r in results)
+
+
+def test_compare_supports_three_and_four_scenarios(sample_predict_payload):
+    """/api/compare's whole point past the original two-scenario version is supporting more than a pair - both 3-way and 4-way must work."""
+    for n in (3, 4):
+        scenarios = [
+            {"request": dict(sample_predict_payload, transfer_fee=float(i) * 1_000_000), "label": f"Option {i}"}
+            for i in range(n)
+        ]
+        res = client.post("/api/compare", json={"scenarios": scenarios})
+        assert res.status_code == 200, f"{n}-way compare failed: {res.text}"
+        assert len(res.json()["results"]) == n
+
+
+def test_compare_rejects_fewer_than_two_or_more_than_four_scenarios(sample_predict_payload):
+    """A single scenario isn't a comparison, and the compare form only ever shows up to 4 columns - both ends should 422, not silently truncate or score just one side."""
+    one = {"scenarios": [{"request": sample_predict_payload, "label": "Solo"}]}
+    assert client.post("/api/compare", json=one).status_code == 422
+
+    five = {"scenarios": [
+        {"request": sample_predict_payload, "label": f"Option {i}"} for i in range(5)
+    ]}
+    assert client.post("/api/compare", json=five).status_code == 422
 
 
 def test_players_search_is_accent_insensitive():

@@ -4,28 +4,28 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Compare Transfers - Transfer Success Predictor</title>
-  <meta name="description" content="Compare two hypothetical football transfers side by side and see the predicted point gap between them." />
+  <meta name="description" content="Compare up to four hypothetical football transfers side by side and see how they rank." />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Compare Transfers - Transfer Success Predictor" />
-  <meta property="og:description" content="Compare two hypothetical football transfers side by side and see the predicted point gap between them." />
+  <meta property="og:description" content="Compare up to four hypothetical football transfers side by side and see how they rank." />
   <meta property="og:url" content="https://transfer-success-predictor.onrender.com/compare.html" />
   <meta name="twitter:card" content="summary" />
   <meta name="twitter:title" content="Compare Transfers - Transfer Success Predictor" />
-  <meta name="twitter:description" content="Compare two hypothetical football transfers side by side." />
+  <meta name="twitter:description" content="Compare up to four hypothetical football transfers side by side." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="stylesheet" href="/style.css?v=45" />
+  <link rel="stylesheet" href="/style.css?v=46" />
 </head>
 <body>
   <header>
     <h1>⚽ Transfer Success Predictor</h1>
-    <p>Compare two hypothetical transfers side by side: same player, different clubs, or two different players entirely.</p>
+    <p>Compare up to four hypothetical transfers side by side: same player to different clubs, or entirely different players.</p>
     <nav class="topnav">
       <a href="/">Home</a>
       <div class="nav-dropdown">
         <button class="nav-dropdown-toggle active" aria-expanded="false" aria-haspopup="true">Predict <span class="nav-caret">&#9662;</span></button>
         <div class="nav-dropdown-menu">
       <a href="/predict.html">Predict a transfer</a>
-      <a href="/compare.html" class="active">Compare two transfers</a>
+      <a href="/compare.html" class="active">Compare transfers</a>
         </div>
       </div>
       <div class="nav-dropdown">
@@ -99,52 +99,82 @@
             <input id="age-input-b" class="age-input" type="number" min="15" max="42" step="0.1" />
           </div>
         </div>
+
+        <div class="compare-col" data-scenario="c" hidden>
+          <div class="compare-col-header">
+            <h2>Option C</h2>
+            <button type="button" class="remove-option-btn" data-scenario="c" aria-label="Remove Option C">&times;</button>
+          </div>
+          <div class="field">
+            <label for="player-search-c">Player</label>
+            <input id="player-search-c" class="player-search" type="text" placeholder="Search a player" autocomplete="off" />
+            <div class="autocomplete-list player-list" id="player-list-c"></div>
+            <div class="player-chip"></div>
+          </div>
+          <div class="field">
+            <label for="club-search-c">Destination club</label>
+            <input id="club-search-c" class="club-search" type="text" placeholder="Search a club" autocomplete="off" />
+            <div class="autocomplete-list club-list" id="club-list-c"></div>
+            <div class="club-chip"></div>
+          </div>
+          <div class="field">
+            <label for="fee-input-c">Transfer fee (&euro;m)</label>
+            <input id="fee-input-c" class="fee-input" type="number" min="0" step="0.5" value="50" />
+          </div>
+          <div class="field">
+            <label for="age-input-c">Age at transfer</label>
+            <input id="age-input-c" class="age-input" type="number" min="15" max="42" step="0.1" />
+          </div>
+        </div>
+
+        <div class="compare-col" data-scenario="d" hidden>
+          <div class="compare-col-header">
+            <h2>Option D</h2>
+            <button type="button" class="remove-option-btn" data-scenario="d" aria-label="Remove Option D">&times;</button>
+          </div>
+          <div class="field">
+            <label for="player-search-d">Player</label>
+            <input id="player-search-d" class="player-search" type="text" placeholder="Search a player" autocomplete="off" />
+            <div class="autocomplete-list player-list" id="player-list-d"></div>
+            <div class="player-chip"></div>
+          </div>
+          <div class="field">
+            <label for="club-search-d">Destination club</label>
+            <input id="club-search-d" class="club-search" type="text" placeholder="Search a club" autocomplete="off" />
+            <div class="autocomplete-list club-list" id="club-list-d"></div>
+            <div class="club-chip"></div>
+          </div>
+          <div class="field">
+            <label for="fee-input-d">Transfer fee (&euro;m)</label>
+            <input id="fee-input-d" class="fee-input" type="number" min="0" step="0.5" value="50" />
+          </div>
+          <div class="field">
+            <label for="age-input-d">Age at transfer</label>
+            <input id="age-input-d" class="age-input" type="number" min="15" max="42" step="0.1" />
+          </div>
+        </div>
       </div>
 
+      <button type="button" class="add-option-btn" id="add-option-btn">+ Add another option</button>
       <button class="predict-btn" id="compare-btn" disabled>Compare</button>
       <div class="error-box" id="error-box"></div>
 
       <div class="result" id="result">
-        <div class="compare-results-grid">
-          <div class="compare-result-col" id="result-a">
-            <h2>Option A</h2>
-            <div class="score-display">
-              <div class="big" id="score-value-a">-</div>
-              <div class="score-label">/ 100</div>
-            </div>
-            <div class="score-range-note" id="score-range-note-a"></div>
-            <div class="comparables">
-              <h3>Top factors</h3>
-              <div id="explanation-list-a"></div>
-            </div>
-          </div>
-          <div class="compare-result-col" id="result-b">
-            <h2>Option B</h2>
-            <div class="score-display">
-              <div class="big" id="score-value-b">-</div>
-              <div class="score-label">/ 100</div>
-            </div>
-            <div class="score-range-note" id="score-range-note-b"></div>
-            <div class="comparables">
-              <h3>Top factors</h3>
-              <div id="explanation-list-b"></div>
-            </div>
-          </div>
-        </div>
-        <!-- Below the two score cards, not above - readers should see both
-             numbers and their breakdowns before the "in conclusion" delta
-             sentence, not the punchline first. -->
+        <div class="compare-results-grid" id="compare-results-grid"></div>
+        <!-- Below the score cards, not above - readers should see every
+             option's number and breakdown before the "in conclusion"
+             verdict sentence, not the punchline first. -->
         <div class="compare-delta" id="compare-delta"></div>
         <p class="disclaimer">
-          Both predictions carry the same uncertainty as a single prediction. Typical
-          error is about 15 points on this 0&ndash;100 scale. Treat a close comparison as
+          Every prediction carries the same uncertainty as a single one. Typical error
+          is about 15 points on this 0&ndash;100 scale. Treat a close comparison as
           "roughly a toss-up," not a precise verdict.
         </p>
       </div>
     </section>
   </main>
 
-  <script src="/settings.js?v=45"></script>
-  <script src="/compare.js?v=45"></script>
+  <script src="/settings.js?v=46"></script>
+  <script src="/compare.js?v=46"></script>
 </body>
 </html>
