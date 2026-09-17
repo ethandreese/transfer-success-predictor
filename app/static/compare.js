@@ -208,6 +208,48 @@ function setupScenario(key) {
     state.feeEurMillions = Number.isNaN(typed) ? 0 : typed / EXCHANGE_RATES[settings.currency];
   });
   document.addEventListener("settingschange", updateFeeCurrencyDisplay);
+
+  /**
+   * Look up a player/club pair by id for a shared/bookmarked comparison
+   * URL (see restoreFromURL() below), without touching any state or DOM -
+   * deliberately split from applyScenario() below so restoreFromURL() can
+   * resolve *both* columns first and only apply either one once it knows
+   * both actually resolved. Applying this column's fields the moment they
+   * arrive, one column at a time, would leave a stale/mistyped link's
+   * failing column blank while the other one looks perfectly normal -
+   * confusing on its own, and worse once a "why didn't Compare run"
+   * question has no visible cause.
+   */
+  async function fetchScenario(playerId, clubId) {
+    const [player, club] = await Promise.all([
+      fetch(`/api/players/${playerId}`).then(r => r.ok ? r.json() : null),
+      fetch(`/api/clubs/${clubId}`).then(r => r.ok ? r.json() : null),
+    ]);
+    return player && club ? { player, club } : null;
+  }
+
+  /** Apply an already-resolved {player, club} (see fetchScenario above) to this column's state and DOM - exactly what selecting them via the autocompletes would have done, plus the fee/age fields. */
+  async function applyScenario({ player, club }, feeEurMillions, age) {
+    state.player = player;
+    playerInput.value = `${player.name} (${player.position}, ${player.current_club_name})`;
+    col.querySelector(".player-chip").innerHTML =
+      `<span class="selected-chip">${player.name} &middot; age ${Number(player.age_now).toFixed(1)} &middot; ${player.current_club_name}</span>`;
+    if (player.current_club_id) {
+      const res = await fetch(`/api/clubs/${player.current_club_id}`);
+      state.playerClub = res.ok ? await res.json() : null;
+    }
+
+    state.club = club;
+    clubInput.value = club.name;
+    col.querySelector(".club-chip").innerHTML = `<span class="selected-chip">${club.name}</span>`;
+
+    state.feeEurMillions = feeEurMillions;
+    updateFeeCurrencyDisplay();
+    col.querySelector(".age-input").value = age.toFixed(1);
+    updateCompareButton();
+  }
+
+  return { fetchScenario, applyScenario };
 }
 
 /** Assemble a PredictRequest body for one scenario from its selected player/club and the fee/age fields in that column. */
@@ -285,9 +327,22 @@ function renderCompareResult(data) {
 
 let lastCompareData = null;
 
-// Build both scenarios' payloads, POST them together to /api/compare, and
-// render both results plus a plain-English delta summary.
-document.getElementById("compare-btn").addEventListener("click", async () => {
+/** Keep the address bar's query string in sync with both scenarios' player/club/fee/age, so a finished comparison is bookmarkable and shareable - see writeURLParams in settings.js. Called only after a successful compare, from the exact values just submitted (not re-read from the form later), so a shared link always reproduces the comparison it was copied from. */
+function syncURL() {
+  writeURLParams({
+    player_a: scenarios.a.player.player_id,
+    club_a: scenarios.a.club.club_id,
+    fee_a: scenarios.a.feeEurMillions,
+    age_a: document.querySelector('.compare-col[data-scenario="a"] .age-input').value,
+    player_b: scenarios.b.player.player_id,
+    club_b: scenarios.b.club.club_id,
+    fee_b: scenarios.b.feeEurMillions,
+    age_b: document.querySelector('.compare-col[data-scenario="b"] .age-input').value,
+  });
+}
+
+/** Build both scenarios' payloads, POST them together to /api/compare, and render both results plus a plain-English delta summary. Used both by the "Compare" button and restoreFromURL()'s auto-run of a shared link. */
+async function runCompare() {
   const errorBox = document.getElementById("error-box");
   errorBox.textContent = "";
   try {
@@ -307,10 +362,13 @@ document.getElementById("compare-btn").addEventListener("click", async () => {
     }
     lastCompareData = await res.json();
     renderCompareResult(lastCompareData);
+    syncURL();
   } catch (e) {
     errorBox.textContent = e.message;
   }
-});
+}
+
+document.getElementById("compare-btn").addEventListener("click", runCompare);
 
 // A settings change (currency, ...) doesn't change the underlying data,
 // just how it's displayed - re-render the last comparison from the cached
@@ -319,5 +377,44 @@ document.addEventListener("settingschange", () => {
   if (lastCompareData) renderCompareResult(lastCompareData);
 });
 
-setupScenario("a");
-setupScenario("b");
+const scenarioControllers = {
+  a: setupScenario("a"),
+  b: setupScenario("b"),
+};
+
+/**
+ * Restore both scenarios from a shared/bookmarked comparison URL and,
+ * once both resolve, run the comparison automatically - a shared link's
+ * whole point is showing the comparison immediately, not making the
+ * recipient re-pick both players/clubs and click Compare themselves.
+ * Only attempted when the URL fully specifies both scenarios (all four
+ * fields each); a partial or absent URL just leaves the form empty, same
+ * as visiting the page directly.
+ *
+ * Resolves both columns' player+club lookups first (fetchScenario, no DOM
+ * writes) before applying either one (applyScenario) - a stale/mistyped
+ * link where only one id no longer resolves (e.g. after a data refresh)
+ * must leave *both* columns untouched, not populate the one that
+ * happened to succeed while the other sits blank with no visible reason
+ * Compare never ran.
+ */
+async function restoreFromURL() {
+  const params = readURLParams();
+  const hasA = params.player_a && params.club_a && params.fee_a && params.age_a;
+  const hasB = params.player_b && params.club_b && params.fee_b && params.age_b;
+  if (!hasA || !hasB) return;
+
+  const [scenarioA, scenarioB] = await Promise.all([
+    scenarioControllers.a.fetchScenario(params.player_a, params.club_a),
+    scenarioControllers.b.fetchScenario(params.player_b, params.club_b),
+  ]);
+  if (!scenarioA || !scenarioB) return;
+
+  await Promise.all([
+    scenarioControllers.a.applyScenario(scenarioA, parseFloat(params.fee_a), parseFloat(params.age_a)),
+    scenarioControllers.b.applyScenario(scenarioB, parseFloat(params.fee_b), parseFloat(params.age_b)),
+  ]);
+  runCompare();
+}
+
+restoreFromURL();

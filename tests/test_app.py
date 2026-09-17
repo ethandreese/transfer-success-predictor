@@ -1042,6 +1042,35 @@ def test_career_search_uses_the_precomputed_table():
     assert PLAYER_CAREER_SEARCH_DF["player_id"].duplicated().sum() == 0
 
 
+def test_players_search_and_career_search_not_shadowed_by_player_id_route():
+    """
+    /api/players/{player_id} is registered after /api/players/search and
+    /api/players/career-search specifically so it can't swallow requests
+    meant for them - a bare {player_id} path segment matches any string,
+    including literally "search" or "career-search", and only fails (422,
+    not 200) once FastAPI tries to parse that string as the int player_id.
+    Registered in the wrong order, both search endpoints would 422 on
+    every request instead of ever running their own handler.
+    """
+    assert client.get("/api/players/search", params={"q": "Joselu"}).status_code == 200
+    assert client.get("/api/players/career-search", params={"q": "Joselu"}).status_code == 200
+
+
+def test_get_player_by_id_matches_the_search_result_exactly():
+    """/api/players/{player_id} exists so Compare's shareable-link restore can reconstruct a scenario's player selection from just an id - it must return byte-for-byte the same record /api/players/search already does, or a restored comparison would silently differ from the one that was shared."""
+    search_res = client.get("/api/players/search", params={"q": "Joselu"})
+    player = search_res.json()[0]
+    by_id_res = client.get(f"/api/players/{player['player_id']}")
+    assert by_id_res.status_code == 200
+    assert by_id_res.json() == player
+
+
+def test_get_player_404_for_unknown_id():
+    """A player_id with no players_lookup.csv row (e.g. below the market-value threshold that table is filtered to) should 404, not 500 or return an empty/garbage record."""
+    res = client.get("/api/players/999999999")
+    assert res.status_code == 404
+
+
 @pytest.mark.parametrize("endpoint,extra_params", [
     ("/api/players/career-search", {}),
     ("/api/clubs/leaderboard", {}),

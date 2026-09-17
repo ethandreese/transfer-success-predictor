@@ -1862,36 +1862,46 @@ RECENT_PERFORMANCE_COLUMNS = [
 ]
 
 
-@app.get("/api/players/search")
-def search_players(q: str, limit: int = 10):
+def serialize_player_rows(rows):
     """
-    Accent-insensitive substring search over players_lookup.csv, for the
-    prediction form's player autocomplete. recent_fotmob_* columns and
-    RECENT_PERFORMANCE_COLUMNS are genuinely numeric (unlike the other
-    columns here, which are safely blanket-filled with "" for a missing
-    string field) and feed straight into PredictRequest's Optional[float]
-    pre_fotmob_*/pre_apps/pre_minutes/etc. fields - filling a missing one
-    with "" would send the frontend a string that's neither a valid float
-    nor JSON null, breaking the request. Left as real NaN, then swapped to
-    None (valid JSON null) below instead - a fabricated "" or 0 would
-    misrepresent "no data" as a real value. RECENT_PERFORMANCE_COLUMNS is
-    genuinely NaN for a player at a club outside LEAGUE_MAP (e.g. Messi at
-    Inter Miami, Son at LAFC - both MLS) - see build_lookups.py - rather
-    than always having a real number the way it used to before that was
-    fixed, which is exactly why this needs the same numeric-safe handling
-    recent_fotmob_* already had.
+    players_lookup.csv rows -> JSON-safe records for the Predict/Compare
+    forms: recent_fotmob_* columns and RECENT_PERFORMANCE_COLUMNS are
+    genuinely numeric (unlike the other columns here, which are safely
+    blanket-filled with "" for a missing string field) and feed straight
+    into PredictRequest's Optional[float] pre_fotmob_*/pre_apps/pre_minutes/
+    etc. fields - filling a missing one with "" would send the frontend a
+    string that's neither a valid float nor JSON null, breaking the
+    request. Left as real NaN, then swapped to None (valid JSON null)
+    below instead - a fabricated "" or 0 would misrepresent "no data" as a
+    real value. RECENT_PERFORMANCE_COLUMNS is genuinely NaN for a player at
+    a club outside LEAGUE_MAP (e.g. Messi at Inter Miami, Son at LAFC -
+    both MLS) - see build_lookups.py - rather than always having a real
+    number the way it used to before that was fixed, which is exactly why
+    this needs the same numeric-safe handling recent_fotmob_* already had.
+
+    Shared by /api/players/search (many rows at once) and
+    /api/players/{player_id} (exactly one) below, so both return byte-for-
+    byte the same shape - Compare's shareable-link restore (GET one player
+    by id) has to reconstruct exactly what the search-driven selection flow
+    would have given buildPayload().
     """
-    if len(q) < 2:
-        return []
-    limit = max(1, min(limit, 50))
-    mask = players_df["_name_fold"].str.contains(fold_accents(q), na=False, regex=False)
-    rows = players_df[mask].head(limit).drop(columns=["_name_fold"])
     numeric_cols = [c for c in rows.columns if c.startswith("recent_fotmob")] + RECENT_PERFORMANCE_COLUMNS
     records = rows.drop(columns=numeric_cols).fillna("").to_dict(orient="records")
     numeric_records = rows[numeric_cols].astype(object).where(rows[numeric_cols].notna(), None).to_dict(orient="records")
     for record, numeric_record in zip(records, numeric_records):
         record.update(numeric_record)
     return records
+
+
+@app.get("/api/players/search")
+def search_players(q: str, limit: int = 10):
+    """Accent-insensitive substring search over players_lookup.csv, for the prediction form's player autocomplete - see serialize_player_rows() for the numeric-safe record shape."""
+    if len(q) < 2:
+        return []
+    limit = max(1, min(limit, 50))
+    mask = players_df["_name_fold"].str.contains(fold_accents(q), na=False, regex=False)
+    rows = players_df[mask].head(limit).drop(columns=["_name_fold"])
+    return serialize_player_rows(rows)
 
 
 @app.get("/api/players/career-search")
@@ -1914,6 +1924,36 @@ def search_players_for_career(q: str, limit: int = 10):
     mask = PLAYER_CAREER_SEARCH_DF["_name_fold"].str.contains(fold_accents(q), na=False, regex=False)
     matches = PLAYER_CAREER_SEARCH_DF[mask].head(limit)
     return matches[["player_id", "name"]].to_dict(orient="records")
+
+
+# Registered after /api/players/search and /api/players/career-search
+# above (and before /api/players/{player_id}/career below, though that one
+# can't actually collide - see next comment) deliberately: FastAPI/
+# Starlette matches routes by trying each registered path pattern in
+# order, and a bare {player_id} segment (no :int converter in the path
+# itself - the `player_id: int` type hint only validates *after* a route
+# already matched) matches any single path segment as a string, including
+# literally "search" or "career-search". Registered first, this route
+# would have swallowed every request meant for those two search endpoints
+# and 422'd on trying to parse "search"/"career-search" as an int -
+# breaking the Predict/Compare player autocomplete and the Player
+# Timelines search entirely. /api/players/{player_id}/career is safe
+# either way - it has an extra /career segment a bare {player_id} pattern
+# never matches - but kept below this one anyway for readability, longest
+# and most specific path last.
+@app.get("/api/players/{player_id}")
+def get_player(player_id: int):
+    """
+    One players_lookup.csv row by id, in exactly the shape
+    /api/players/search already returns (see serialize_player_rows()) -
+    lets Compare's shareable-link restore reconstruct a scenario's player
+    selection from a URL alone (?player_a=<id>), the same way the existing
+    /api/clubs/{club_id} already does for a destination club.
+    """
+    rows = players_df[players_df["player_id"] == player_id].drop(columns=["_name_fold"])
+    if rows.empty:
+        raise HTTPException(status_code=404, detail="player not found")
+    return serialize_player_rows(rows)[0]
 
 
 @app.get("/api/players/{player_id}/career")

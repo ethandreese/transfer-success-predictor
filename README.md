@@ -280,7 +280,13 @@ rather than doubling as the predict form (see Project history).
 - **`/compare.html`** — set up two hypothetical transfers side by side
   (same player to two different clubs, or two different players entirely)
   and see both predictions, ranges, and top factors together with the
-  point gap between them.
+  point gap between them. A finished comparison syncs both scenarios
+  (player/club/fee/age) to the URL, so it's bookmarkable and shareable -
+  opening that link resolves both players and clubs by id
+  (`/api/players/{id}`, `/api/clubs/{id}`) and re-runs the comparison
+  automatically. A stale or mistyped link (an id that no longer resolves)
+  leaves the form untouched rather than populating whichever scenario
+  happened to succeed while the other sat blank.
 - **`/browse.html`** — every scored transfer (~8,300), filterable by
   position and destination league, searchable by player/club name, sortable
   by score/date/fee/age, paginated. Click any row to open that transfer's
@@ -547,6 +553,23 @@ the git history.
   symmetric playing-time rule that doesn't apply to loans).
 
 **Frontend**
+- Made a finished Compare comparison bookmarkable and shareable: both
+  scenarios' player/club/fee/age sync to the URL after a successful
+  compare, and opening that link resolves everything and re-runs the
+  comparison automatically. Needed a new `/api/players/{player_id}`
+  endpoint (players_lookup.csv has no by-id lookup otherwise, only
+  `/api/players/search`) - registered *after* the existing
+  `/api/players/search` and `/api/players/career-search` routes
+  specifically, since a bare `{player_id}` path segment matches any
+  string and, registered first, would have swallowed every request meant
+  for those two and 422'd trying to parse "search"/"career-search" as an
+  int, breaking both search endpoints entirely. Also caught while testing
+  by hand: resolving each comparison scenario's player+club and applying
+  it to the form were the same step, so a stale link where only one
+  scenario's id failed to resolve still populated the *other* one,
+  leaving one column filled in normally and the other blank with no
+  visible reason Compare never ran. Fixed by resolving both scenarios
+  first and only applying either one once both are confirmed to exist.
 - Added a "Where this lands" section to Predict, plotting the current
   prediction as a marker against the sitewide fee/age trend lines from a
   new, lighter `/api/analytics/trends` endpoint (just `fee_trend`/
