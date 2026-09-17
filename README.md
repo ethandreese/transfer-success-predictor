@@ -307,14 +307,19 @@ rather than doubling as the predict form (see Project history).
   player + from/to club against a later row in the transfers data - see
   `find_loan_conversion()`) gets a "✓ Permanent" badge, in both the table
   and the detail card, linking to that conversion's date and score.
-- **`/surprises.html`** ("Model vs Reality") — every scored permanent
-  transfer with a held-out prediction (~93% of them - see
-  `compute_prediction_surprises.py`), ranked by how far the real outcome
-  diverged from what a model that never saw that transfer's own result
-  would have guessed from pre-transfer data alone: the biggest
-  overachievers, the biggest busts, or (via the Show filter) the calls it
-  got closest to right. Same filter/search/click-to-view-card experience as
-  Browse, plus the model's own number shown alongside the real one.
+- **`/surprises.html`** ("Model vs Reality") — a predicted-vs-actual
+  scatter (`/api/surprises/scatter`, every held-out prediction at once,
+  unfiltered - same "ship everything" approach as Analytics) with a
+  dashed y=x reference line and dots colored by which side of it a
+  transfer landed on, followed by every scored permanent transfer with a
+  held-out prediction (~93% of them - see `compute_prediction_surprises.py`),
+  ranked by how far the real outcome diverged from what a model that
+  never saw that transfer's own result would have guessed from
+  pre-transfer data alone: the biggest overachievers, the biggest busts,
+  or (via the Show filter) the calls it got closest to right. Same
+  filter/search/click-to-view-card experience as Browse, plus the
+  model's own number shown alongside the real one; clicking a scatter
+  point opens the same detail card.
 - **`/clubs.html`** — every club that's bought or sold at least one scored
   permanent transfer, ranked as a recruiter: incoming transfers and their
   average score, total spent, buy-develop-resell profit on the subset it
@@ -578,6 +583,15 @@ the git history.
   symmetric playing-time rule that doesn't apply to loans).
 
 **Frontend**
+- Added a predicted-vs-actual scatter chart to Model vs Reality
+  (`/api/surprises/scatter` - the full ~7,800-point set, not scoped to
+  the table's own filters, same reasoning as `/api/analytics`), reusing
+  Analytics' chart-drawing conventions (`linearScale`, `scoreGridlines`,
+  click/tap-to-open-detail-card via event delegation) but colored by
+  `deltaColor` (green above the y=x line, red below) instead of the
+  usual absolute-score `scoreColor`, since the question this chart
+  answers is which side of the model's guess a transfer landed on, not
+  how good the outcome was in isolation.
 - Added fee/age range filters and a "Export these results as CSV" link
   (`/api/transfers/export`, `/api/loans/export` - uncapped, ignores
   pagination) to Browse and Loans, plus a "✓ Permanent" badge on any loan

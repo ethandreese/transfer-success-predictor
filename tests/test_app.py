@@ -741,6 +741,26 @@ def test_surprises_detail_reuses_transfer_detail_card():
     assert detail.json()["success_score"] == row["success_score"]
 
 
+def test_surprises_scatter_returns_every_prediction_unfiltered_and_unpaginated():
+    """/api/surprises/scatter backs the Model vs Reality chart - it should return the full set of predicted transfers (matching /api/surprises' total with no filters), not a paginated page of it."""
+    listing = client.get("/api/surprises", params={"limit": 1})
+    total = listing.json()["total"]
+    res = client.get("/api/surprises/scatter")
+    assert res.status_code == 200
+    data = res.json()
+    assert len(data["name"]) == total
+    for key in ("player_id", "transfer_date", "predicted_score", "success_score", "surprise_delta"):
+        assert len(data[key]) == total
+
+
+def test_surprises_scatter_delta_matches_actual_minus_predicted():
+    """surprise_delta in the scatter payload should agree with success_score - predicted_score, same invariant /api/surprises' own results satisfy."""
+    res = client.get("/api/surprises/scatter")
+    data = res.json()
+    for i in range(0, len(data["name"]), 500):
+        assert data["surprise_delta"][i] == pytest.approx(data["success_score"][i] - data["predicted_score"][i], abs=0.05)
+
+
 def test_clubs_leaderboard_pagination():
     """A limit=10 request should return exactly 10 results, with the true total count reported separately."""
     res = client.get("/api/clubs/leaderboard", params={"limit": 10, "offset": 0})

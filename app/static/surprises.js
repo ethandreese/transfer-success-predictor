@@ -18,6 +18,80 @@ function signed(n) {
   return `${n >= 0 ? "+" : ""}${n}`;
 }
 
+function linearScale(d0, d1, r0, r1) {
+  return (v) => d1 === d0 ? (r0 + r1) / 2 : r0 + (v - d0) / (d1 - d0) * (r1 - r0);
+}
+
+/** Horizontal gridlines + left-edge labels at 0/25/50/75/100 - copied from analytics.js's chart helpers (same duplicated-per-page pattern every chart-drawing function on this site already follows). */
+function scoreGridlines(y, padL, padR, W) {
+  return [0, 25, 50, 75, 100].map(score => `
+    <line x1="${padL}" y1="${y(score).toFixed(1)}" x2="${W - padR}" y2="${y(score).toFixed(1)}" stroke="var(--border)" stroke-width="1" />
+    <text x="${padL - 6}" y="${(y(score) + 3).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--muted)">${score}</text>
+  `).join("");
+}
+
+/** One clickable scatter point: a small visible dot plus a larger (invisible) circle purely to enlarge the tap/click target. Wrapped in a <g class="scatter-pt"> carrying the transfer's player_id/transfer_date/predicted_score/surprise_delta as data attributes, read by wireScatterClicks() via event delegation to open that transfer's full card (with the model-vs-reality banner) on click/tap. */
+function scatterPoint(cx, cy, color, opacity, playerId, transferDate, predictedScore, delta, tooltip) {
+  return `
+    <g class="scatter-pt" data-player-id="${playerId}" data-transfer-date="${transferDate}" data-predicted="${predictedScore}" data-delta="${delta}" style="cursor:pointer">
+      <circle cx="${cx}" cy="${cy}" r="6" fill="transparent" />
+      <circle cx="${cx}" cy="${cy}" r="2.3" fill="${color}" opacity="${opacity}" />
+      <title>${tooltip}</title>
+    </g>
+  `;
+}
+
+/** Turn /api/surprises/scatter's columnar payload ({name: [...], predicted_score: [...], ...}) into one row object per transfer - same convention Analytics uses for /api/analytics' scatter. */
+function zipScatter(scatter) {
+  const rows = [];
+  for (let i = 0; i < scatter.name.length; i++) {
+    rows.push({
+      player_id: scatter.player_id[i],
+      transfer_date: scatter.transfer_date[i],
+      name: scatter.name[i],
+      predicted_score: scatter.predicted_score[i],
+      success_score: scatter.success_score[i],
+      surprise_delta: scatter.surprise_delta[i],
+    });
+  }
+  return rows;
+}
+
+/**
+ * Every scored transfer with a held-out prediction, predicted score (x)
+ * against actual score (y) - both already 0-100, so a plain linear scale
+ * on both axes, with a dashed y=x reference line: above it, the model
+ * undersold the transfer (actual beat predicted); below it, it oversold
+ * it. Dots use deltaColor (green/red), not scoreColor - the color here
+ * answers "which side of the diagonal", the same question the line
+ * itself asks, not "how good was the actual score" the way every other
+ * chart's dot color does.
+ */
+function buildPredictedActualChart(rows) {
+  const W = 900, H = 340, padL = 50, padR = 16, padT = 14, padB = 30;
+  const x = linearScale(0, 100, padL, W - padR);
+  const y = linearScale(0, 100, H - padB, padT);
+
+  const diagonal = `<line x1="${x(0).toFixed(1)}" y1="${y(0).toFixed(1)}" x2="${x(100).toFixed(1)}" y2="${y(100).toFixed(1)}" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.7" />`;
+
+  const dots = rows.map(r => scatterPoint(
+    x(r.predicted_score).toFixed(1), y(r.success_score).toFixed(1), deltaColor(r.surprise_delta), 0.4,
+    r.player_id, r.transfer_date, r.predicted_score, r.surprise_delta,
+    `${r.name}: predicted ${r.predicted_score}, actual ${r.success_score} (${signed(r.surprise_delta)}) - click for details`,
+  )).join("");
+
+  const ticks = [0, 25, 50, 75, 100];
+  const xLabels = ticks.map(t => `<text x="${x(t).toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="10" fill="var(--muted)">${t}</text>`).join("");
+
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="Predicted vs actual success score scatter plot">
+    ${scoreGridlines(y, padL, padR, W)}
+    ${diagonal}
+    ${dots}
+    ${xLabels}
+    <text x="${W - padR}" y="${H - padB - 6}" text-anchor="end" font-size="10" fill="var(--muted)">predicted score &rarr;</text>
+  </svg>`;
+}
+
 /** Build the /api/surprises query string from the current search box, filter dropdowns, sort selection, and pagination offset. Page size comes from the Settings panel (default 25). */
 function currentParams() {
   const [sort, order] = document.getElementById("sort-select").value.split(":");
@@ -219,6 +293,31 @@ function closeCard() {
   cardModal.close();
 }
 
+/**
+ * Delegate clicks on the predicted-vs-actual chart's wrapper div to
+ * whichever .scatter-pt group was hit, rather than attaching a listener
+ * per point (there are ~7,800 of them) - same reasoning and pattern as
+ * analytics.js's own wireScatterClicks.
+ */
+function wireScatterClicks(containerId) {
+  document.getElementById(containerId).addEventListener("click", (e) => {
+    const pt = e.target.closest(".scatter-pt");
+    if (pt) showCard(pt.dataset.playerId, pt.dataset.transferDate, pt.dataset.predicted, pt.dataset.delta);
+  });
+}
+
+/** Fetch every scored transfer's held-out prediction (unfiltered, unpaginated - see /api/surprises/scatter) and render the predicted-vs-actual chart. Independent of the table below: this chart shows the model's overall calibration, not whatever filter/page the table currently has applied, so it's fetched once and never reloaded by a filter/sort/page change. */
+async function loadScatter() {
+  const res = await fetch("/api/surprises/scatter");
+  const data = await res.json();
+  const rows = zipScatter(data);
+  document.getElementById("predicted-actual-chart").innerHTML = buildPredictedActualChart(rows);
+  const overCount = rows.filter(r => r.surprise_delta >= 0).length;
+  const pct = Math.round((overCount / rows.length) * 100);
+  document.getElementById("predicted-actual-desc").textContent =
+    `${rows.length.toLocaleString()} scored transfers with a held-out prediction. ${overCount.toLocaleString()} (${pct}%) landed on or above the model's guess, ${(rows.length - overCount).toLocaleString()} below it. Click/tap any point for that transfer's full breakdown.`;
+}
+
 // Close the modal via the X button, a click on the dimmed backdrop (but not
 // the card itself), or the Escape key.
 document.getElementById("card-modal-close").addEventListener("click", closeCard);
@@ -291,3 +390,6 @@ if (urlParams.position || urlParams.league) {
   loadFilters();
   loadTable();
 }
+
+wireScatterClicks("predicted-actual-chart");
+loadScatter();

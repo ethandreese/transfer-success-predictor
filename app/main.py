@@ -2440,6 +2440,29 @@ def list_surprises(
     return {"total": total, "limit": limit, "offset": offset, "results": results}
 
 
+@app.get("/api/surprises/scatter")
+def get_surprises_scatter():
+    """
+    Every scored transfer with a held-out prediction, columnar
+    (player_id/transfer_date/name/predicted_score/success_score/
+    surprise_delta) - the full, unfiltered set behind Model vs Reality's
+    predicted-vs-actual scatter chart, same "ship everything, let the
+    chart itself be the filter" approach as /api/analytics rather than
+    reusing /api/surprises' paginated+filtered listing: the chart's job is
+    to show the model's overall calibration, not whatever position/league/
+    search the table below happens to have applied at the moment.
+    """
+    df = transfers_df[transfers_df["predicted_score"].notna()]
+    return {
+        "player_id": df["player_id"].astype(int).tolist(),
+        "transfer_date": [str(v)[:10] for v in df["transfer_date"]],
+        "name": df["name"].tolist(),
+        "predicted_score": numeric_column(df["predicted_score"], ndigits=1),
+        "success_score": numeric_column(df["success_score"], ndigits=1),
+        "surprise_delta": numeric_column(df["surprise_delta"], ndigits=1),
+    }
+
+
 LOAN_SORT_FIELDS = {"loan_success_score", "transfer_date", "age_at_transfer", "tenure_days", "to_club_name"}
 
 

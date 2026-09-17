@@ -13,7 +13,7 @@
   <meta name="twitter:title" content="Model vs Reality - Transfer Success Predictor" />
   <meta name="twitter:description" content="How real transfers compare to a held-out model's pre-transfer-only prediction." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="stylesheet" href="/style.css?v=47" />
+  <link rel="stylesheet" href="/style.css?v=48" />
 </head>
 <body>
   <header>
@@ -62,6 +62,17 @@
         required feature (fee, height, origin league) are excluded from the model's
         training too.
       </p>
+    </section>
+
+    <section class="card">
+      <h2>Predicted vs. actual</h2>
+      <p class="surprises-intro" id="predicted-actual-desc">Loading...</p>
+      <div class="timeline-chart-wrap" id="predicted-actual-chart"></div>
+      <div class="timeline-legend">
+        <span><span class="legend-dot" style="background:var(--muted); border:none;"></span> Predicted = actual</span>
+        <span><span class="legend-dot" style="background:var(--accent); border:none;"></span> Outperformed the model</span>
+        <span><span class="legend-dot" style="background:var(--accent-bad); border:none;"></span> Fell short of it</span>
+      </div>
     </section>
 
     <section class="card">
@@ -127,7 +138,7 @@
     </div>
   </div>
 
-  <script src="/settings.js?v=47"></script>
-  <script src="/surprises.js?v=47"></script>
+  <script src="/settings.js?v=48"></script>
+  <script src="/surprises.js?v=48"></script>
 </body>
 </html>
