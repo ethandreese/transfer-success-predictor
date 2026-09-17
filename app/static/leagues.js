@@ -18,10 +18,17 @@ function signed(n, suffix = "") {
   return `${n >= 0 ? "+" : ""}${n}${suffix}`;
 }
 
+/** Keep the address bar's query string in sync with the current sort, so this view is bookmarkable and shareable - see writeURLParams in settings.js. */
+function syncURL() {
+  const [sort, order] = document.getElementById("sort-select").value.split(":");
+  writeURLParams({ sort, order });
+}
+
 /** Fetch the current sort's leaderboard and render the table body with per-row click handlers. */
 async function loadTable() {
   const tbody = document.getElementById("table-body");
   tbody.innerHTML = `<tr><td colspan="6">Loading...</td></tr>`;
+  syncURL();
   const [sort, order] = document.getElementById("sort-select").value.split(":");
   const res = await fetch(`/api/leagues/trends?sort=${sort}&order=${order}`);
   const data = await res.json();
@@ -152,5 +159,14 @@ document.addEventListener("settingschange", () => {
   loadTable();
   if (state.openLeague) showLeague(state.openLeague);
 });
+
+// Restore sort straight from the URL (a bookmarked or shared link) so
+// landing here already shows that view, not always the unfiltered default.
+const urlParams = readURLParams();
+if (urlParams.sort && urlParams.order) {
+  const sortSelect = document.getElementById("sort-select");
+  const sortValue = `${urlParams.sort}:${urlParams.order}`;
+  if ([...sortSelect.options].some(o => o.value === sortValue)) sortSelect.value = sortValue;
+}
 
 loadTable();

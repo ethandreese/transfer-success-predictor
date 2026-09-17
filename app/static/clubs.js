@@ -89,6 +89,18 @@ async function loadTable() {
   document.getElementById("prev-page").disabled = state.offset === 0;
   document.getElementById("next-page").disabled = state.offset + settings.pageSize >= state.total;
   renderPageInfo();
+  syncURL();
+}
+
+/** Keep the address bar's query string in sync with the current search/filter/sort/page, so this view is bookmarkable and shareable - see writeURLParams in settings.js. */
+function syncURL() {
+  const [sort, order] = document.getElementById("sort-select").value.split(":");
+  writeURLParams({
+    q: document.getElementById("search-input").value.trim(),
+    league: document.getElementById("league-select").value,
+    sort, order,
+    offset: state.offset || "",
+  });
 }
 
 /** Render "Page X of Y (Z clubs)", with X as a click-to-edit trigger for jumping to an arbitrary page. */
@@ -334,5 +346,27 @@ document.addEventListener("settingschange", () => {
   }
 });
 
-loadFilters();
-loadTable();
+// Restore search/league/sort/page straight from the URL (a bookmarked or
+// shared link) so landing here already shows that view, not always the
+// unfiltered default. league can't be applied until loadFilters() has
+// populated its <option>s, so it waits on that specifically - q/sort/
+// offset don't depend on it and apply immediately so the very first
+// loadTable() call already reflects them.
+const urlParams = readURLParams();
+if (urlParams.q) document.getElementById("search-input").value = urlParams.q;
+if (urlParams.sort && urlParams.order) {
+  const sortSelect = document.getElementById("sort-select");
+  const sortValue = `${urlParams.sort}:${urlParams.order}`;
+  if ([...sortSelect.options].some(o => o.value === sortValue)) sortSelect.value = sortValue;
+}
+state.offset = parseInt(urlParams.offset, 10) || 0;
+
+if (urlParams.league) {
+  loadFilters().then(() => {
+    document.getElementById("league-select").value = urlParams.league;
+    loadTable();
+  });
+} else {
+  loadFilters();
+  loadTable();
+}

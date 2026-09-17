@@ -177,6 +177,31 @@ function makeModalAccessible(backdrop) {
   };
 }
 
+/** Read the current URL's query string into a plain object - the read half of every list page's URL sync (see writeURLParams below), used once at load to restore a shared/bookmarked view's search/filter/sort/page. */
+function readURLParams() {
+  return Object.fromEntries(new URLSearchParams(location.search));
+}
+
+/**
+ * Replace the current URL's query string with `params` (any key whose
+ * value is undefined/null/"" is dropped, so an unfiltered view keeps a
+ * clean URL rather than trailing empty params) - called after every
+ * search/filter/sort/page change on Browse, Loans, Model vs Reality, Club
+ * Report Cards, and League Trends, so the address bar always reflects the
+ * current view and can be bookmarked or shared as-is. Uses replaceState,
+ * not pushState - a live-search box or a paginated table firing this on
+ * every keystroke/click would otherwise turn the back button into a
+ * click-by-click undo history instead of just leaving the page.
+ */
+function writeURLParams(params) {
+  const url = new URL(location.href);
+  url.search = "";
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, value);
+  });
+  history.replaceState(null, "", url);
+}
+
 /** Build and insert the settings gear button + its modal into the page. Call once, after the DOM is ready. */
 function injectSettingsUI() {
   const btn = document.createElement("button");
