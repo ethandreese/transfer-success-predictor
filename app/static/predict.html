@@ -13,7 +13,7 @@
   <meta name="twitter:title" content="Predict a Transfer - Transfer Success Predictor" />
   <meta name="twitter:description" content="Predict how a football transfer is likely to go, trained on ~7,800 real historical transfers." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="stylesheet" href="/style.css?v=43" />
+  <link rel="stylesheet" href="/style.css?v=44" />
 </head>
 <body>
   <header>
@@ -76,6 +76,7 @@
         <div class="field">
           <label for="fee">Transfer fee (&euro;m)</label>
           <input id="fee" type="number" min="0" step="0.5" value="50" />
+          <input id="fee-slider" type="range" min="0" max="200" step="0.5" value="50" aria-label="Transfer fee slider" />
         </div>
         <div class="field">
           <label for="age-override">Age at transfer (auto-filled, editable)</label>
@@ -91,6 +92,13 @@
           <div class="score-label">/ 100 predicted success score</div>
         </div>
         <div class="score-range-note" id="score-range-note"></div>
+        <div class="comparables">
+          <h2>Where this lands</h2>
+          <p class="surprises-intro" id="fee-trend-desc"></p>
+          <div class="timeline-chart-wrap" id="fee-trend-chart"></div>
+          <p class="surprises-intro" id="age-trend-desc"></p>
+          <div class="timeline-chart-wrap" id="age-trend-chart"></div>
+        </div>
         <div class="comparables">
           <h2>Why this score</h2>
           <div id="explanation-list"></div>
@@ -111,7 +119,7 @@
     </section>
   </main>
 
-  <script src="/settings.js?v=43"></script>
-  <script src="/app.js?v=43"></script>
+  <script src="/settings.js?v=44"></script>
+  <script src="/app.js?v=44"></script>
 </body>
 </html>

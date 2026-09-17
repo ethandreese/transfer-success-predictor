@@ -16,11 +16,24 @@ const state = {
   feeEurMillions: 50,
 };
 
-/** Sync the fee field's label (currency symbol) and displayed value from `state.feeEurMillions` to the currently-selected currency - call after a currency change, or once at load if a non-EUR currency was already saved. */
-function updateFeeCurrencyDisplay(labelEl, inputEl) {
+// The fee slider's range, in EUR millions - rescaled to the selected
+// currency in updateFeeCurrencyDisplay below, same as the number input's
+// displayed value, so the two controls' numbers always agree.
+const FEE_SLIDER_MAX_EUR_M = 200;
+
+/** Sync the fee field's label (currency symbol) and displayed value - both the number input and the slider - from `state.feeEurMillions` to the currently-selected currency. Call after a currency change, or once at load if a non-EUR currency was already saved. */
+function updateFeeCurrencyDisplay(labelEl, inputEl, sliderEl) {
   const symbol = CURRENCY_SYMBOLS[settings.currency];
+  const rate = EXCHANGE_RATES[settings.currency];
   labelEl.textContent = `Transfer fee (${symbol}m)`;
-  inputEl.value = Math.round(state.feeEurMillions * EXCHANGE_RATES[settings.currency] * 10) / 10;
+  const displayValue = Math.round(state.feeEurMillions * rate * 10) / 10;
+  inputEl.value = displayValue;
+  sliderEl.max = Math.round(FEE_SLIDER_MAX_EUR_M * rate);
+  // A fee above the slider's max (a real Mbappé/Neymar-tier transfer) still
+  // types fine into the number input - the slider itself just pins to its
+  // own max rather than under/overflowing, same as a native range input
+  // already does for a value outside [min, max].
+  sliderEl.value = Math.min(displayValue, Number(sliderEl.max));
 }
 
 /**
@@ -53,6 +66,59 @@ function scoreColor(score) {
   if (score >= 66) return "var(--accent)";
   if (score >= 40) return "var(--accent-mid)";
   return "var(--accent-bad)";
+}
+
+function linearScale(d0, d1, r0, r1) {
+  return (v) => d1 === d0 ? (r0 + r1) / 2 : r0 + (v - d0) / (d1 - d0) * (r1 - r0);
+}
+
+function logScale(d0, d1, r0, r1) {
+  const l0 = Math.log10(d0), l1 = Math.log10(d1);
+  return (v) => l1 === l0 ? (r0 + r1) / 2 : r0 + (Math.log10(v) - l0) / (l1 - l0) * (r1 - r0);
+}
+
+/** Horizontal gridlines + left-edge labels at 0/25/50/75/100 - same convention as analytics.js's scoreGridlines(). */
+function scoreGridlines(y, padL, padR, W) {
+  return [0, 25, 50, 75, 100].map(score => `
+    <line x1="${padL}" y1="${y(score).toFixed(1)}" x2="${W - padR}" y2="${y(score).toFixed(1)}" stroke="var(--border)" stroke-width="1" />
+    <text x="${padL - 6}" y="${(y(score) + 3).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--muted)">${score}</text>
+  `).join("");
+}
+
+/**
+ * "Where this prediction lands": the sitewide binned-average trend line
+ * (fee_trend/age_trend from /api/analytics/trends - see loadTrends()
+ * below) plus one highlighted marker for this specific prediction's own
+ * (fee or age, score) point, so a bare predicted number isn't shown
+ * divorced from how every other real transfer at a similar fee/age
+ * actually went. Same dashed-line styling as the Analytics page's trend
+ * lines (var(--trend-line)), just without that page's underlying scatter
+ * of individual transfers - this chart only ever draws one point.
+ */
+function buildTrendMarkerChart(trend, xValue, score, scaleType) {
+  const W = 700, H = 170, padL = 40, padR = 16, padT = 14, padB = 24;
+  const chartH = H - padT - padB;
+  const y = (s) => padT + (100 - s) / 100 * chartH;
+
+  const trendXs = trend.map(t => t.x);
+  const minX = Math.min(...trendXs, xValue);
+  const maxX = Math.max(...trendXs, xValue);
+  const x = scaleType === "log" ? logScale(minX, maxX, padL, W - padR) : linearScale(minX, maxX, padL, W - padR);
+
+  const trendLine = `<polyline points="${trend.map(t => `${x(t.x).toFixed(1)},${y(t.avg_score).toFixed(1)}`).join(" ")}" fill="none" stroke="var(--trend-line)" stroke-width="2.5" stroke-dasharray="7 4" stroke-linecap="round" opacity="0.9" />`;
+
+  const markerColor = scoreColor(score);
+  const markerX = x(xValue).toFixed(1), markerY = y(score).toFixed(1);
+  const marker = `
+    <line x1="${markerX}" y1="${padT}" x2="${markerX}" y2="${H - padB}" stroke="${markerColor}" stroke-width="1" stroke-dasharray="3 3" opacity="0.5" />
+    <circle cx="${markerX}" cy="${markerY}" r="6" fill="${markerColor}" stroke="var(--panel)" stroke-width="2" />
+  `;
+
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="This prediction plotted against the sitewide trend">
+    ${scoreGridlines(y, padL, padR, W)}
+    ${trendLine}
+    ${marker}
+  </svg>`;
 }
 
 /**
@@ -205,6 +271,59 @@ setupAutocomplete({
   },
 });
 
+let trendsPromise = null;
+/** Fetch /api/analytics/trends once and cache it - the fee/age binned-average series behind the "Where this lands" marker charts don't change per-prediction, so there's no reason to re-fetch on every predict. */
+function loadTrends() {
+  if (!trendsPromise) trendsPromise = fetch("/api/analytics/trends").then(r => r.json());
+  return trendsPromise;
+}
+
+/** The avg_score of whichever trend bucket's x is closest to `value` - a quick "roughly how the sitewide average compares" figure for a marker chart's caption. */
+function nearestTrendAvg(trend, value) {
+  return trend.reduce((best, t) => Math.abs(t.x - value) < Math.abs(best.x - value) ? t : best).avg_score;
+}
+
+/** "above"/"below"/"in line with" - a marker chart caption's comparison clause, with a small dead zone around 0 so a near-exact match doesn't read as a false "above" or "below". */
+function landsClause(score, trendAvg) {
+  const diff = score - trendAvg;
+  if (Math.abs(diff) < 2) return "in line with";
+  return diff > 0 ? "above" : "below";
+}
+
+/**
+ * Render the "Where this lands" marker charts for the just-computed
+ * prediction: this transfer's own (fee, score) and (age, score) plotted
+ * against the sitewide binned-average trend from /api/analytics/trends
+ * (fetched once and cached - see loadTrends()), so a bare predicted
+ * number isn't shown divorced from how every other real transfer at a
+ * similar fee/age actually went. `age`/`feeEur` come from
+ * state.lastPredictInputs (the exact values that produced `score`), not
+ * read live from the form - age has no live-repredict the way fee does
+ * (see scheduleLiveRepredict), so if it were read live here, editing the
+ * age field without re-clicking "Predict success" and then triggering
+ * any re-render (e.g. a currency change) would plot the *new*, unsubmitted
+ * age against the *old* score, a mismatched, misleading pair.
+ */
+async function renderTrendMarkers(score, age, feeEur) {
+  const trends = await loadTrends();
+
+  const feeChart = document.getElementById("fee-trend-chart");
+  const feeDesc = document.getElementById("fee-trend-desc");
+  if (feeEur > 0) {
+    feeChart.innerHTML = buildTrendMarkerChart(trends.fee_trend, feeEur, score, "log");
+    const trendAvg = nearestTrendAvg(trends.fee_trend, feeEur);
+    feeDesc.textContent = `At ${formatMoney(feeEur)}, transfers around this fee average ${trendAvg} - this prediction (${score}) is ${landsClause(score, trendAvg)} that.`;
+  } else {
+    feeChart.innerHTML = "";
+    feeDesc.textContent = "A free transfer has no fee to plot against the sitewide fee trend.";
+  }
+
+  document.getElementById("age-trend-chart").innerHTML = buildTrendMarkerChart(trends.age_trend, age, score, "linear");
+  const ageTrendAvg = nearestTrendAvg(trends.age_trend, age);
+  document.getElementById("age-trend-desc").textContent =
+    `At age ${age.toFixed(1)}, transfers around this age average ${ageTrendAvg} - this prediction (${score}) is ${landsClause(score, ageTrendAvg)} that.`;
+}
+
 /** Render a /api/predict response into the #result panel. Factored out from the click handler so a settings change (currency) can re-render the last result without re-predicting. */
 function renderPredictResult(data) {
   document.getElementById("result").classList.add("open");
@@ -216,6 +335,7 @@ function renderPredictResult(data) {
     `Likely range: ${lo}–${hi}, based on the most similar historical transfers`;
   document.getElementById("mae-value").textContent = data.model_test_mae;
   document.getElementById("r2-value").textContent = data.model_test_r2;
+  renderTrendMarkers(data.success_score, state.lastPredictInputs.age, state.lastPredictInputs.feeEur);
   document.getElementById("comparables-list").innerHTML = data.comparable_transfers.map(c => `
     <div class="comp-row">
       <span>${c.name} (${c.from_club} &rarr; ${c.to_club}, ${c.transfer_date.slice(0, 7)})</span>
@@ -245,19 +365,49 @@ function renderPredictResult(data) {
 
 const feeLabel = document.querySelector('label[for="fee"]');
 const feeInput = document.getElementById("fee");
-updateFeeCurrencyDisplay(feeLabel, feeInput);
+const feeSlider = document.getElementById("fee-slider");
+updateFeeCurrencyDisplay(feeLabel, feeInput, feeSlider);
+
+/**
+ * Debounced live re-predict, fired whenever the fee changes (typed or
+ * dragged) after a first real prediction already exists - lets dragging
+ * the fee slider show the score update as you drag, instead of requiring
+ * another click on "Predict success" for every fee tried. Never fires
+ * before that first click: nothing meaningful to show yet, and silently
+ * calling /api/predict for an unselected player/club would just error.
+ * Age has no equivalent live control - the age field can still be edited
+ * by hand, but a player's age at a hypothetical transfer isn't really
+ * something to "explore a range of" the way a fee is.
+ */
+let liveRepredictTimer = null;
+function scheduleLiveRepredict() {
+  if (!state.lastPredictData) return;
+  clearTimeout(liveRepredictTimer);
+  liveRepredictTimer = setTimeout(runPrediction, 250);
+}
+
 // Keep state.feeEurMillions (the real, currency-independent value) in
-// sync with whatever the user types, converting from whichever currency
-// is currently displayed - see updateFeeCurrencyDisplay for the other
-// direction (a currency change redisplaying the same real fee).
+// sync with whatever the user types or drags, converting from whichever
+// currency is currently displayed - see updateFeeCurrencyDisplay for the
+// other direction (a currency change redisplaying the same real fee).
+// The number input and the slider mirror each other's value on every
+// change, so typing an exact figure moves the slider's thumb too and
+// vice versa.
 feeInput.addEventListener("input", () => {
   const typed = parseFloat(feeInput.value);
   state.feeEurMillions = Number.isNaN(typed) ? 0 : typed / EXCHANGE_RATES[settings.currency];
+  feeSlider.value = Math.min(typed || 0, Number(feeSlider.max));
+  scheduleLiveRepredict();
+});
+feeSlider.addEventListener("input", () => {
+  feeInput.value = feeSlider.value;
+  const typed = parseFloat(feeSlider.value);
+  state.feeEurMillions = Number.isNaN(typed) ? 0 : typed / EXCHANGE_RATES[settings.currency];
+  scheduleLiveRepredict();
 });
 
-// Assemble a PredictRequest from the selected player/club plus the fee and
-// (editable) age fields, POST it to /api/predict, and render the result.
-document.getElementById("predict-btn").addEventListener("click", async () => {
+/** Assemble a PredictRequest from the selected player/club plus the fee and (editable) age fields, POST it to /api/predict, and render the result. Used both by the "Predict success" button and scheduleLiveRepredict()'s debounced fee-change re-predict. */
+async function runPrediction() {
   const errorBox = document.getElementById("error-box");
   errorBox.textContent = "";
   if (!state.player || !state.club) return;
@@ -286,6 +436,10 @@ document.getElementById("predict-btn").addEventListener("click", async () => {
     to_total_market_value: state.club.club_value_proxy || 1,
     ...pretransferFotmobFeatures(state.player),
   };
+  // Snapshot exactly what this payload sends, for renderTrendMarkers() to
+  // plot against - see its docstring for why this can't just read the
+  // form fields live at render time.
+  state.lastPredictInputs = { age: payload.age_at_transfer, feeEur: payload.transfer_fee };
 
   try {
     const res = await fetch("/api/predict", {
@@ -302,13 +456,15 @@ document.getElementById("predict-btn").addEventListener("click", async () => {
   } catch (e) {
     errorBox.textContent = e.message;
   }
-});
+}
+
+document.getElementById("predict-btn").addEventListener("click", runPrediction);
 
 // A settings change (currency, ...) doesn't change the underlying data,
 // just how it's displayed - redisplay the fee input in the new currency,
 // and, if a prediction is already showing, re-render it from the cached
 // response rather than re-predicting.
 document.addEventListener("settingschange", () => {
-  updateFeeCurrencyDisplay(feeLabel, feeInput);
+  updateFeeCurrencyDisplay(feeLabel, feeInput, feeSlider);
   if (state.lastPredictData) renderPredictResult(state.lastPredictData);
 });

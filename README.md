@@ -265,7 +265,18 @@ rather than doubling as the predict form (see Project history).
   player, pick a destination club, see a predicted score, a likely range
   (min/max among the 5 most similar real transfers, since a single point
   estimate overstates how confident a model this size can be), a "why this
-  score" breakdown, and the nearest historical comparables.
+  score" breakdown, and the nearest historical comparables. A "Where this
+  lands" section plots the prediction as a marker on the sitewide fee-vs-
+  score and age-vs-score trend lines (`/api/analytics/trends` - the same
+  `fee_trend`/`age_trend` series Analytics draws, without its much larger
+  scatter payload), so the number isn't shown divorced from how every
+  other real transfer at a similar fee/age actually went. The fee field
+  also has a slider alongside the number input - dragging it (or typing a
+  new number) debounce-re-predicts live once a first prediction already
+  exists, so trying a range of fees doesn't need a re-click of "Predict
+  success" for each one. Age has no equivalent slider - a player's age at
+  a hypothetical transfer isn't something to explore a range of the way a
+  fee is, so it stays a plain editable field.
 - **`/compare.html`** — set up two hypothetical transfers side by side
   (same player to two different clubs, or two different players entirely)
   and see both predictions, ranges, and top factors together with the
@@ -536,6 +547,27 @@ the git history.
   symmetric playing-time rule that doesn't apply to loans).
 
 **Frontend**
+- Added a "Where this lands" section to Predict, plotting the current
+  prediction as a marker against the sitewide fee/age trend lines from a
+  new, lighter `/api/analytics/trends` endpoint (just `fee_trend`/
+  `age_trend`, factored out of `/api/analytics` so Predict doesn't have
+  to ship that page's much larger scatter payload just for two small
+  series). Also added a fee slider next to the fee number input,
+  debounce-re-predicting live as it's dragged once a first prediction
+  already exists - deliberately fee-only, not age too, since a player's
+  age at a hypothetical transfer isn't something to explore a range of.
+  Caught while testing it by hand: since age has no live re-predict, the
+  age marker chart was reading the age field live at render time, so
+  editing age without re-submitting and then triggering any re-render
+  (e.g. a currency change) plotted the new, unsubmitted age against the
+  *old* score - fixed by snapshotting the exact age/fee a prediction was
+  computed from (`state.lastPredictInputs`) instead of re-reading the
+  form.
+- Synced Browse/Loans/Model vs Reality/Club Report Cards/League Trends'
+  search/filter/sort/page state to the URL (via `history.replaceState`),
+  so a filtered view is finally bookmarkable and shareable instead of
+  always resetting on reload - see `readURLParams()`/`writeURLParams()`
+  in `settings.js`.
 - Removed the Analytics page's success-score-by-position box plot (down
   to four charts) and replaced every chart's hover-only `<title>`
   tooltip - the trend-line markers, the yearly points on the market-over-

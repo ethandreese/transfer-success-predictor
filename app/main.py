@@ -2454,6 +2454,24 @@ def numeric_column(series, ndigits=None):
     return result
 
 
+@app.get("/api/analytics/trends")
+def get_analytics_trends():
+    """
+    Just fee_trend/age_trend (see binned_trend() above and /api/analytics
+    below, which computes the same two series as part of its Analytics-page
+    payload) - a separate, much lighter endpoint for the Predict page's
+    "where does this land" marker, which only needs these two small series,
+    not /api/analytics' full ~8,300-row scatter payload (columnar and
+    rounded, but still a few hundred KB - wasteful to ship to a page that
+    never draws a scatter plot at all).
+    """
+    df = transfers_df
+    return {
+        "fee_trend": binned_trend(df[df["transfer_fee"] > 0], "transfer_fee", q=10),
+        "age_trend": binned_trend(df, "age_at_transfer", q=12),
+    }
+
+
 @app.get("/api/analytics")
 def get_analytics():
     """
@@ -2477,7 +2495,8 @@ def get_analytics():
       client-side.
     - fee_trend/age_trend: binned_trend() over fee>0 transfers (fee can't
       sit on a log axis at 0) and all transfers respectively - the line
-      overlaid on those two scatter charts.
+      overlaid on those two scatter charts. Also available alone, without
+      the scatter payload, via /api/analytics/trends.
     - by_year: transfer count and average fee (free/unknown transfers
       counted as €0, same convention as league_trends_df's avg_fee) per
       year, excluding the current in-progress year - same reasoning as

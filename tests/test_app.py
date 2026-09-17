@@ -1235,6 +1235,15 @@ def test_analytics_fee_trend_excludes_free_transfers_and_is_sorted():
     assert xs == sorted(xs)
 
 
+def test_analytics_trends_endpoint_matches_the_full_analytics_endpoint():
+    """/api/analytics/trends exists purely to skip /api/analytics' much larger scatter payload - its fee_trend/age_trend must still be exactly the same series."""
+    full = client.get("/api/analytics").json()
+    trends = client.get("/api/analytics/trends").json()
+    assert set(trends.keys()) == {"fee_trend", "age_trend"}
+    assert trends["fee_trend"] == full["fee_trend"]
+    assert trends["age_trend"] == full["age_trend"]
+
+
 def test_analytics_age_trend_shows_younger_transfers_score_higher():
     """Sanity-checks the actual shape of the data, not just the plumbing: the youngest age bucket's average score should beat the oldest's, matching every other page's framing that younger transfers tend to pay off more."""
     res = client.get("/api/analytics")
