@@ -1,6 +1,9 @@
 const state = { offset: 0, total: 0, rows: [], openClub: null, openTransfer: null };
 const cardModal = makeModalAccessible(document.getElementById("card-modal-backdrop"));
 
+/** The two sides of the head-to-head comparison (see wireClubAutocomplete/renderClubCompare below) - each is a full /api/clubs/report-card response (base stats + by_year + position_breakdown), or null before that side has a club selected. */
+const clubCompare = { a: null, b: null };
+
 /** Green/amber/red for a 0-100 score, shared by every score display on the page - resale/departure numbers are on the same 0-100 scale as success_score, so they reuse it too. */
 function scoreColor(score) {
   if (score >= 66) return "var(--accent)";
@@ -51,6 +54,237 @@ function scoreCell(avg, count) {
   return `<span style="color:${scoreColor(avg)}; font-weight:700">${avg}</span> <span style="color:var(--muted)">(${count})</span>`;
 }
 
+/**
+ * A club's total spend and average incoming score by year (see
+ * /api/clubs/report-card's by_year), both indexed to their own first
+ * year of data = 100 so a euro amount and a 0-100 score can share one
+ * axis honestly - same trick as Analytics' market-over-time chart and
+ * League Trends' own trend chart, indexed here against this one club's
+ * own first year rather than a sitewide/leaguewide early-period average
+ * (a per-club series is too short and idiosyncratic for that).
+ */
+function buildSpendQualityChart(byYear) {
+  const W = 900, H = 240, padL = 40, padR = 16, padT = 16, padB = 26;
+  const chartW = W - padL - padR, chartH = H - padT - padB;
+  const years = byYear.map(d => d.year);
+  const baseSpend = byYear[0].total_spent, baseScore = byYear[0].avg_score;
+  const spendIdx = byYear.map(d => baseSpend > 0 ? (d.total_spent / baseSpend) * 100 : 100);
+  const scoreIdx = byYear.map(d => baseScore > 0 ? (d.avg_score / baseScore) * 100 : 100);
+  const allIdx = [...spendIdx, ...scoreIdx, 100];
+  const maxIdx = Math.max(...allIdx) * 1.12;
+  const minIdx = Math.min(0, Math.min(...allIdx) * 0.9);
+
+  const x = (i) => years.length === 1 ? padL + chartW / 2 : padL + (i / (years.length - 1)) * chartW;
+  const y = (v) => padT + (1 - (v - minIdx) / (maxIdx - minIdx)) * chartH;
+
+  const baseline = `
+    <line x1="${padL}" y1="${y(100).toFixed(1)}" x2="${W - padR}" y2="${y(100).toFixed(1)}" stroke="var(--border)" stroke-dasharray="4 3" stroke-width="1" />
+    <text x="${padL}" y="${(y(100) - 5).toFixed(1)}" font-size="10" fill="var(--muted)">100 = ${years[0]}</text>
+  `;
+
+  function seriesPath(idxVals, rawVals, color, label, formatRaw) {
+    const pts = idxVals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+    const dots = idxVals.map((v, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="4" fill="${color}"><title>${label} in ${years[i]}: ${formatRaw(rawVals[i])}</title></circle>`).join("");
+    return `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" />${dots}`;
+  }
+
+  const yearLabels = years.map((yr, i) => `<text x="${x(i).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="10" fill="var(--muted)">${yr}</text>`).join("");
+
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="Spend and incoming quality index by year">
+    ${baseline}
+    ${seriesPath(spendIdx, byYear.map(d => d.total_spent), "var(--accent-mid)", "Spend", formatMoney)}
+    ${seriesPath(scoreIdx, byYear.map(d => d.avg_score), "var(--accent)", "Avg incoming score", (v) => v.toFixed(1))}
+    ${yearLabels}
+  </svg>`;
+}
+
+/** A club's recruiting-by-position breakdown (see /api/clubs/report-card's position_breakdown) as labeled bar rows - the same .breakdown-row/.breakdown-bar-track/.breakdown-bar-fill markup the transfer-card score breakdown already uses elsewhere on the site, repurposed here for "avg incoming score per position" instead of "score component value." Positions below the backend's minimum sample are already excluded server-side. */
+function renderPositionBreakdown(breakdown) {
+  if (!breakdown.length) return `<p class="surprises-intro">Not enough incoming transfers in any one position yet.</p>`;
+  return breakdown.map(p => `
+    <div class="breakdown-row">
+      <span class="breakdown-label">${p.position} <span style="color:var(--muted)">(${p.transfers})</span></span>
+      <div class="breakdown-bar-track">
+        <div class="breakdown-bar-fill" style="width:${p.avg_score}%; background:${scoreColor(p.avg_score)}"></div>
+      </div>
+      <span class="breakdown-value">${p.avg_score}</span>
+    </div>
+  `).join("");
+}
+
+/**
+ * One row of the head-to-head comparison table. aRaw/bRaw drive the
+ * winner highlight and are omitted entirely for stats with no clear
+ * "higher is better" direction (total spent, transfer counts, departure
+ * score - a club letting a lot of players go who then thrive elsewhere
+ * isn't obviously good or bad) - only avg_incoming_score and
+ * avg_resale_profit_pct get one, from renderClubCompare() below.
+ */
+function compareRow(label, aDisplay, bDisplay, aRaw, bRaw) {
+  const aWins = aRaw != null && bRaw != null && aRaw > bRaw;
+  const bWins = aRaw != null && bRaw != null && bRaw > aRaw;
+  return `
+    <tr>
+      <td>${label}</td>
+      <td class="${aWins ? "is-winner-cell" : ""}">${aDisplay}</td>
+      <td class="${bWins ? "is-winner-cell" : ""}">${bDisplay}</td>
+    </tr>
+  `;
+}
+
+/** Render the head-to-head comparison (stat table + both clubs' spend-vs-quality charts + position breakdowns) once both sides have a club selected - clears the result area if either side is still unset. Also keeps the URL in sync, since club_a/club_b are part of this page's shareable state alongside the table's own filters (see syncURL). */
+function renderClubCompare() {
+  const container = document.getElementById("club-compare-result");
+  syncURL();
+  if (!clubCompare.a || !clubCompare.b) {
+    container.innerHTML = "";
+    return;
+  }
+  const [a, b] = [clubCompare.a, clubCompare.b];
+  container.innerHTML = `
+    <table class="club-compare-table">
+      <thead><tr><th></th><th>${a.club_name}</th><th>${b.club_name}</th></tr></thead>
+      <tbody>
+        ${compareRow("Incoming transfers", a.transfers_in, b.transfers_in)}
+        ${compareRow("Avg incoming score", scoreCell(a.avg_incoming_score, a.transfers_in), scoreCell(b.avg_incoming_score, b.transfers_in), a.avg_incoming_score, b.avg_incoming_score)}
+        ${compareRow("Total spent", formatMoney(a.total_spent), formatMoney(b.total_spent))}
+        ${compareRow("Avg resale profit", scoreCell(a.avg_resale_profit_pct, a.resales_count), scoreCell(b.avg_resale_profit_pct, b.resales_count), a.avg_resale_profit_pct, b.avg_resale_profit_pct)}
+        ${compareRow("Departures", a.transfers_out, b.transfers_out)}
+        ${compareRow("Avg departure score", scoreCell(a.avg_departure_score, a.transfers_out), scoreCell(b.avg_departure_score, b.transfers_out))}
+      </tbody>
+    </table>
+    <div class="compare-grid">
+      <div>
+        <h3>${a.club_name}</h3>
+        ${a.by_year.length ? `<div class="timeline-chart-wrap">${buildSpendQualityChart(a.by_year)}</div>` : `<p class="surprises-intro">Not enough year-by-year data yet.</p>`}
+        ${renderPositionBreakdown(a.position_breakdown)}
+        <a class="browse-link" href="#" data-open-club="a">View ${a.club_name}'s full report card &rarr;</a>
+      </div>
+      <div>
+        <h3>${b.club_name}</h3>
+        ${b.by_year.length ? `<div class="timeline-chart-wrap">${buildSpendQualityChart(b.by_year)}</div>` : `<p class="surprises-intro">Not enough year-by-year data yet.</p>`}
+        ${renderPositionBreakdown(b.position_breakdown)}
+        <a class="browse-link" href="#" data-open-club="b">View ${b.club_name}'s full report card &rarr;</a>
+      </div>
+    </div>
+  `;
+  container.querySelectorAll("[data-open-club]").forEach(link => {
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
+      showCard(clubCompare[link.dataset.openClub]);
+    });
+  });
+}
+
+/**
+ * Debounced search-as-you-type dropdown for one input - same pattern as
+ * compare.js's own wireAutocomplete (duplicated here per this session's
+ * established per-page-JS-file convention, not shared as an import).
+ * Keyboard-navigable (ArrowUp/Down, Enter, Escape) with the standard
+ * ARIA combobox pattern, same reasoning as compare.js's version.
+ */
+function wireAutocomplete(input, list, endpoint, renderLabel, onSelect) {
+  let debounceTimer = null;
+  let items = [];
+  let highlighted = -1;
+
+  input.setAttribute("role", "combobox");
+  input.setAttribute("aria-autocomplete", "list");
+  input.setAttribute("aria-expanded", "false");
+  input.setAttribute("aria-controls", list.id);
+  list.setAttribute("role", "listbox");
+
+  function closeList() {
+    list.classList.remove("open");
+    input.setAttribute("aria-expanded", "false");
+    input.removeAttribute("aria-activedescendant");
+    highlighted = -1;
+  }
+
+  function setHighlight(i) {
+    highlighted = i;
+    [...list.children].forEach((child, idx) => child.classList.toggle("highlighted", idx === i));
+    if (i >= 0) {
+      input.setAttribute("aria-activedescendant", `${list.id}-opt-${i}`);
+      list.children[i].scrollIntoView({ block: "nearest" });
+    } else {
+      input.removeAttribute("aria-activedescendant");
+    }
+  }
+
+  function selectItem(i) {
+    const item = items[i];
+    if (!item) return;
+    onSelect(item);
+    input.value = renderLabel(item);
+    closeList();
+  }
+
+  input.addEventListener("input", () => {
+    clearTimeout(debounceTimer);
+    const q = input.value.trim();
+    if (q.length < 2) {
+      items = [];
+      closeList();
+      return;
+    }
+    debounceTimer = setTimeout(async () => {
+      const res = await fetch(`${endpoint}?q=${encodeURIComponent(q)}`);
+      items = await res.json();
+      if (!items.length) {
+        closeList();
+        return;
+      }
+      list.innerHTML = items.map((item, i) =>
+        `<div id="${list.id}-opt-${i}" role="option" data-idx="${i}">${renderLabel(item)}</div>`
+      ).join("");
+      list.classList.add("open");
+      input.setAttribute("aria-expanded", "true");
+      setHighlight(-1);
+      [...list.children].forEach((child, i) => {
+        child.addEventListener("click", () => selectItem(i));
+        child.addEventListener("mouseenter", () => setHighlight(i));
+      });
+    }, 200);
+  });
+
+  input.addEventListener("keydown", (e) => {
+    if (!list.classList.contains("open")) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlight(Math.min(highlighted + 1, items.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlight(Math.max(highlighted - 1, 0));
+    } else if (e.key === "Enter" && highlighted >= 0) {
+      e.preventDefault();
+      selectItem(highlighted);
+    } else if (e.key === "Escape") {
+      closeList();
+    }
+  });
+
+  document.addEventListener("click", (e) => {
+    if (e.target !== input) closeList();
+  });
+}
+
+/** Wire one side ("a" or "b") of the head-to-head picker: search over /api/clubs/report-card-search (club_report_cards_df's own names, not clubs_lookup.csv - see that endpoint's docstring), then fetch the full report card for whichever club is selected. */
+function wireClubAutocomplete(side) {
+  const input = document.getElementById(`club-${side}-search`);
+  const list = document.getElementById(`club-${side}-list`);
+  wireAutocomplete(
+    input, list, "/api/clubs/report-card-search",
+    (c) => `${c.club_name} (${c.league})`,
+    async (c) => {
+      document.getElementById(`club-${side}-chip`).innerHTML = `<span class="selected-chip">${c.club_name}</span>`;
+      const res = await fetch(`/api/clubs/report-card?name=${encodeURIComponent(c.club_name)}`);
+      clubCompare[side] = res.ok ? await res.json() : null;
+      renderClubCompare();
+    },
+  );
+}
+
 /** Fetch the current page of clubs (per currentParams()) and render the table body, pagination controls, and per-row click handlers. */
 async function loadTable() {
   const tbody = document.getElementById("table-body");
@@ -92,7 +326,7 @@ async function loadTable() {
   syncURL();
 }
 
-/** Keep the address bar's query string in sync with the current search/filter/sort/page, so this view is bookmarkable and shareable - see writeURLParams in settings.js. */
+/** Keep the address bar's query string in sync with the current search/filter/sort/page plus the head-to-head comparison's two selected clubs (if any), so this view - table and comparison alike - is bookmarkable and shareable. writeURLParams replaces the whole query string on every call, so anything not included here is dropped - this is the one place all of this page's shareable state comes together, rather than the table and the comparison each writing their own half and clobbering the other's. */
 function syncURL() {
   const [sort, order] = document.getElementById("sort-select").value.split(":");
   writeURLParams({
@@ -100,6 +334,8 @@ function syncURL() {
     league: document.getElementById("league-select").value,
     sort, order,
     offset: state.offset || "",
+    club_a: clubCompare.a ? clubCompare.a.club_name : "",
+    club_b: clubCompare.b ? clubCompare.b.club_name : "",
   });
 }
 
@@ -240,10 +476,15 @@ async function showTransferDetail(playerId, transferDate) {
 }
 
 /**
- * Build and open the report-card modal for one clicked club row - entirely
- * from data already returned by /api/clubs/leaderboard (best/worst
- * signing/flip/departure are precomputed server-side - see
- * build_club_report_cards in app/main.py), so no second request is needed.
+ * Build and open the report-card modal for one clicked club row - the
+ * base sections (buyer/resale/departures prose and highlights) render
+ * instantly from data already returned by /api/clubs/leaderboard
+ * (precomputed server-side - see build_club_report_cards in
+ * app/main.py), no request needed. The spend-vs-quality chart and
+ * position breakdown are the exception - see loadClubDetailCharts below,
+ * called at the end of this function - those two are deliberately not on
+ * every leaderboard row (see /api/clubs/report-card's docstring), so
+ * they render into a placeholder a moment after the rest of the card.
  */
 function showCard(club) {
   state.openClub = club;
@@ -279,6 +520,7 @@ function showCard(club) {
       <div class="name">${club.club_name}</div>
       <div class="route">${club.league}</div>
       ${buyerSection}
+      <div id="club-detail-charts"><p class="surprises-intro">Loading spend and position detail...</p></div>
       ${resaleSection}
       ${sellerSection}
       <a class="browse-link" href="/browse.html?q=${encodeURIComponent(club.club_name)}">View every transfer involving ${club.club_name} on Browse &rarr;</a>
@@ -288,6 +530,40 @@ function showCard(club) {
     btn.addEventListener("click", () => showTransferDetail(btn.dataset.playerId, btn.dataset.transferDate));
   });
   cardModal.open();
+  loadClubDetailCharts(club.club_name);
+}
+
+/**
+ * Fetch /api/clubs/report-card for the currently-open club and render its
+ * spend-vs-quality chart + position breakdown into the #club-detail-charts
+ * placeholder left by showCard() above. Re-checks state.openClub before
+ * writing anything - if the user closed the modal or clicked a different
+ * club while this was in flight, this response is stale and should never
+ * overwrite whatever (or whoever) is showing now.
+ */
+async function loadClubDetailCharts(clubName) {
+  try {
+    const res = await fetch(`/api/clubs/report-card?name=${encodeURIComponent(clubName)}`);
+    if (!state.openClub || state.openClub.club_name !== clubName) return;
+    const target = document.getElementById("club-detail-charts");
+    if (!target) return;
+    if (!res.ok) throw new Error("Could not load this club's detail.");
+    const data = await res.json();
+    target.innerHTML = `
+      ${data.by_year.length ? `
+        <h3>Spend vs. incoming quality by year</h3>
+        <div class="timeline-chart-wrap">${buildSpendQualityChart(data.by_year)}</div>
+        <div class="timeline-legend">
+          <span><span class="legend-dot" style="background:var(--accent-mid); border:none;"></span> Spend (indexed)</span>
+          <span><span class="legend-dot" style="background:var(--accent); border:none;"></span> Avg incoming score (indexed)</span>
+        </div>
+      ` : ""}
+      ${data.position_breakdown.length ? `<h3>Recruiting by position</h3>${renderPositionBreakdown(data.position_breakdown)}` : ""}
+    `;
+  } catch (e) {
+    const target = document.getElementById("club-detail-charts");
+    if (target && state.openClub && state.openClub.club_name === clubName) target.innerHTML = "";
+  }
 }
 
 /** Close the report-card modal. */
@@ -344,7 +620,21 @@ document.addEventListener("settingschange", () => {
   } else if (state.openClub) {
     showCard(state.openClub);
   }
+  // The comparison's spend chart formats money too - re-render so its
+  // tooltips reflect the new currency (a no-op, safely, when neither side
+  // has a club picked yet).
+  renderClubCompare();
 });
+
+/** Toggle the head-to-head comparison card open/closed, same pattern as Model vs Reality's collapsible chart. */
+document.getElementById("compare-toggle").addEventListener("click", (e) => {
+  const expanded = e.currentTarget.getAttribute("aria-expanded") === "true";
+  e.currentTarget.setAttribute("aria-expanded", String(!expanded));
+  document.getElementById("compare-body").hidden = expanded;
+});
+
+wireClubAutocomplete("a");
+wireClubAutocomplete("b");
 
 // Restore search/league/sort/page straight from the URL (a bookmarked or
 // shared link) so landing here already shows that view, not always the
@@ -369,4 +659,29 @@ if (urlParams.league) {
 } else {
   loadFilters();
   loadTable();
+}
+
+/** Look up one side of a shared comparison link by exact club name, without touching any state/DOM - split from applying it so restoreClubCompareFromURL() below can resolve both sides first (same reasoning as Compare's restoreFromURL: a stale/mistyped club_a shouldn't leave club_b looking normal while club_a silently fails). */
+async function fetchClubForRestore(name) {
+  const res = await fetch(`/api/clubs/report-card?name=${encodeURIComponent(name)}`);
+  return res.ok ? await res.json() : null;
+}
+
+if (urlParams.club_a || urlParams.club_b) {
+  Promise.all([
+    urlParams.club_a ? fetchClubForRestore(urlParams.club_a) : null,
+    urlParams.club_b ? fetchClubForRestore(urlParams.club_b) : null,
+  ]).then(([a, b]) => {
+    if (a) {
+      clubCompare.a = a;
+      document.getElementById("club-a-search").value = a.club_name;
+      document.getElementById("club-a-chip").innerHTML = `<span class="selected-chip">${a.club_name}</span>`;
+    }
+    if (b) {
+      clubCompare.b = b;
+      document.getElementById("club-b-search").value = b.club_name;
+      document.getElementById("club-b-chip").innerHTML = `<span class="selected-chip">${b.club_name}</span>`;
+    }
+    renderClubCompare();
+  });
 }

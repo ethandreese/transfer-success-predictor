@@ -326,10 +326,18 @@ rather than doubling as the predict form (see Project history).
   later sold on again, and how players it let go performed at their *next*
   club. A club needs at least 5 transfers (3 for resale-profit ranking)
   before a rate-based ranking includes it. Click a club for its full report
-  card (best/worst signing, best/worst flip, best/worst departure) - each
-  of those six highlights is itself clickable, drilling into that specific
-  transfer's own full breakdown card (with a link back to the club view) -
-  and a link to its complete transfer history on Browse.
+  card (best/worst signing, best/worst flip, best/worst departure, plus a
+  spend-vs-incoming-quality-by-year chart and a recruiting-by-position
+  breakdown) - each of the six highlights is itself clickable, drilling
+  into that specific transfer's own full breakdown card (with a link back
+  to the club view) - and a link to its complete transfer history on
+  Browse. A collapsible "Compare two clubs head-to-head" section above the
+  table picks any two clubs (autocomplete, `/api/clubs/report-card-search`)
+  and puts their stats, spend-vs-quality charts, and position breakdowns
+  side by side, with the unambiguous "higher is better" rows (avg incoming
+  score, avg resale profit) highlighting whichever club wins - synced to
+  the URL (`club_a`/`club_b`) so a comparison is bookmarkable and
+  shareable, the same as every other filtered view on the site.
 - **`/player.html`** — search a player to see their whole scored career as
   a timeline: one point per permanent transfer or loan, positioned by its
   real date (not just evenly spaced) and colored by score, connected in
@@ -583,6 +591,35 @@ the git history.
   symmetric playing-time rule that doesn't apply to loans).
 
 **Frontend**
+- Added three Club Report Cards features together: a head-to-head club
+  comparison (two autocomplete pickers over a new lightweight
+  `/api/clubs/report-card-search`, which searches club_report_cards_df's
+  own club-name universe rather than clubs_lookup.csv's - see
+  build_club_report_cards for why those two never get joined), a
+  spend-vs-incoming-quality-by-year chart per club (indexed to that
+  club's own first year of data = 100, adapting Analytics'
+  `buildVolumeChart`/League Trends' `buildTrendSVG` pattern), and a
+  recruiting-by-position breakdown (reusing the existing
+  `.breakdown-row`/`.breakdown-bar-fill` score-breakdown markup for a
+  free, consistent-looking bar chart). Both new per-club datasets are
+  computed fresh per request via a new `/api/clubs/report-card?name=X`
+  endpoint (exact-match lookup, 404 if not found) rather than added to
+  every row of the paginated leaderboard - only one club is ever viewed
+  in this much detail at a time. The existing single-club modal now
+  fetches this endpoint too and renders the same two sections into a
+  placeholder a moment after the rest of the card, which already renders
+  instantly from the leaderboard row in hand. The comparison table only
+  highlights a "winner" on stats with an unambiguous direction (avg
+  incoming score, avg resale profit) - total spent, transfer counts, and
+  departure score are shown neutrally, since a departing player's next-
+  club average isn't obviously good or bad for the club that let them go.
+  Comparison state (`club_a`/`club_b`) was folded into the page's
+  existing `syncURL()` alongside the table's own filters, rather than
+  each writing its own half of the query string and clobbering the
+  other's, since `writeURLParams` replaces the whole query string on
+  every call.
+  The head-to-head section is collapsible too, same `.collapse-toggle`
+  pattern as Model vs Reality's chart below.
 - Added a predicted-vs-actual scatter chart to Model vs Reality
   (`/api/surprises/scatter` - the full ~7,800-point set, not scoped to
   the table's own filters, same reasoning as `/api/analytics`), reusing
@@ -591,7 +628,11 @@ the git history.
   `deltaColor` (green above the y=x line, red below) instead of the
   usual absolute-score `scoreColor`, since the question this chart
   answers is which side of the model's guess a transfer landed on, not
-  how good the outcome was in isolation.
+  how good the outcome was in isolation. Made the chart's card
+  collapsible (a `<button>` wrapping the `<h2>`, toggling `aria-expanded`
+  and the body's `[hidden]`) - it's the one card-length chart on a page
+  that's otherwise a table, so a reader who just wants the table
+  shouldn't have to scroll past ~7,800 plotted points to reach it.
 - Added fee/age range filters and a "Export these results as CSV" link
   (`/api/transfers/export`, `/api/loans/export` - uncapped, ignores
   pagination) to Browse and Loans, plus a "✓ Permanent" badge on any loan

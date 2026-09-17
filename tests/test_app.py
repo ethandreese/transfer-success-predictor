@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from app.main import (
     CLUB_NAME_ALIASES, MIN_LEAGUE_TRANSFERS, app, build_feature_row, eur_m, explain_prediction, league_trends_df,
-    numeric_column, pipeline, predict_marginalized_recent_performance, PredictRequest,
+    numeric_column, pipeline, predict_marginalized_recent_performance, PredictRequest, transfers_df,
 )
 
 client = TestClient(app)
@@ -856,6 +856,56 @@ def test_clubs_leaderboard_highlights_are_clickable_into_transfer_detail():
         })
         assert detail.status_code == 200, key
         assert detail.json()["name"] == highlight["name"], key
+
+
+def test_club_report_card_matches_the_leaderboard_row_for_the_same_club():
+    """/api/clubs/report-card?name=X should agree with /api/clubs/leaderboard's own row for that club on every shared field - both come from club_row_dict, so they must never drift apart."""
+    leaderboard = client.get("/api/clubs/leaderboard", params={"q": "Real Madrid", "sort": "total_spent"})
+    row = next(r for r in leaderboard.json()["results"] if r["club_name"] == "Real Madrid")
+    res = client.get("/api/clubs/report-card", params={"name": "Real Madrid"})
+    assert res.status_code == 200
+    card = res.json()
+    for key in row:
+        assert card[key] == row[key], key
+
+
+def test_club_report_card_404_for_unknown_club():
+    res = client.get("/api/clubs/report-card", params={"name": "Definitely Not A Real Club FC"})
+    assert res.status_code == 404
+
+
+def test_club_report_card_by_year_excludes_the_current_in_progress_year():
+    """The by_year spend-vs-quality series should never include the dataset's own most recent (in-progress) year - same convention as League Trends' by_year."""
+    current_year = int(pd.to_datetime(transfers_df["transfer_date"]).dt.year.max())
+    res = client.get("/api/clubs/report-card", params={"name": "Real Madrid"})
+    by_year = res.json()["by_year"]
+    assert by_year, "Real Madrid should have real year-by-year data"
+    assert all(entry["year"] < current_year for entry in by_year)
+    for entry in by_year:
+        assert entry["transfers"] > 0
+        assert entry["avg_score"] is not None
+
+
+def test_club_report_card_position_breakdown_respects_minimum_sample():
+    """Every position bucket in position_breakdown should meet MIN_CLUB_POSITION_SAMPLE - a position with only 1-2 transfers is too noisy to show."""
+    res = client.get("/api/clubs/report-card", params={"name": "Real Madrid"})
+    breakdown = res.json()["position_breakdown"]
+    assert breakdown
+    for entry in breakdown:
+        assert entry["transfers"] >= 3
+
+
+def test_club_report_card_search_is_not_limited_by_sample_size():
+    """/api/clubs/report-card-search must not apply /api/clubs/leaderboard's minimum-sample sort filters - a small club should still be findable for the head-to-head comparison."""
+    res = client.get("/api/clubs/report-card-search", params={"q": "Real Madrid"})
+    assert res.status_code == 200
+    names = [r["club_name"] for r in res.json()]
+    assert "Real Madrid" in names
+
+
+def test_club_report_card_search_short_query_returns_empty():
+    res = client.get("/api/clubs/report-card-search", params={"q": "a"})
+    assert res.json() == []
 
 
 def test_eur_m_formats_billions_above_the_threshold():

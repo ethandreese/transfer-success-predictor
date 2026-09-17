@@ -318,6 +318,13 @@ async function loadScatter() {
     `${rows.length.toLocaleString()} scored transfers with a held-out prediction. ${overCount.toLocaleString()} (${pct}%) landed on or above the model's guess, ${(rows.length - overCount).toLocaleString()} below it. Click/tap any point for that transfer's full breakdown.`;
 }
 
+/** Toggle the predicted-vs-actual chart card open/closed - it's the one card-length chart on a page that's otherwise a table, so letting it collapse saves scrolling past ~7,800 plotted points to reach the filters. */
+document.getElementById("predicted-actual-toggle").addEventListener("click", (e) => {
+  const expanded = e.currentTarget.getAttribute("aria-expanded") === "true";
+  e.currentTarget.setAttribute("aria-expanded", String(!expanded));
+  document.getElementById("predicted-actual-body").hidden = expanded;
+});
+
 // Close the modal via the X button, a click on the dimmed backdrop (but not
 // the card itself), or the Escape key.
 document.getElementById("card-modal-close").addEventListener("click", closeCard);

@@ -13,7 +13,7 @@
   <meta name="twitter:title" content="Model vs Reality - Transfer Success Predictor" />
   <meta name="twitter:description" content="How real transfers compare to a held-out model's pre-transfer-only prediction." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="stylesheet" href="/style.css?v=48" />
+  <link rel="stylesheet" href="/style.css?v=50" />
 </head>
 <body>
   <header>
@@ -65,13 +65,19 @@
     </section>
 
     <section class="card">
-      <h2>Predicted vs. actual</h2>
-      <p class="surprises-intro" id="predicted-actual-desc">Loading...</p>
-      <div class="timeline-chart-wrap" id="predicted-actual-chart"></div>
-      <div class="timeline-legend">
-        <span><span class="legend-dot" style="background:var(--muted); border:none;"></span> Predicted = actual</span>
-        <span><span class="legend-dot" style="background:var(--accent); border:none;"></span> Outperformed the model</span>
-        <span><span class="legend-dot" style="background:var(--accent-bad); border:none;"></span> Fell short of it</span>
+      <h2>
+        <button class="collapse-toggle" id="predicted-actual-toggle" aria-expanded="true" aria-controls="predicted-actual-body">
+          Predicted vs. actual <span class="collapse-caret" aria-hidden="true">&#9662;</span>
+        </button>
+      </h2>
+      <div id="predicted-actual-body">
+        <p class="surprises-intro" id="predicted-actual-desc">Loading...</p>
+        <div class="timeline-chart-wrap" id="predicted-actual-chart"></div>
+        <div class="timeline-legend">
+          <span><span class="legend-dot" style="background:var(--muted); border:none;"></span> Predicted = actual</span>
+          <span><span class="legend-dot" style="background:var(--accent); border:none;"></span> Outperformed the model</span>
+          <span><span class="legend-dot" style="background:var(--accent-bad); border:none;"></span> Fell short of it</span>
+        </div>
       </div>
     </section>
 
@@ -138,7 +144,7 @@
     </div>
   </div>
 
-  <script src="/settings.js?v=48"></script>
-  <script src="/surprises.js?v=48"></script>
+  <script src="/settings.js?v=50"></script>
+  <script src="/surprises.js?v=50"></script>
 </body>
 </html>

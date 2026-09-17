@@ -165,6 +165,48 @@ h2 {
   font-size: 1.15rem;
 }
 
+/** A card's <h2> as a click/tap target that collapses the sibling content below it - used for the Model vs Reality scatter, which is the one card-length chart on a page that's mostly a table, so hiding it shouldn't need a page reload. aria-expanded (toggled in JS) drives the caret's rotation; the controlled element's [hidden] attribute (not style.display, so it survives a re-render that only replaces its innerHTML) does the actual show/hide. */
+.collapse-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+
+.collapse-caret {
+  display: inline-block;
+  font-size: 0.75em;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.collapse-toggle[aria-expanded="false"] .collapse-caret { transform: rotate(-90deg); }
+
+/** The head-to-head club comparison's stat table - one row per metric, two data columns. */
+.club-compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0 1.5rem;
+  font-size: 0.9rem;
+}
+.club-compare-table th, .club-compare-table td {
+  padding: 0.5rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+.club-compare-table th:not(:first-child), .club-compare-table td:not(:first-child) { text-align: center; }
+/* Only stats with an unambiguous "higher is better" direction get a
+   winner highlight (see compareRow() in clubs.js) - plain accent text,
+   the same restrained treatment as .compare-result-col.is-winner rather
+   than a filled background. */
+.club-compare-table td.is-winner-cell { font-weight: 700; color: var(--accent); }
+
 .examples-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));

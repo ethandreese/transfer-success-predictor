@@ -424,6 +424,7 @@ def league_ga_baseline(competition_id, position):
 
 MIN_CLUB_TRANSFERS = 5
 MIN_CLUB_RESALES = 3
+MIN_CLUB_POSITION_SAMPLE = 3
 
 
 def build_club_report_cards(df):
@@ -2058,6 +2059,28 @@ CLUB_SORT_FIELDS = {
 }
 
 
+def club_row_dict(r):
+    """One club_report_cards_df row as a plain dict - shared by /api/clubs/leaderboard's paginated listing and /api/clubs/report-card's single-club lookup, so the two never drift out of the same shape."""
+    return {
+        "club_name": r["club_name"],
+        "league": league_display_name(r["league_id"]),
+        "transfers_in": int(r["transfers_in"]),
+        "avg_incoming_score": None if pd.isna(r["avg_incoming_score"]) else round(float(r["avg_incoming_score"]), 1),
+        "total_spent": float(r["total_spent"]),
+        "best_signing": r["best_signing"],
+        "worst_signing": r["worst_signing"],
+        "resales_count": int(r["resales_count"]),
+        "avg_resale_profit_pct": None if pd.isna(r["avg_resale_profit_pct"]) else round(float(r["avg_resale_profit_pct"]), 1),
+        "total_resale_profit": float(r["total_resale_profit"]),
+        "best_flip": r["best_flip"],
+        "worst_flip": r["worst_flip"],
+        "transfers_out": int(r["transfers_out"]),
+        "avg_departure_score": None if pd.isna(r["avg_departure_score"]) else round(float(r["avg_departure_score"]), 1),
+        "best_departure": r["best_departure"],
+        "worst_departure": r["worst_departure"],
+    }
+
+
 @app.get("/api/clubs/leaderboard")
 def clubs_leaderboard(
     league: str | None = None,
@@ -2090,28 +2113,7 @@ def clubs_leaderboard(
     total = len(df)
     limit = max(1, min(limit, 100))
     page = df.iloc[offset:offset + limit]
-
-    results = []
-    for _, r in page.iterrows():
-        results.append({
-            "club_name": r["club_name"],
-            "league": league_display_name(r["league_id"]),
-            "transfers_in": int(r["transfers_in"]),
-            "avg_incoming_score": None if pd.isna(r["avg_incoming_score"]) else round(float(r["avg_incoming_score"]), 1),
-            "total_spent": float(r["total_spent"]),
-            "best_signing": r["best_signing"],
-            "worst_signing": r["worst_signing"],
-            "resales_count": int(r["resales_count"]),
-            "avg_resale_profit_pct": None if pd.isna(r["avg_resale_profit_pct"]) else round(float(r["avg_resale_profit_pct"]), 1),
-            "total_resale_profit": float(r["total_resale_profit"]),
-            "best_flip": r["best_flip"],
-            "worst_flip": r["worst_flip"],
-            "transfers_out": int(r["transfers_out"]),
-            "avg_departure_score": None if pd.isna(r["avg_departure_score"]) else round(float(r["avg_departure_score"]), 1),
-            "best_departure": r["best_departure"],
-            "worst_departure": r["worst_departure"],
-        })
-    return {"total": total, "limit": limit, "offset": offset, "results": results}
+    return {"total": total, "limit": limit, "offset": offset, "results": [club_row_dict(r) for _, r in page.iterrows()]}
 
 
 @app.get("/api/clubs/leaderboard/filters")
@@ -2123,6 +2125,103 @@ def clubs_leaderboard_filters():
         key=lambda x: x["name"],
     )
     return {"leagues": leagues}
+
+
+@app.get("/api/clubs/report-card-search")
+def search_club_report_cards(q: str, limit: int = 10):
+    """
+    Accent-insensitive substring search over club_report_cards_df's own
+    club_name - a different universe of names than /api/clubs/search
+    (clubs_lookup.csv), which doesn't reliably match transfers_processed.csv's
+    club-name strings (see build_club_report_cards). Powers the head-to-head
+    club comparison's two autocomplete pickers; deliberately applies none of
+    /api/clubs/leaderboard's minimum-sample sort filters - a small club
+    should still be findable here, its report card just won't have every
+    stat filled in.
+    """
+    if len(q) < 2:
+        return []
+    limit = max(1, min(limit, 50))
+    mask = club_report_cards_df["_name_fold"].str.contains(fold_accents(q), na=False, regex=False)
+    rows = club_report_cards_df[mask].head(limit)
+    return [{"club_name": r["club_name"], "league": league_display_name(r["league_id"])} for _, r in rows.iterrows()]
+
+
+def club_incoming_by_year(club_name):
+    """
+    Per-year transfers-in count, average incoming score, and total spend
+    for one club (to_club_name match) - the report card's spend-vs-quality
+    trend chart. Computed fresh per request rather than precomputed for
+    every club at startup: transfers_df is small and only one club is ever
+    viewed in this much detail at a time, unlike club_report_cards_df's
+    cheap aggregate totals which every leaderboard row needs at once.
+    Excludes the dataset's current in-progress year, same reasoning as
+    build_league_trends' by_year (a partial year reads as a misleading
+    sudden collapse, not the incomplete data it is).
+    """
+    g = transfers_df[transfers_df["to_club_name"] == club_name].copy()
+    if g.empty:
+        return []
+    g["year"] = pd.to_datetime(g["transfer_date"]).dt.year
+    current_year = int(pd.to_datetime(transfers_df["transfer_date"]).dt.year.max())
+    g = g[g["year"] < current_year]
+    if g.empty:
+        return []
+    grouped = (
+        g.groupby("year")
+        .agg(transfers=("success_score", "size"), avg_score=("success_score", "mean"), total_spent=("transfer_fee", lambda s: s.fillna(0).sum()))
+        .reset_index()
+        .sort_values("year")
+    )
+    return [
+        {
+            "year": int(r["year"]), "transfers": int(r["transfers"]),
+            "avg_score": round(float(r["avg_score"]), 1), "total_spent": float(r["total_spent"]),
+        }
+        for _, r in grouped.iterrows()
+    ]
+
+
+def club_incoming_by_position(club_name):
+    """
+    This club's incoming transfers (to_club_name match) grouped by
+    position - transfers count and average success score per position,
+    ranked best-recruited first. A position with fewer than
+    MIN_CLUB_POSITION_SAMPLE transfers is dropped entirely rather than
+    shown as a noisy one- or two-transfer average, same reasoning as
+    MIN_CLUB_TRANSFERS/MIN_CLUB_RESALES above.
+    """
+    g = transfers_df[transfers_df["to_club_name"] == club_name]
+    grouped = g.groupby("position").agg(transfers=("success_score", "size"), avg_score=("success_score", "mean")).reset_index()
+    grouped = grouped[grouped["transfers"] >= MIN_CLUB_POSITION_SAMPLE]
+    grouped = grouped.sort_values("avg_score", ascending=False)
+    return [
+        {"position": r["position"], "transfers": int(r["transfers"]), "avg_score": round(float(r["avg_score"]), 1)}
+        for _, r in grouped.iterrows()
+    ]
+
+
+@app.get("/api/clubs/report-card")
+def get_club_report_card(name: str):
+    """
+    One club's full report card by exact club_name match - the same shape
+    as one of /api/clubs/leaderboard's results (via the shared
+    club_row_dict), plus two detail-view-only additions computed fresh per
+    request: by_year (the spend-vs-quality trend chart) and
+    position_breakdown (recruiting quality by position). Used by the
+    report-card modal once it's open, and by the head-to-head compare
+    section (called once per side) - neither needs these two heavier
+    fields on every row of the paginated leaderboard the way the base
+    stats are needed everywhere at once.
+    """
+    df = club_report_cards_df[club_report_cards_df["club_name"] == name]
+    if df.empty:
+        raise HTTPException(status_code=404, detail="club not found")
+    return {
+        **club_row_dict(df.iloc[0]),
+        "by_year": club_incoming_by_year(name),
+        "position_breakdown": club_incoming_by_position(name),
+    }
 
 
 LEAGUE_TREND_SORT_FIELDS = {"transfers", "avg_score", "avg_fee", "fee_growth_pct", "score_change"}

@@ -13,7 +13,7 @@
   <meta name="twitter:title" content="Club Report Cards - Transfer Success Predictor" />
   <meta name="twitter:description" content="Every club ranked as a recruiter: incoming transfer success, spend, and resale profit." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="stylesheet" href="/style.css?v=48" />
+  <link rel="stylesheet" href="/style.css?v=50" />
 </head>
 <body>
   <header>
@@ -60,6 +60,35 @@
         A club needs at least 5 transfers (3 for resales) before it's eligible for a rate-based
         ranking - a club with one lucky signing isn't "the best recruiter in Europe."
       </p>
+    </section>
+
+    <section class="card">
+      <h2>
+        <button class="collapse-toggle" id="compare-toggle" aria-expanded="true" aria-controls="compare-body">
+          Compare two clubs head-to-head <span class="collapse-caret" aria-hidden="true">&#9662;</span>
+        </button>
+      </h2>
+      <div id="compare-body">
+        <div class="compare-grid">
+          <div class="compare-col">
+            <div class="field">
+              <label for="club-a-search">Club A</label>
+              <input id="club-a-search" type="text" placeholder="Search a club" autocomplete="off" />
+              <div class="autocomplete-list" id="club-a-list"></div>
+              <div id="club-a-chip"></div>
+            </div>
+          </div>
+          <div class="compare-col">
+            <div class="field">
+              <label for="club-b-search">Club B</label>
+              <input id="club-b-search" type="text" placeholder="Search a club" autocomplete="off" />
+              <div class="autocomplete-list" id="club-b-list"></div>
+              <div id="club-b-chip"></div>
+            </div>
+          </div>
+        </div>
+        <div id="club-compare-result"></div>
+      </div>
     </section>
 
     <section class="card">
@@ -122,7 +151,7 @@
     </div>
   </div>
 
-  <script src="/settings.js?v=48"></script>
-  <script src="/clubs.js?v=48"></script>
+  <script src="/settings.js?v=50"></script>
+  <script src="/clubs.js?v=50"></script>
 </body>
 </html>
