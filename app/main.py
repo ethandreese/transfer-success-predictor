@@ -2422,6 +2422,38 @@ def binned_trend(df, col, q):
     ]
 
 
+def numeric_column(series, ndigits=None):
+    """
+    A float column as a plain JSON-safe list, for the /api/analytics scatter
+    payload: NaN -> None (DataFrame.where(cond, None) on a float64 column
+    casts None right back to NaN to keep the column's dtype, so it can't be
+    used for this - see the test this was caught by), everything else -> a
+    real Python float, optionally rounded, since a scatter chart never needs
+    more precision than that and unrounded fees/values roughly double the
+    payload size.
+
+    Never rounds a genuinely-positive value down to exactly 0 - transfer_fee/
+    market_value_in_eur use 0 as a real "free transfer"/no-value sentinel
+    (distinct from the None above), which the frontend's `> 0` filters rely
+    on to separate "has this number" from "doesn't". Rounding a real €200 fee
+    down to €0 at the nearest-€1k precision used here would silently and
+    wrongly read on the frontend as free rather than merely imprecise - not
+    reachable with today's data (the smallest real fee is €20k) but nothing
+    else guards against it, so a future lower-fee row would corrupt the
+    chart silently rather than just losing precision.
+    """
+    result = []
+    for v in series:
+        if pd.isna(v):
+            result.append(None)
+            continue
+        rounded = round(v, ndigits) if ndigits is not None else v
+        if v > 0 and rounded <= 0:
+            rounded = 10 ** -ndigits
+        result.append(float(rounded))
+    return result
+
+
 @app.get("/api/analytics")
 def get_analytics():
     """
@@ -2436,12 +2468,13 @@ def get_analytics():
       let the frontend open a clicked point's full /api/transfers/detail
       card, the same way every other list page on the site does. Numeric
       values are rounded before serializing (fee/market value to the
-      nearest €1k, age/score to 1 decimal) since the frontend
-      only plots them, never needs full precision. Fee and market value
-      are left null for the transfers missing them (the same ~1.6%/39%
-      gaps documented on prediction_surprises.csv's merge above) rather
-      than dropped, so the age-vs-score chart - which needs neither - still
-      gets every transfer; each chart filters out its own nulls client-side.
+      nearest €1k, age/score to 1 decimal) via numeric_column() since the
+      frontend only plots them, never needs full precision. Fee and market
+      value are left null for the transfers missing them (the same
+      ~1.6%/39% gaps documented on prediction_surprises.csv's merge above)
+      rather than dropped, so the age-vs-score chart - which needs neither
+      - still gets every transfer; each chart filters out its own nulls
+      client-side.
     - fee_trend/age_trend: binned_trend() over fee>0 transfers (fee can't
       sit on a log axis at 0) and all transfers respectively - the line
       overlaid on those two scatter charts.
@@ -2453,16 +2486,6 @@ def get_analytics():
       sudden collapse rather than the incomplete data it is.
     """
     df = transfers_df
-
-    def numeric_column(series, ndigits=None):
-        """
-        A float column as a plain JSON-safe list: NaN -> None (DataFrame.where(cond, None)
-        on a float64 column casts None right back to NaN to keep the column's dtype,
-        so it can't be used for this - see the test this was caught by), everything else
-        -> a real Python float, optionally rounded, since a scatter chart never needs
-        more precision than that and unrounded fees/values roughly double the payload size.
-        """
-        return [None if pd.isna(v) else float(round(v, ndigits) if ndigits is not None else v) for v in series]
 
     scatter = {
         "player_id": df["player_id"].astype(int).tolist(),

@@ -366,8 +366,8 @@ h2 {
 
 /*
  * The Analytics page's click/tap-triggered chart tooltip (trend-line
- * markers, box-plot marks) - unlike .tooltip-box above, this isn't
- * anchored to a wrapping element via CSS :hover, since a hover-only
+ * markers, market-over-time points) - unlike .tooltip-box above, this
+ * isn't anchored to a wrapping element via CSS :hover, since a hover-only
  * tooltip never fires on a touch device at all. One shared element,
  * positioned in JS near the click point (see showChartTooltip() in
  * analytics.js) and shown/hidden by toggling [hidden].

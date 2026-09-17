@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from app.main import (
     CLUB_NAME_ALIASES, MIN_LEAGUE_TRANSFERS, app, build_feature_row, eur_m, explain_prediction, league_trends_df,
-    pipeline, predict_marginalized_recent_performance, PredictRequest,
+    numeric_column, pipeline, predict_marginalized_recent_performance, PredictRequest,
 )
 
 client = TestClient(app)
@@ -1203,6 +1203,26 @@ def test_analytics_scatter_nulls_are_json_null_not_nan():
     assert None in scatter["market_value_in_eur"]
     assert None not in scatter["age_at_transfer"]
     assert None not in scatter["success_score"]
+
+
+def test_numeric_column_never_rounds_a_real_positive_value_down_to_zero():
+    """
+    transfer_fee/market_value_in_eur use 0 as a real "free transfer"/no-value
+    sentinel, and the Analytics page's frontend filters scatter points on
+    `> 0` to decide whether a transfer has a usable fee. Rounding to the
+    nearest €1k (as /api/analytics does) must never turn a small real fee
+    like €200 into exactly 0 - that would make it indistinguishable from a
+    genuinely free transfer and silently drop it from the fee charts. A
+    real free transfer (0) and a missing one (NaN) must still come through
+    as 0 and None respectively - this isn't about pretending every value is
+    positive, only about never manufacturing a false zero from rounding.
+    """
+    series = pd.Series([200.0, 0.0, None, 50_000.0])
+    result = numeric_column(series, ndigits=-3)
+    assert result[0] > 0, "a real €200 fee must not round down to 0"
+    assert result[1] == 0
+    assert result[2] is None
+    assert result[3] == 50_000.0
 
 
 def test_analytics_fee_trend_excludes_free_transfers_and_is_sorted():

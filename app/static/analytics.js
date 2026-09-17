@@ -209,8 +209,8 @@ function buildFeeValueChart(rows) {
  * own chart (see leagues.js's buildTrendSVG). The current in-progress
  * year is already excluded server-side (by_year). Each yearly point is
  * click/tap-tooltippable via data-tooltip (see showChartTooltip() near
- * the end of this file) the same way the trend-line markers and box-plot
- * marks are - a <title> alone never fires on a touch device.
+ * the end of this file) the same way the fee/age charts' trend-line
+ * markers are - a <title> alone never fires on a touch device.
  */
 function buildVolumeChart(byYear) {
   const W = 900, H = 260, padL = 40, padR = 16, padT = 16, padB = 26;
@@ -308,9 +308,11 @@ async function showCard(playerId, transferDate) {
  * here draws thousands of points, and delegation means this is wired once
  * per chart container, not re-wired on every re-render (currency/theme
  * changes just replace the wrapper's innerHTML; the listener stays on the
- * wrapper itself). Ignores clicks on the box-plot/volume charts, which
- * have no .scatter-pt points - not every chart on this page is click-
- * through, only the three per-transfer scatter plots.
+ * wrapper itself). Only called for the three per-transfer scatter charts
+ * (fee/age/market-value) - the market-over-time chart has no .scatter-pt
+ * points (nothing to open a transfer card for, it's a yearly aggregate),
+ * though its own points are still tooltippable via the separate
+ * data-tooltip click listener below.
  */
 function wireScatterClicks(containerId) {
   document.getElementById(containerId).addEventListener("click", (e) => {
@@ -324,11 +326,11 @@ const chartTooltip = document.getElementById("chart-tooltip");
 /**
  * Show the shared chart-tooltip box near a click/tap position, clamped so
  * it never runs off the right or bottom edge of the viewport. This is the
- * real interaction behind every trend-line marker and box-plot mark's
- * data-tooltip - a native <title> hover tooltip is also present on those
- * same elements as a free bonus for a desktop mouse user willing to wait
- * out the browser's hover delay, but it never fires at all on a touch
- * device (there's no hover state to trigger it), which is why this
+ * real interaction behind every trend-line marker's and market-over-time
+ * point's data-tooltip - a native <title> hover tooltip is also present
+ * on those same elements as a free bonus for a desktop mouse user willing
+ * to wait out the browser's hover delay, but it never fires at all on a
+ * touch device (there's no hover state to trigger it), which is why this
  * click-triggered version is the one actually relied on.
  */
 function showChartTooltip(text, clientX, clientY) {
@@ -358,11 +360,11 @@ wireScatterClicks("fee-score-chart");
 wireScatterClicks("age-score-chart");
 wireScatterClicks("fee-value-chart");
 
-// Any click on a data-tooltip element (a trend-line marker or box-plot
-// mark) shows its tooltip; any other click - elsewhere on the page,
-// including a second tap on the same mark - hides it. One listener for
-// every chart on the page, same event-delegation reasoning as
-// wireScatterClicks above.
+// Any click on a data-tooltip element (a trend-line marker or a
+// market-over-time point) shows its tooltip; any other click - elsewhere
+// on the page, including a second tap on the same mark - hides it. One
+// listener for every chart on the page, same event-delegation reasoning
+// as wireScatterClicks above.
 document.addEventListener("click", (e) => {
   const marked = e.target.closest("[data-tooltip]");
   if (marked) showChartTooltip(marked.dataset.tooltip, e.clientX, e.clientY);
