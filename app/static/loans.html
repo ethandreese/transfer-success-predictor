@@ -13,7 +13,7 @@
   <meta name="twitter:title" content="Browse Loans - Transfer Success Predictor" />
   <meta name="twitter:description" content="Browse ~4,300 scored loan spells, graded separately from permanent transfers." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="stylesheet" href="/style.css?v=46" />
+  <link rel="stylesheet" href="/style.css?v=47" />
 </head>
 <body>
   <header>
@@ -83,7 +83,25 @@
             <option value="to_club_name:asc" id="club-sort-option" hidden>Club (A-Z)</option>
           </select>
         </div>
+        <div class="field">
+          <label for="min-age-input">Age range</label>
+          <div class="range-inputs">
+            <input id="min-age-input" type="number" min="14" max="45" step="1" placeholder="Min" />
+            <span>&ndash;</span>
+            <input id="max-age-input" type="number" min="14" max="45" step="1" placeholder="Max" />
+          </div>
+        </div>
+        <div class="field">
+          <label for="min-duration-input">Duration (years)</label>
+          <div class="range-inputs">
+            <input id="min-duration-input" type="number" min="0" step="0.5" placeholder="Min" />
+            <span>&ndash;</span>
+            <input id="max-duration-input" type="number" min="0" step="0.5" placeholder="Max" />
+          </div>
+        </div>
       </div>
+
+      <a class="browse-link" id="export-link" href="#" target="_blank" rel="noopener">Export these results as CSV &rarr;</a>
 
       <div class="table-wrap">
         <table class="transfers-table" id="loans-table">
@@ -97,10 +115,11 @@
               <th>Age</th>
               <th>Duration</th>
               <th>Score</th>
+              <th>Converted</th>
             </tr>
           </thead>
           <tbody id="table-body">
-            <tr><td colspan="8">Loading...</td></tr>
+            <tr><td colspan="9">Loading...</td></tr>
           </tbody>
         </table>
       </div>
@@ -120,7 +139,7 @@
     </div>
   </div>
 
-  <script src="/settings.js?v=46"></script>
-  <script src="/loans.js?v=46"></script>
+  <script src="/settings.js?v=47"></script>
+  <script src="/loans.js?v=47"></script>
 </body>
 </html>

@@ -8,21 +8,40 @@ function scoreColor(score) {
   return "var(--accent-bad)";
 }
 
-/** Build the /api/loans query string from the current search box, filter dropdowns, sort selection, and pagination offset. Page size comes from the Settings panel (default 25). */
-function currentParams() {
+/** Read the age/duration range filter inputs into API-ready params, converting the displayed duration in years to the raw day count the API expects - shared by currentFilterParams() and thus by the table fetch, URL sync, and export link alike, so all three always agree on the active range filters. */
+function rangeFilterParams() {
+  const params = {};
+  const minAge = document.getElementById("min-age-input").value;
+  const maxAge = document.getElementById("max-age-input").value;
+  const minDuration = document.getElementById("min-duration-input").value;
+  const maxDuration = document.getElementById("max-duration-input").value;
+  if (minAge) params.min_age = minAge;
+  if (maxAge) params.max_age = maxAge;
+  if (minDuration) params.min_duration = Math.round(parseFloat(minDuration) * 365.25);
+  if (maxDuration) params.max_duration = Math.round(parseFloat(maxDuration) * 365.25);
+  return params;
+}
+
+/** The current search/filter/sort/range selections as a plain object, with no pagination - shared by currentParams() (adds limit/offset for the table fetch) and updateExportLink() (which always covers every matching row, not just one page). */
+function currentFilterParams() {
   const [sort, order] = document.getElementById("sort-select").value.split(":");
-  const params = new URLSearchParams({
-    sort, order,
-    limit: settings.pageSize,
-    offset: state.offset,
-  });
+  const params = { sort, order, ...rangeFilterParams() };
   const q = document.getElementById("search-input").value.trim();
   const position = document.getElementById("position-select").value;
   const league = document.getElementById("league-select").value;
-  if (q) params.set("q", q);
-  if (position) params.set("position", position);
-  if (league) params.set("league", league);
+  if (q) params.q = q;
+  if (position) params.position = position;
+  if (league) params.league = league;
   return params;
+}
+
+/** Build the /api/loans query string from the current search box, filter dropdowns, sort selection, and pagination offset. Page size comes from the Settings panel (default 25). */
+function currentParams() {
+  return new URLSearchParams({
+    ...currentFilterParams(),
+    limit: settings.pageSize,
+    offset: state.offset,
+  });
 }
 
 /** Fetch the distinct positions/leagues from /api/loans/filters and populate the two filter <select> dropdowns. */
@@ -49,16 +68,22 @@ function durationDisplay(days, stillOnLoan) {
   return `${label}${stillOnLoan ? " (ongoing)" : ""}`;
 }
 
+/** A small pill marking a loan whose player later signed permanently for the same club they were on loan at (see find_loan_conversion in main.py) - empty string if it never converted. */
+function conversionBadge(convertedToPermanent, conversionDate, conversionScore) {
+  if (!convertedToPermanent) return "";
+  return `<span class="loan-conversion-badge" title="Signed permanently on ${conversionDate.slice(0, 7)}, scored ${conversionScore}">&#10003; Permanent</span>`;
+}
+
 /** Fetch the current page of loans (per currentParams()) and render the table body, pagination controls, and per-row click handlers. */
 async function loadTable() {
   const tbody = document.getElementById("table-body");
-  tbody.innerHTML = `<tr><td colspan="8">Loading...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="9">Loading...</td></tr>`;
   const res = await fetch(`/api/loans?${currentParams().toString()}`);
   const data = await res.json();
   state.total = data.total;
 
   if (!data.results.length) {
-    tbody.innerHTML = `<tr><td colspan="8">No loans match these filters.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9">No loans match these filters.</td></tr>`;
   } else {
     tbody.innerHTML = data.results.map(r => `
       <tr data-player-id="${r.player_id}" data-transfer-date="${r.transfer_date}" tabindex="0" role="button" aria-label="View loan details: ${r.name} to ${r.to_club}">
@@ -70,6 +95,7 @@ async function loadTable() {
         <td>${r.age_at_transfer}</td>
         <td>${durationDisplay(r.tenure_days, r.still_on_loan)}</td>
         <td style="color:${scoreColor(r.loan_success_score)}; font-weight:700">${r.loan_success_score}</td>
+        <td>${conversionBadge(r.converted_to_permanent, r.conversion_transfer_date, r.conversion_success_score)}</td>
       </tr>
     `).join("");
     [...tbody.querySelectorAll("tr")].forEach(row => {
@@ -90,16 +116,16 @@ async function loadTable() {
   syncURL();
 }
 
-/** Keep the address bar's query string in sync with the current search/filter/sort/page, so this view is bookmarkable and shareable - see writeURLParams in settings.js. */
+/** Keep the address bar's query string in sync with the current search/filter/sort/range/page, so this view is bookmarkable and shareable - see writeURLParams in settings.js. Also refreshes the export link, since it's driven by the same filters and needs to change whenever they do. */
 function syncURL() {
-  const [sort, order] = document.getElementById("sort-select").value.split(":");
-  writeURLParams({
-    q: document.getElementById("search-input").value.trim(),
-    position: document.getElementById("position-select").value,
-    league: document.getElementById("league-select").value,
-    sort, order,
-    offset: state.offset || "",
-  });
+  writeURLParams({ ...currentFilterParams(), offset: state.offset || "" });
+  updateExportLink();
+}
+
+/** Point the "Export as CSV" link at /api/loans/export with the current search/filter/sort/range selections - export has no pagination, it always returns every matching row, so limit/offset are left out. */
+function updateExportLink() {
+  const params = new URLSearchParams(currentFilterParams());
+  document.getElementById("export-link").href = `/api/loans/export?${params.toString()}`;
 }
 
 /** Render "Page X of Y (Z loans)", with X as a click-to-edit trigger for jumping to an arbitrary page. */
@@ -208,6 +234,12 @@ async function showCard(playerId, transferDate) {
         <div class="tenure-note">
           Scored over the loan spell (${duration})
         </div>
+        ${ex.converted_to_permanent ? `
+          <div class="tenure-note">
+            ${conversionBadge(ex.converted_to_permanent, ex.conversion_transfer_date, ex.conversion_success_score)}
+            signed permanently on ${ex.conversion_transfer_date.slice(0, 7)}, scored ${ex.conversion_success_score}
+          </div>
+        ` : ""}
         <div class="breakdown">${renderBreakdown(ex.breakdown)}</div>
       </div>
     `;
@@ -237,6 +269,14 @@ document.getElementById("search-input").addEventListener("input", () => {
   window.__searchDebounce = setTimeout(resetAndLoad, 300);
 });
 document.getElementById("position-select").addEventListener("change", resetAndLoad);
+// Debounced like search-input - these are free-typed number fields, so
+// reloading on every keystroke (e.g. between "1" and "15") would thrash.
+["min-age-input", "max-age-input", "min-duration-input", "max-duration-input"].forEach(id => {
+  document.getElementById(id).addEventListener("input", () => {
+    clearTimeout(window.__rangeDebounce);
+    window.__rangeDebounce = setTimeout(resetAndLoad, 300);
+  });
+});
 document.getElementById("league-select").addEventListener("change", () => {
   updateClubSortAvailability();
   resetAndLoad();
@@ -283,6 +323,10 @@ if (urlParams.sort && urlParams.order) {
   if ([...sortSelect.options].some(o => o.value === sortValue)) sortSelect.value = sortValue;
 }
 state.offset = parseInt(urlParams.offset, 10) || 0;
+if (urlParams.min_age) document.getElementById("min-age-input").value = urlParams.min_age;
+if (urlParams.max_age) document.getElementById("max-age-input").value = urlParams.max_age;
+if (urlParams.min_duration) document.getElementById("min-duration-input").value = (parseFloat(urlParams.min_duration) / 365.25).toFixed(1);
+if (urlParams.max_duration) document.getElementById("max-duration-input").value = (parseFloat(urlParams.max_duration) / 365.25).toFixed(1);
 
 if (urlParams.position || urlParams.league) {
   loadFilters().then(() => {

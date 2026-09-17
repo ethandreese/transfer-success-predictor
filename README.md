@@ -290,13 +290,23 @@ rather than doubling as the predict form (see Project history).
   longer resolves) leaves the form untouched rather than populating
   whichever scenarios happened to succeed while another sat blank.
 - **`/browse.html`** — every scored transfer (~8,300), filterable by
-  position and destination league, searchable by player/club name, sortable
-  by score/date/fee/age, paginated. Click any row to open that transfer's
-  full card (score + breakdown) in a modal.
+  position, destination league, fee range, and age range, searchable by
+  player/club name, sortable by score/date/fee/age, paginated. Click any
+  row to open that transfer's full card (score + breakdown) in a modal.
+  Every filter/search/sort selection syncs to the URL, and an "Export
+  these results as CSV" link (`/api/transfers/export`, uncapped - it
+  ignores pagination and returns every matching row) always reflects the
+  current filters.
 - **`/loans.html`** — every scored loan spell (~4,300), same browse/filter/
-  search/click-to-view-card experience as `/browse.html`, but scored on the
-  loan-specific formula above (no fee/resale rows in the breakdown, and
-  duration shown in months rather than years).
+  search/click-to-view-card/URL-sync/CSV-export experience as
+  `/browse.html` (filterable by age range and loan duration rather than
+  fee, since most loans carry no real fee), but scored on the loan-specific
+  formula above (no fee/resale rows in the breakdown, and duration shown
+  in months rather than years). A loan whose player later signed
+  permanently for the same club they were on loan at (detected by matching
+  player + from/to club against a later row in the transfers data - see
+  `find_loan_conversion()`) gets a "✓ Permanent" badge, in both the table
+  and the detail card, linking to that conversion's date and score.
 - **`/surprises.html`** ("Model vs Reality") — every scored permanent
   transfer with a held-out prediction (~93% of them - see
   `compute_prediction_surprises.py`), ranked by how far the real outcome
@@ -568,6 +578,23 @@ the git history.
   symmetric playing-time rule that doesn't apply to loans).
 
 **Frontend**
+- Added fee/age range filters and a "Export these results as CSV" link
+  (`/api/transfers/export`, `/api/loans/export` - uncapped, ignores
+  pagination) to Browse and Loans, plus a "✓ Permanent" badge on any loan
+  whose player later signed permanently for the same club, in both the
+  table and the detail card. The conversion check
+  (`find_loan_conversion()`) matches a loan row against a later transfer
+  row on player id + exact from/to club, taking the earliest such match;
+  verified against a real example (Timur Suleymanov's 2023 Pari NN → Loko
+  Moscow loan converting to a permanent transfer in mid-2024). All three
+  filters, the export link, and the new range inputs stay in sync with
+  each other and the URL through the same `currentFilterParams()`/
+  `syncURL()` pattern the existing search/position/league filters already
+  used. The fee inputs' label and displayed value didn't update on a
+  currency change at first - the same bug Predict's fee field already had
+  and fixed (see `updateFeeCurrencyDisplay` below); ported the same fix to
+  Browse, keeping `state.minFeeEurM`/`maxFeeEurM` as the real
+  currency-independent bounds and only converting for display.
 - Extended Compare from a fixed A/B pair to 2-4 scenarios: "+ Add another
   option" reveals a 3rd/4th column (each removable), the results grid
   and "Top factors" breakdowns are now built dynamically per result

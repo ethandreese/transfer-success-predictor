@@ -3,6 +3,9 @@ End-to-end tests for the FastAPI app, using the already-committed model
 and data artifacts (app/model/*.joblib, data/*.csv) - no dependency on the
 raw Transfermarkt dataset.
 """
+import csv
+import io
+
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
@@ -492,6 +495,34 @@ def test_transfers_list_includes_player_id_for_detail_lookup():
     assert detail.json()["name"] == row["name"]
 
 
+def test_transfers_list_fee_and_age_range_filters():
+    """min_fee/max_fee/min_age/max_age should each narrow the results to exactly that range, and a free/undisclosed-fee transfer should never appear once a fee bound is set (NaN can't be judged inside or outside a range it doesn't have a number for)."""
+    res = client.get("/api/transfers", params={"min_fee": 50_000_000, "max_fee": 100_000_000, "limit": 50})
+    data = res.json()
+    assert data["total"] > 0
+    assert all(50_000_000 <= r["transfer_fee"] <= 100_000_000 for r in data["results"])
+
+    res2 = client.get("/api/transfers", params={"min_age": 30, "max_age": 32, "limit": 50})
+    data2 = res2.json()
+    assert data2["total"] > 0
+    assert all(30 <= r["age_at_transfer"] <= 32 for r in data2["results"])
+
+
+def test_transfers_export_matches_the_current_filters_as_csv():
+    """/api/transfers/export must return every transfer matching the filters (not paginated like /api/transfers) as a real CSV, so a filtered Browse view can be exported wholesale."""
+    res = client.get("/api/transfers/export", params={"position": "Goalkeeper"})
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("text/csv")
+    assert "attachment" in res.headers["content-disposition"]
+
+    rows = list(csv.DictReader(io.StringIO(res.text)))
+    assert {"player_id", "name", "position", "success_score"} <= set(rows[0].keys())
+    assert all(row["position"] == "Goalkeeper" for row in rows)
+
+    list_total = client.get("/api/transfers", params={"position": "Goalkeeper", "limit": 1}).json()["total"]
+    assert len(rows) == list_total  # every matching row, not just one page
+
+
 def test_transfer_detail_matches_examples_card_shape():
     """The detail endpoint and /api/examples share build_transfer_card(), so the same transfer must produce byte-identical cards from either route."""
     examples_res = client.get("/api/examples")
@@ -573,6 +604,77 @@ def test_loan_detail_404_for_unknown_loan():
     """A (player_id, transfer_date) pair that doesn't exist in loans_processed.csv should 404, not 500."""
     res = client.get("/api/loans/detail", params={"player_id": 999999999, "transfer_date": "2020-01-01"})
     assert res.status_code == 404
+
+
+def test_loans_list_age_and_duration_range_filters():
+    """min_age/max_age/min_duration/max_duration should each narrow the results to exactly that range."""
+    res = client.get("/api/loans", params={"min_age": 25, "max_age": 28, "limit": 50})
+    data = res.json()
+    assert data["total"] > 0
+    assert all(25 <= r["age_at_transfer"] <= 28 for r in data["results"])
+
+    res2 = client.get("/api/loans", params={"min_duration": 150, "max_duration": 200, "limit": 50})
+    data2 = res2.json()
+    assert data2["total"] > 0
+    assert all(150 <= r["tenure_days"] <= 200 for r in data2["results"])
+
+
+def test_loans_export_matches_the_current_filters_as_csv():
+    """/api/loans/export must return every loan matching the filters (not paginated like /api/loans) as a real CSV."""
+    res = client.get("/api/loans/export", params={"position": "Defender"})
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("text/csv")
+    assert "attachment" in res.headers["content-disposition"]
+
+    rows = list(csv.DictReader(io.StringIO(res.text)))
+    assert {"player_id", "name", "position", "loan_success_score", "converted_to_permanent"} <= set(rows[0].keys())
+    assert all(row["position"] == "Defender" for row in rows)
+
+    list_total = client.get("/api/loans", params={"position": "Defender", "limit": 1}).json()["total"]
+    assert len(rows) == list_total
+
+
+def test_loan_conversion_detected_for_a_real_loan_to_buy():
+    """
+    Timur Suleymanov's 2023-09-14 loan from Pari NN to Loko Moscow was
+    followed by a genuine permanent transfer between the same two clubs on
+    2024-07-01 - a real loan-to-buy in the committed dataset, not a
+    fabricated example. converted_to_permanent must flag it and surface
+    that later transfer's date/score.
+    """
+    res = client.get("/api/loans", params={"q": "Suleymanov", "limit": 5})
+    loan = next(r for r in res.json()["results"] if r["transfer_date"] == "2023-09-14")
+    assert loan["converted_to_permanent"] is True
+    assert loan["conversion_transfer_date"] == "2024-07-01"
+    assert loan["conversion_success_score"] is not None
+
+    detail = client.get("/api/loans/detail", params={
+        "player_id": loan["player_id"], "transfer_date": loan["transfer_date"],
+    })
+    assert detail.json()["converted_to_permanent"] is True
+
+
+def test_loan_conversion_none_for_a_synthetic_loan_with_no_match():
+    """A loan whose player/from-club/to-club combination has no later transfers_df row at all must return None, not a stale/wrong match against an unrelated transfer."""
+    from app.main import find_loan_conversion
+    fake_loan = pd.Series({
+        "player_id": -1, "from_club_name": "Nowhere FC", "to_club_name": "Nowhere Else FC",
+        "transfer_date": "2020-01-01",
+    })
+    assert find_loan_conversion(fake_loan) is None
+
+
+def test_loan_conversion_requires_the_same_from_and_to_club_not_just_the_player():
+    """A player permanently transferring to a *third* club after a loan isn't a conversion of that loan - find_loan_conversion must require both from_club_name and to_club_name to match, not just player_id and a later date."""
+    from app.main import find_loan_conversion, transfers_df
+    real_transfer = transfers_df.iloc[0]
+    fake_loan = pd.Series({
+        "player_id": real_transfer["player_id"],
+        "from_club_name": real_transfer["from_club_name"],
+        "to_club_name": "A Club This Player Was Never Loaned To",
+        "transfer_date": "2000-01-01",  # earlier than virtually every real transfer_date
+    })
+    assert find_loan_conversion(fake_loan) is None
 
 
 def test_surprises_list_pagination():

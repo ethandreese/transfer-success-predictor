@@ -1,4 +1,22 @@
-const state = { offset: 0, total: 0, openCard: null };
+// minFeeEurM/maxFeeEurM are the fee-range inputs' "real" values in EUR
+// millions - null when that bound is unset - the same currency-independent
+// unit every other money value on the site works from (see formatMoney).
+// Kept separate from whatever the inputs currently *display* (€/$/£,
+// depending on the currency setting) so switching currency redisplays the
+// same real bounds instead of reinterpreting the same typed digits as a
+// different amount - see updateFeeCurrencyDisplay below.
+const state = { offset: 0, total: 0, openCard: null, minFeeEurM: null, maxFeeEurM: null };
+
+/** Sync the fee-range label's currency symbol and the min/max fee inputs' displayed values from state.minFeeEurM/maxFeeEurM to the currently-selected currency. Call after a currency change, or once at load if a non-EUR currency was already saved. */
+function updateFeeCurrencyDisplay() {
+  const symbol = CURRENCY_SYMBOLS[settings.currency];
+  const rate = EXCHANGE_RATES[settings.currency];
+  document.getElementById("fee-range-label").textContent = `Fee range (${symbol}m)`;
+  document.getElementById("min-fee-input").value =
+    state.minFeeEurM === null ? "" : Math.round(state.minFeeEurM * rate * 10) / 10;
+  document.getElementById("max-fee-input").value =
+    state.maxFeeEurM === null ? "" : Math.round(state.maxFeeEurM * rate * 10) / 10;
+}
 const cardModal = makeModalAccessible(document.getElementById("card-modal-backdrop"));
 
 /** Green/amber/red for a 0-100 score, shared by every score display on the page. */
@@ -8,21 +26,38 @@ function scoreColor(score) {
   return "var(--accent-bad)";
 }
 
-/** Build the /api/transfers query string from the current search box, filter dropdowns, sort selection, and pagination offset. Page size comes from the Settings panel (default 25). */
-function currentParams() {
+/** Read the fee/age range filter inputs into API-ready params, converting the fee bounds from their currency-independent EUR-millions state (see updateFeeCurrencyDisplay) to the raw euro amount the API expects - shared by currentFilterParams() and thus by the table fetch, URL sync, and export link alike, so all three always agree on the active range filters. */
+function rangeFilterParams() {
+  const params = {};
+  if (state.minFeeEurM !== null) params.min_fee = Math.round(state.minFeeEurM * 1_000_000);
+  if (state.maxFeeEurM !== null) params.max_fee = Math.round(state.maxFeeEurM * 1_000_000);
+  const minAge = document.getElementById("min-age-input").value;
+  const maxAge = document.getElementById("max-age-input").value;
+  if (minAge) params.min_age = minAge;
+  if (maxAge) params.max_age = maxAge;
+  return params;
+}
+
+/** The current search/filter/sort/range selections as a plain object, with no pagination - shared by currentParams() (adds limit/offset for the table fetch) and updateExportLink() (which always covers every matching row, not just one page). */
+function currentFilterParams() {
   const [sort, order] = document.getElementById("sort-select").value.split(":");
-  const params = new URLSearchParams({
-    sort, order,
-    limit: settings.pageSize,
-    offset: state.offset,
-  });
+  const params = { sort, order, ...rangeFilterParams() };
   const q = document.getElementById("search-input").value.trim();
   const position = document.getElementById("position-select").value;
   const league = document.getElementById("league-select").value;
-  if (q) params.set("q", q);
-  if (position) params.set("position", position);
-  if (league) params.set("league", league);
+  if (q) params.q = q;
+  if (position) params.position = position;
+  if (league) params.league = league;
   return params;
+}
+
+/** Build the /api/transfers query string from the current search box, filter dropdowns, sort selection, and pagination offset. Page size comes from the Settings panel (default 25). */
+function currentParams() {
+  return new URLSearchParams({
+    ...currentFilterParams(),
+    limit: settings.pageSize,
+    offset: state.offset,
+  });
 }
 
 /** Fetch the distinct positions/leagues from /api/filters and populate the two filter <select> dropdowns. */
@@ -91,16 +126,16 @@ async function loadTable() {
   syncURL();
 }
 
-/** Keep the address bar's query string in sync with the current search/filter/sort/page, so this view is bookmarkable and shareable - see writeURLParams in settings.js. */
+/** Keep the address bar's query string in sync with the current search/filter/sort/range/page, so this view is bookmarkable and shareable - see writeURLParams in settings.js. Also refreshes the export link, since it's driven by the same filters and needs to change whenever they do. */
 function syncURL() {
-  const [sort, order] = document.getElementById("sort-select").value.split(":");
-  writeURLParams({
-    q: document.getElementById("search-input").value.trim(),
-    position: document.getElementById("position-select").value,
-    league: document.getElementById("league-select").value,
-    sort, order,
-    offset: state.offset || "",
-  });
+  writeURLParams({ ...currentFilterParams(), offset: state.offset || "" });
+  updateExportLink();
+}
+
+/** Point the "Export as CSV" link at /api/transfers/export with the current search/filter/sort/range selections - export has no pagination, it always returns every matching row, so limit/offset are left out. */
+function updateExportLink() {
+  const params = new URLSearchParams(currentFilterParams());
+  document.getElementById("export-link").href = `/api/transfers/export?${params.toString()}`;
 }
 
 /** Render "Page X of Y (Z transfers)", with X as a click-to-edit trigger for jumping to an arbitrary page. */
@@ -238,6 +273,31 @@ document.getElementById("search-input").addEventListener("input", () => {
   window.__searchDebounce = setTimeout(resetAndLoad, 300);
 });
 document.getElementById("position-select").addEventListener("change", resetAndLoad);
+// Debounced like search-input - these are free-typed number fields, so
+// reloading on every keystroke (e.g. between "1" and "15") would thrash.
+// The fee inputs also update state.minFeeEurM/maxFeeEurM (converting from
+// whichever currency is currently displayed) so a later currency change
+// redisplays the same real bound instead of reinterpreting the same typed
+// digits as a different amount - age has no such conversion, it's typed
+// and sent as-is.
+document.getElementById("min-fee-input").addEventListener("input", (e) => {
+  const typed = parseFloat(e.target.value);
+  state.minFeeEurM = Number.isNaN(typed) ? null : typed / EXCHANGE_RATES[settings.currency];
+  clearTimeout(window.__rangeDebounce);
+  window.__rangeDebounce = setTimeout(resetAndLoad, 300);
+});
+document.getElementById("max-fee-input").addEventListener("input", (e) => {
+  const typed = parseFloat(e.target.value);
+  state.maxFeeEurM = Number.isNaN(typed) ? null : typed / EXCHANGE_RATES[settings.currency];
+  clearTimeout(window.__rangeDebounce);
+  window.__rangeDebounce = setTimeout(resetAndLoad, 300);
+});
+["min-age-input", "max-age-input"].forEach(id => {
+  document.getElementById(id).addEventListener("input", () => {
+    clearTimeout(window.__rangeDebounce);
+    window.__rangeDebounce = setTimeout(resetAndLoad, 300);
+  });
+});
 document.getElementById("league-select").addEventListener("change", () => {
   updateClubSortAvailability();
   resetAndLoad();
@@ -266,6 +326,7 @@ document.getElementById("page-info").addEventListener("keydown", (e) => {
 // the top, since a page-size change shifts what "page 1" even means) and
 // refresh the open card, if any, rather than requiring a manual refresh.
 document.addEventListener("settingschange", () => {
+  updateFeeCurrencyDisplay();
   resetAndLoad();
   if (state.openCard) showCard(state.openCard.playerId, state.openCard.transferDate);
 });
@@ -285,6 +346,11 @@ if (urlParams.sort && urlParams.order) {
   if ([...sortSelect.options].some(o => o.value === sortValue)) sortSelect.value = sortValue;
 }
 state.offset = parseInt(urlParams.offset, 10) || 0;
+if (urlParams.min_fee) state.minFeeEurM = parseFloat(urlParams.min_fee) / 1_000_000;
+if (urlParams.max_fee) state.maxFeeEurM = parseFloat(urlParams.max_fee) / 1_000_000;
+updateFeeCurrencyDisplay();
+if (urlParams.min_age) document.getElementById("min-age-input").value = urlParams.min_age;
+if (urlParams.max_age) document.getElementById("max-age-input").value = urlParams.max_age;
 
 if (urlParams.position || urlParams.league) {
   loadFilters().then(() => {

@@ -1,3 +1,5 @@
+import csv
+import io
 import json
 import os
 import re
@@ -6,7 +8,7 @@ import unicodedata
 import joblib
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -1807,10 +1809,13 @@ def describe_loan_components(r):
 
 def build_loan_card(r):
     """
-    Build the JSON shape shared by /api/loans and /api/loans/detail for one
-    row of loans_processed.csv: identity/route, the score, and the full
-    describe_loan_components() breakdown.
+    Build /api/loans/detail's full-card JSON for one row of
+    loans_processed.csv: identity/route, the score, the full
+    describe_loan_components() breakdown, and whether this loan later
+    converted to a permanent transfer (see find_loan_conversion) - the
+    loans page's click-to-view modal.
     """
+    conversion = find_loan_conversion(r)
     return {
         "player_id": int(r["player_id"]),
         "name": r["name"],
@@ -1822,6 +1827,9 @@ def build_loan_card(r):
         "post_ga_p90": round(float(r["post_ga_p90"]), 2),
         "tenure_days": int(r["tenure_days"]),
         "still_on_loan": bool(r["still_on_loan"]),
+        "converted_to_permanent": conversion is not None,
+        "conversion_transfer_date": conversion["transfer_date"] if conversion else None,
+        "conversion_success_score": conversion["success_score"] if conversion else None,
         "breakdown": describe_loan_components(r),
     }
 
@@ -2252,17 +2260,16 @@ def get_filters():
     return {"positions": positions, "leagues": leagues}
 
 
-@app.get("/api/transfers")
-def list_transfers(
-    position: str | None = None,
-    league: str | None = None,
-    q: str | None = None,
-    sort: str = "success_score",
-    order: str = "desc",
-    limit: int = 25,
-    offset: int = 0,
-):
-    """Paginated, filterable, sortable listing of every scored transfer, for the browse page's table."""
+def filter_transfers(position=None, league=None, q=None, min_fee=None, max_fee=None, min_age=None, max_age=None):
+    """
+    Shared position/league/q/fee-range/age-range filtering for
+    /api/transfers and /api/transfers/export, so the exported CSV always
+    matches exactly what the table's current filters show rather than a
+    second, driftable reimplementation of the same filters. A fee-range
+    bound naturally excludes a free/undisclosed-fee transfer too (NaN
+    compares False against either bound) - it genuinely can't be judged
+    as inside or outside a fee range with no known fee.
+    """
     df = transfers_df
     if position:
         df = df[df["position"] == position]
@@ -2276,6 +2283,63 @@ def list_transfers(
             | df["_from_club_fold"].str.contains(q_fold, na=False, regex=False)
         )
         df = df[mask]
+    if min_fee is not None:
+        df = df[df["transfer_fee"] >= min_fee]
+    if max_fee is not None:
+        df = df[df["transfer_fee"] <= max_fee]
+    if min_age is not None:
+        df = df[df["age_at_transfer"] >= min_age]
+    if max_age is not None:
+        df = df[df["age_at_transfer"] <= max_age]
+    return df
+
+
+def transfer_row_dict(r):
+    """One transfers_processed.csv row as a plain dict - shared by /api/transfers' JSON list and /api/transfers/export's CSV (via rows_to_csv), so both always describe a transfer identically."""
+    fee = r["transfer_fee"]
+    return {
+        "player_id": int(r["player_id"]),
+        "name": r["name"],
+        "position": r["position"],
+        "from_club": r["from_club_name"],
+        "to_club": r["to_club_name"],
+        "to_league": league_display_name(r["to_domestic_competition_id"]),
+        "transfer_date": str(r["transfer_date"])[:10],
+        "age_at_transfer": round(float(r["age_at_transfer"]), 1),
+        "transfer_fee": None if pd.isna(fee) else float(fee),
+        "tenure_days": int(r["tenure_days"]),
+        "still_at_club": bool(r["still_at_club"]),
+        "success_score": float(r["success_score"]),
+    }
+
+
+def rows_to_csv(rows):
+    """A list of flat dicts (see transfer_row_dict/loan_row_dict) as a CSV text blob for an export endpoint's response body - one header row from the first result's keys (every row already shares the same fields in the same order), empty string for zero matching rows rather than a headerless file."""
+    if not rows:
+        return ""
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=list(rows[0].keys()))
+    writer.writeheader()
+    writer.writerows(rows)
+    return buffer.getvalue()
+
+
+@app.get("/api/transfers")
+def list_transfers(
+    position: str | None = None,
+    league: str | None = None,
+    q: str | None = None,
+    sort: str = "success_score",
+    order: str = "desc",
+    limit: int = 25,
+    offset: int = 0,
+    min_fee: float | None = None,
+    max_fee: float | None = None,
+    min_age: float | None = None,
+    max_age: float | None = None,
+):
+    """Paginated, filterable, sortable listing of every scored transfer, for the browse page's table."""
+    df = filter_transfers(position, league, q, min_fee, max_fee, min_age, max_age)
 
     sort_field = sort if sort in TRANSFER_SORT_FIELDS else "success_score"
     df = df.sort_values(sort_field, ascending=(order == "asc"))
@@ -2284,24 +2348,32 @@ def list_transfers(
     limit = max(1, min(limit, 100))
     page = df.iloc[offset:offset + limit]
 
-    results = []
-    for _, r in page.iterrows():
-        fee = r["transfer_fee"]
-        results.append({
-            "player_id": int(r["player_id"]),
-            "name": r["name"],
-            "position": r["position"],
-            "from_club": r["from_club_name"],
-            "to_club": r["to_club_name"],
-            "to_league": league_display_name(r["to_domestic_competition_id"]),
-            "transfer_date": str(r["transfer_date"])[:10],
-            "age_at_transfer": round(float(r["age_at_transfer"]), 1),
-            "transfer_fee": None if pd.isna(fee) else float(fee),
-            "tenure_days": int(r["tenure_days"]),
-            "still_at_club": bool(r["still_at_club"]),
-            "success_score": float(r["success_score"]),
-        })
+    results = [transfer_row_dict(r) for _, r in page.iterrows()]
     return {"total": total, "limit": limit, "offset": offset, "results": results}
+
+
+@app.get("/api/transfers/export")
+def export_transfers(
+    position: str | None = None,
+    league: str | None = None,
+    q: str | None = None,
+    sort: str = "success_score",
+    order: str = "desc",
+    min_fee: float | None = None,
+    max_fee: float | None = None,
+    min_age: float | None = None,
+    max_age: float | None = None,
+):
+    """Every transfer matching the current filters (no /api/transfers-style pagination cap) as a downloadable CSV - "export what you're looking at" for Browse, reusing filter_transfers() so the file can never silently diverge from what the table shows."""
+    df = filter_transfers(position, league, q, min_fee, max_fee, min_age, max_age)
+    sort_field = sort if sort in TRANSFER_SORT_FIELDS else "success_score"
+    df = df.sort_values(sort_field, ascending=(order == "asc"))
+    csv_text = rows_to_csv([transfer_row_dict(r) for _, r in df.iterrows()])
+    return Response(
+        content=csv_text,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=transfers.csv"},
+    )
 
 
 SURPRISE_SORT_FIELDS = {"surprise_delta", "abs_surprise_delta", "success_score", "predicted_score", "transfer_date", "age_at_transfer"}
@@ -2383,17 +2455,38 @@ def get_loan_filters():
     return {"positions": positions, "leagues": leagues}
 
 
-@app.get("/api/loans")
-def list_loans(
-    position: str | None = None,
-    league: str | None = None,
-    q: str | None = None,
-    sort: str = "loan_success_score",
-    order: str = "desc",
-    limit: int = 25,
-    offset: int = 0,
-):
-    """Paginated, filterable, sortable listing of every scored loan spell, for the loans page's table."""
+def find_loan_conversion(loan_row):
+    """
+    Whether this loan later led to a permanent transfer - the same player
+    bought permanently by the same loan club, from the same original
+    owner, at some point after the loan started. Requires both club names
+    to match exactly (not just the player), since a real loan-to-buy is
+    specifically "the club that had them on loan later bought them" -
+    a player who was loaned to club Y and later permanently joined a
+    third club Z is a different, unrelated transfer, not a conversion of
+    this loan. Returns {"transfer_date", "success_score"} for the
+    earliest such transfer, or None.
+
+    A loan that converts with no separate recorded event (see Known
+    limitations in the README - Transfermarkt sometimes shows a
+    conversion as one continuous loan record, never a distinct permanent
+    transfer) is invisible to this - it only catches a conversion that
+    actually shows up as its own row in transfers_processed.csv.
+    """
+    candidates = transfers_df[
+        (transfers_df["player_id"] == loan_row["player_id"])
+        & (transfers_df["from_club_name"] == loan_row["from_club_name"])
+        & (transfers_df["to_club_name"] == loan_row["to_club_name"])
+        & (transfers_df["transfer_date"] > loan_row["transfer_date"])
+    ]
+    if candidates.empty:
+        return None
+    nearest = candidates.sort_values("transfer_date").iloc[0]
+    return {"transfer_date": str(nearest["transfer_date"])[:10], "success_score": float(nearest["success_score"])}
+
+
+def filter_loans(position=None, league=None, q=None, min_age=None, max_age=None, min_duration=None, max_duration=None):
+    """Shared position/league/q/age-range/duration-range filtering for /api/loans and /api/loans/export - see filter_transfers()'s identical reasoning for why this is factored out rather than duplicated per endpoint."""
     df = loans_df
     if position:
         df = df[df["position"] == position]
@@ -2407,6 +2500,54 @@ def list_loans(
             | df["_from_club_fold"].str.contains(q_fold, na=False, regex=False)
         )
         df = df[mask]
+    if min_age is not None:
+        df = df[df["age_at_transfer"] >= min_age]
+    if max_age is not None:
+        df = df[df["age_at_transfer"] <= max_age]
+    if min_duration is not None:
+        df = df[df["tenure_days"] >= min_duration]
+    if max_duration is not None:
+        df = df[df["tenure_days"] <= max_duration]
+    return df
+
+
+def loan_row_dict(r):
+    """One loans_processed.csv row as a plain dict - shared by /api/loans' JSON list and /api/loans/export's CSV (via rows_to_csv). converted_to_permanent is looked up per row (see find_loan_conversion) - cheap enough at list-page size (one filtered scan of transfers_df per loan row, ~25-100 of them per request) that it doesn't need precomputing at startup the way league_trends_df does."""
+    conversion = find_loan_conversion(r)
+    return {
+        "player_id": int(r["player_id"]),
+        "name": r["name"],
+        "position": r["position"],
+        "from_club": r["from_club_name"],
+        "to_club": r["to_club_name"],
+        "to_league": league_display_name(r["to_domestic_competition_id"]),
+        "transfer_date": str(r["transfer_date"])[:10],
+        "age_at_transfer": round(float(r["age_at_transfer"]), 1),
+        "tenure_days": int(r["tenure_days"]),
+        "still_on_loan": bool(r["still_on_loan"]),
+        "loan_success_score": float(r["loan_success_score"]),
+        "converted_to_permanent": conversion is not None,
+        "conversion_transfer_date": conversion["transfer_date"] if conversion else None,
+        "conversion_success_score": conversion["success_score"] if conversion else None,
+    }
+
+
+@app.get("/api/loans")
+def list_loans(
+    position: str | None = None,
+    league: str | None = None,
+    q: str | None = None,
+    sort: str = "loan_success_score",
+    order: str = "desc",
+    limit: int = 25,
+    offset: int = 0,
+    min_age: float | None = None,
+    max_age: float | None = None,
+    min_duration: int | None = None,
+    max_duration: int | None = None,
+):
+    """Paginated, filterable, sortable listing of every scored loan spell, for the loans page's table."""
+    df = filter_loans(position, league, q, min_age, max_age, min_duration, max_duration)
 
     sort_field = sort if sort in LOAN_SORT_FIELDS else "loan_success_score"
     df = df.sort_values(sort_field, ascending=(order == "asc"))
@@ -2415,22 +2556,32 @@ def list_loans(
     limit = max(1, min(limit, 100))
     page = df.iloc[offset:offset + limit]
 
-    results = []
-    for _, r in page.iterrows():
-        results.append({
-            "player_id": int(r["player_id"]),
-            "name": r["name"],
-            "position": r["position"],
-            "from_club": r["from_club_name"],
-            "to_club": r["to_club_name"],
-            "to_league": league_display_name(r["to_domestic_competition_id"]),
-            "transfer_date": str(r["transfer_date"])[:10],
-            "age_at_transfer": round(float(r["age_at_transfer"]), 1),
-            "tenure_days": int(r["tenure_days"]),
-            "still_on_loan": bool(r["still_on_loan"]),
-            "loan_success_score": float(r["loan_success_score"]),
-        })
+    results = [loan_row_dict(r) for _, r in page.iterrows()]
     return {"total": total, "limit": limit, "offset": offset, "results": results}
+
+
+@app.get("/api/loans/export")
+def export_loans(
+    position: str | None = None,
+    league: str | None = None,
+    q: str | None = None,
+    sort: str = "loan_success_score",
+    order: str = "desc",
+    min_age: float | None = None,
+    max_age: float | None = None,
+    min_duration: int | None = None,
+    max_duration: int | None = None,
+):
+    """Every loan matching the current filters (no /api/loans-style pagination cap) as a downloadable CSV - "export what you're looking at" for Loans, reusing filter_loans() so the file can never silently diverge from what the table shows."""
+    df = filter_loans(position, league, q, min_age, max_age, min_duration, max_duration)
+    sort_field = sort if sort in LOAN_SORT_FIELDS else "loan_success_score"
+    df = df.sort_values(sort_field, ascending=(order == "asc"))
+    csv_text = rows_to_csv([loan_row_dict(r) for _, r in df.iterrows()])
+    return Response(
+        content=csv_text,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=loans.csv"},
+    )
 
 
 @app.get("/api/loans/detail")

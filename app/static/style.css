@@ -574,16 +574,29 @@ button.predict-btn:disabled {
   margin-top: 0.75rem;
 }
 
+/*
+ * Shared by Browse/Loans/Model vs Reality/Club Report Cards' filter bars,
+ * which don't all have the same number of fields (3 on Club Report Cards,
+ * up to 6 once Browse/Loans' range filters are added) - auto-fit sizes
+ * to however many are actually present and wraps responsively, instead
+ * of a fixed column count/ratio tuned for one specific page's field
+ * count that left the others with mismatched leftover space.
+ */
 .browse-controls {
   display: grid;
-  grid-template-columns: 1.4fr 1fr 1fr 1.2fr;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 1rem;
   margin-bottom: 1.25rem;
 }
 
-@media (max-width: 720px) {
-  .browse-controls { grid-template-columns: 1fr 1fr; }
+/* A "Min – Max" range filter (fee/age/duration) - two number inputs sharing one field's width, rather than two full-width fields for what's really one filter. */
+.range-inputs {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
 }
+.range-inputs input { width: 0; flex: 1; }
+.range-inputs span { color: var(--muted); font-size: 0.85rem; }
 
 .field select {
   width: 100%;
@@ -612,7 +625,7 @@ button.predict-btn:disabled {
    table's full natural width (e.g. "Campeonato Brasileiro Serie A" in the
    League column). */
 #transfers-table { min-width: 950px; }
-#loans-table { min-width: 850px; }
+#loans-table { min-width: 950px; }
 
 .transfers-table td, .transfers-table th {
   overflow: hidden;
@@ -634,14 +647,15 @@ button.predict-btn:disabled {
 #transfers-table th:nth-child(8), #transfers-table td:nth-child(8) { width: 9%; }
 #transfers-table th:nth-child(9), #transfers-table td:nth-child(9) { width: 8%; }
 
-#loans-table th:nth-child(1), #loans-table td:nth-child(1) { width: 15%; }
-#loans-table th:nth-child(2), #loans-table td:nth-child(2) { width: 10%; }
-#loans-table th:nth-child(3), #loans-table td:nth-child(3) { width: 23%; }
-#loans-table th:nth-child(4), #loans-table td:nth-child(4) { width: 17%; }
-#loans-table th:nth-child(5), #loans-table td:nth-child(5) { width: 9%; }
-#loans-table th:nth-child(6), #loans-table td:nth-child(6) { width: 7%; }
-#loans-table th:nth-child(7), #loans-table td:nth-child(7) { width: 10%; }
-#loans-table th:nth-child(8), #loans-table td:nth-child(8) { width: 9%; }
+#loans-table th:nth-child(1), #loans-table td:nth-child(1) { width: 14%; }
+#loans-table th:nth-child(2), #loans-table td:nth-child(2) { width: 9%; }
+#loans-table th:nth-child(3), #loans-table td:nth-child(3) { width: 20%; }
+#loans-table th:nth-child(4), #loans-table td:nth-child(4) { width: 15%; }
+#loans-table th:nth-child(5), #loans-table td:nth-child(5) { width: 8%; }
+#loans-table th:nth-child(6), #loans-table td:nth-child(6) { width: 6%; }
+#loans-table th:nth-child(7), #loans-table td:nth-child(7) { width: 9%; }
+#loans-table th:nth-child(8), #loans-table td:nth-child(8) { width: 8%; }
+#loans-table th:nth-child(9), #loans-table td:nth-child(9) { width: 11%; }
 
 #surprises-table { min-width: 900px; }
 #surprises-table th:nth-child(1), #surprises-table td:nth-child(1) { width: 15%; }
@@ -735,6 +749,19 @@ button.predict-btn:disabled {
 }
 
 .transfers-table tbody tr:hover { background: var(--panel-2); }
+
+/** Marks a loan row/card whose player later returned to the same club on a permanent transfer - see find_loan_conversion in main.py. Reuses the same soft-pill look as .selected-chip. */
+.loan-conversion-badge {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(74, 222, 128, 0.15);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
 
 .pagination {
   display: flex;
