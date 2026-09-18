@@ -1047,7 +1047,7 @@ def describe_components(r):
             "description": (
                 f"{int(r['post_apps'])} of {int(r['team_games_in_tenure'])} games "
                 f"{r['to_club_name']} played during the tenure "
-                f"({r['pct_team_games_played'] * 100:.0f}% - captures injuries/rotation, "
+                f"({r['pct_team_games_played'] * 100:.0f}%, capturing injuries/rotation, "
                 f"blended with raw appearance count for sustained presence)"
             ),
         },
@@ -1234,7 +1234,7 @@ def league_context_note(feat, actual_league, reference_league):
 CATEGORY_BASELINE_NOTE_TAIL = {
     "position": "a real baseline gap in this dataset, not a claim that one position is inherently a better transfer bet",
     "sub_position": "a real baseline gap in this dataset at a finer-grained role level, not a claim that one role is inherently a better bet",
-    "foot": "a small, real gap in the data with no confirmed football mechanism behind it - worth reading skeptically",
+    "foot": "a small, real gap in the data with no confirmed football mechanism behind it, worth reading skeptically",
 }
 
 # "left"/"right"/"both" read oddly as a bare noun ("left transfers") the way
@@ -1267,7 +1267,7 @@ def category_baseline_note(feat, actual_value, reference_value):
     reference_label = display.get(reference_value, reference_value)
     return (
         f": {actual_label} transfers have historically averaged {baseline[actual_value]} "
-        f"vs. {baseline[reference_value]} for {reference_label} transfers - {CATEGORY_BASELINE_NOTE_TAIL[feat]}"
+        f"vs. {baseline[reference_value]} for {reference_label} transfers, {CATEGORY_BASELINE_NOTE_TAIL[feat]}"
     )
 
 
@@ -1300,7 +1300,7 @@ def club_value_rating_note(direction, actual_log_value, reference_log_value, ref
     if direction == "to":
         return (
             f": moving to a squad valued this highly has historically come with a stronger post-move "
-            f"rating - signings there average around the {ordinal(pred_actual)} percentile, vs. the "
+            f"rating; signings there average around the {ordinal(pred_actual)} percentile, vs. the "
             f"{ordinal(pred_reference)} percentile at a club valued like {reference_display}, likely "
             f"reflecting the quality of teammates and system a wealthier club can offer"
         )
@@ -1673,7 +1673,7 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_data_f
         # value the way it does for every feature that has one.
         playing_time_stats = None
         playing_time_detail = (
-            "No recent performance data available for this player (outside the tracked leagues) - "
+            "No recent performance data available for this player (outside the tracked leagues); "
             f"the score above already averages the prediction across many real {POSITION_PLURAL.get(position, position).lower()}' "
             "actual recent-performance profiles, rather than guessing a single typical one"
         )
@@ -1748,7 +1748,7 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_data_f
                 detail = f"{raw_value} ({ordinal(actual_value)} percentile vs. {typical_pos_label} recent numbers), {direction} the score by {abs(contribution)} pts"
             else:
                 stats = None
-                detail = f"No recent FotMob data available for this player - using a league-typical value, {direction} the score by {abs(contribution)} pts"
+                detail = f"No recent FotMob data available for this player; using a league-typical value, {direction} the score by {abs(contribution)} pts"
             contributions.append({
                 "feature": feat,
                 "label": label,
@@ -1782,7 +1782,7 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_data_f
                 "stats": None,
                 "detail": (
                     "No recent performance data available for this player (outside the "
-                    "tracked leagues) - the score above already averages the prediction across "
+                    "tracked leagues); the score above already averages the prediction across "
                     f"many real {POSITION_PLURAL.get(position, position).lower()}' actual values"
                 ),
             })
@@ -2009,7 +2009,7 @@ def describe_loan_components(r):
             "description": (
                 f"{int(r['post_apps'])} of {int(r['team_games_in_tenure'])} games "
                 f"{r['to_club_name']} played during the loan "
-                f"({r['pct_team_games_played'] * 100:.0f}% - usually the central question a loan gets "
+                f"({r['pct_team_games_played'] * 100:.0f}%, usually the central question a loan gets "
                 f"judged on, blended with raw appearance count)"
             ),
         },

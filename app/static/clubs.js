@@ -416,7 +416,7 @@ function highlightLine(label, h, extra) {
     <div class="highlight-row">
       <span class="highlight-label">${label}:</span>
       <button type="button" class="highlight-name" data-player-id="${h.player_id}" data-transfer-date="${h.transfer_date}" aria-label="View transfer details: ${h.name}">${h.name}</button>
-      (${h.transfer_date.slice(0, 7)})${extra ? ` - ${extra(h)}` : ""}${scoreClause}
+      (${h.transfer_date.slice(0, 7)})${extra ? ` &middot; ${extra(h)}` : ""}${scoreClause}
     </div>
   `;
 }
@@ -513,7 +513,7 @@ function showCard(club) {
 
   const sellerSection = club.transfers_out ? `
     <h3>Departures</h3>
-    <p>${club.transfers_out} players left - the ones who left averaged <strong style="color:${scoreColor(club.avg_departure_score)}">${club.avg_departure_score}</strong> / 100 at their next stop.</p>
+    <p>${club.transfers_out} players left; the ones who left averaged <strong style="color:${scoreColor(club.avg_departure_score)}">${club.avg_departure_score}</strong> / 100 at their next stop.</p>
     ${highlightLine("Thrived elsewhere", club.best_departure)}
     ${highlightLine("Struggled elsewhere", club.worst_departure)}
   ` : `<h3>Departures</h3><p>No scored departures.</p>`;

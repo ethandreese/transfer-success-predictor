@@ -458,7 +458,7 @@ function renderHeightChart() {
   document.getElementById("height-score-chart").innerHTML = buildHeightScoreChart(filteredRows, trendByPosition);
   document.getElementById("height-score-desc").textContent = filter
     ? `${heightPoints.length.toLocaleString()} ${filter.toLowerCase()} transfers with a recorded height. Click/tap a point on the trend line for that height band's average score and sample size.`
-    : `${heightPoints.length.toLocaleString()} transfers with a recorded height. Each position gets its own trend line - click/tap a point on one for that height band's average score and sample size, and compare the four lines' slopes for whether height matters more at some positions than others.`;
+    : `${heightPoints.length.toLocaleString()} transfers with a recorded height. Each position gets its own trend line; click/tap a point on one for that height band's average score and sample size, and compare the four lines' slopes for whether height matters more at some positions than others.`;
 
   [...document.getElementById("height-score-legend").children].forEach(el => {
     el.hidden = filter !== "" && el.dataset.position !== filter;
@@ -480,12 +480,12 @@ function renderAll() {
   const feePoints = rows.filter(r => r.transfer_fee > 0);
   document.getElementById("fee-score-chart").innerHTML = buildFeeScoreChart(rows, data.fee_trend);
   document.getElementById("fee-score-desc").textContent =
-    `${feePoints.length.toLocaleString()} transfers with a disclosed fee (free/undisclosed fees excluded - they can't sit on a log axis). ` +
-    `The trend line's average score climbs from ${data.fee_trend[0].avg_score} in the cheapest tenth of fees to ${data.fee_trend[data.fee_trend.length - 1].avg_score} in the priciest tenth - click/tap any point on it for that bucket's exact average and sample size.`;
+    `${feePoints.length.toLocaleString()} transfers with a disclosed fee (free/undisclosed fees excluded, since they can't sit on a log axis). ` +
+    `The trend line's average score climbs from ${data.fee_trend[0].avg_score} in the cheapest tenth of fees to ${data.fee_trend[data.fee_trend.length - 1].avg_score} in the priciest tenth; click/tap any point on it for that bucket's exact average and sample size.`;
 
   document.getElementById("age-score-chart").innerHTML = buildAgeScoreChart(rows, data.age_trend);
   document.getElementById("age-score-desc").textContent =
-    `All ${rows.length.toLocaleString()} scored transfers. The trend line's average score falls from ${data.age_trend[0].avg_score} for the youngest transfers to ${data.age_trend[data.age_trend.length - 1].avg_score} for the oldest - buying young tends to pay off, at least on average. Click/tap any point on it for that bucket's exact numbers.`;
+    `All ${rows.length.toLocaleString()} scored transfers. The trend line's average score falls from ${data.age_trend[0].avg_score} for the youngest transfers to ${data.age_trend[data.age_trend.length - 1].avg_score} for the oldest, so buying young tends to pay off, at least on average. Click/tap any point on it for that bucket's exact numbers.`;
 
   renderHeightChart();
 
@@ -501,10 +501,10 @@ function renderAll() {
   `;
   const years = data.by_year.map(d => d.year);
   document.getElementById("volume-desc").textContent =
-    `${years[0]}-${years[years.length - 1]} (the current in-progress year is excluded - see League Trends for why). Both series are indexed to ${years[0]} = 100 so a headcount and a euro amount can share one axis. Click/tap any point for that year's exact number.`;
+    `${years[0]}-${years[years.length - 1]} (the current in-progress year is excluded; see League Trends for why). Both series are indexed to ${years[0]} = 100 so a headcount and a euro amount can share one axis. Click/tap any point for that year's exact number.`;
 
   document.getElementById("feature-importance-desc").textContent =
-    "The trained model's own learned weight for each numeric input (standardized, so every one of these is directly comparable to every other) - not an analysis of this page's own data, but literally what the deployed model keys off when it predicts a score. Categorical features (position, foot, origin/destination league) aren't shown - each expands into many individual category weights, not one number a ranking like this could use.";
+    "The trained model's own learned weight for each numeric input (standardized, so every one of these is directly comparable to every other), not an analysis of this page's own data, but literally what the deployed model keys off when it predicts a score. Categorical features (position, foot, origin/destination league) aren't shown, since each expands into many individual category weights, not one number a ranking like this could use.";
   renderFeatureImportance(data.feature_importance);
 }
 

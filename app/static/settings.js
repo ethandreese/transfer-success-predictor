@@ -225,7 +225,7 @@ function injectSettingsUI() {
           <option value="USD">USD ($)</option>
           <option value="GBP">GBP (&pound;)</option>
         </select>
-        <p class="settings-note">Fees and market values shown across the site convert at a fixed, approximate rate - not a live feed.</p>
+        <p class="settings-note">Fees and market values shown across the site convert at a fixed, approximate rate, not a live feed.</p>
       </div>
       <div class="field">
         <label for="theme-select">Theme</label>

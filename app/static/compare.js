@@ -332,7 +332,7 @@ function verdictSentence(results) {
   if (gap < 3) {
     return results.length === 2
       ? "These two scenarios score within a few points of each other, roughly a toss-up given the model's error margin."
-      : `${top.label} scores highest at ${top.success_score}, but within a few points of ${second.label} - roughly a toss-up given the model's error margin.`;
+      : `${top.label} scores highest at ${top.success_score}, but within a few points of ${second.label}, roughly a toss-up given the model's error margin.`;
   }
   return results.length === 2
     ? `${top.label} scores ${gap.toFixed(1)} points higher than ${second.label}.`

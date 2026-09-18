@@ -77,7 +77,7 @@ function buildPredictedActualChart(rows) {
   const dots = rows.map(r => scatterPoint(
     x(r.predicted_score).toFixed(1), y(r.success_score).toFixed(1), deltaColor(r.surprise_delta), 0.4,
     r.player_id, r.transfer_date, r.predicted_score, r.surprise_delta,
-    `${r.name}: predicted ${r.predicted_score}, actual ${r.success_score} (${signed(r.surprise_delta)}) - click for details`,
+    `${r.name}: predicted ${r.predicted_score}, actual ${r.success_score} (${signed(r.surprise_delta)}), click for details`,
   )).join("");
 
   const ticks = [0, 25, 50, 75, 100];

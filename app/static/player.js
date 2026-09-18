@@ -304,7 +304,7 @@ function renderLegend(careerA, careerB) {
       <span><span class="legend-dot legend-dot-permanent"></span> Permanent transfer</span>
       <span><span class="legend-dot legend-dot-loan"></span> Loan</span>
       <span>&#9733; Career peak</span>
-      <span class="legend-note">Colored by score - green high, red low</span>
+      <span class="legend-note">Colored by score: green high, red low</span>
     `;
     return;
   }
@@ -312,7 +312,7 @@ function renderLegend(careerA, careerB) {
     <span>&#9679; / &#9675; ${careerA.name} (permanent/loan)</span>
     <span>&#9632; / &#9633; ${careerB.name} (permanent/loan)</span>
     <span>&#9733; Career peak</span>
-    <span class="legend-note">Colored by score - green high, red low</span>
+    <span class="legend-note">Colored by score: green high, red low</span>
   `;
 }
 
@@ -325,7 +325,7 @@ function renderSimilarCareers(entries) {
   }
   container.innerHTML = `
     <h3>Similar career shape</h3>
-    <p class="surprises-intro">Other players whose career started, ended, and swung a similar way - click one to compare them side by side.</p>
+    <p class="surprises-intro">Other players whose career started, ended, and swung a similar way. Click one to compare them side by side.</p>
     ${entries.map(e => `<button type="button" class="similar-career-btn" data-player-id="${e.player_id}">${e.name}</button>`).join("")}
   `;
   container.querySelectorAll(".similar-career-btn").forEach(btn => {

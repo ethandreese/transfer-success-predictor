@@ -312,7 +312,7 @@ async function renderTrendMarkers(score, age, feeEur) {
   if (feeEur > 0) {
     feeChart.innerHTML = buildTrendMarkerChart(trends.fee_trend, feeEur, score, "log");
     const trendAvg = nearestTrendAvg(trends.fee_trend, feeEur);
-    feeDesc.textContent = `At ${formatMoney(feeEur)}, transfers around this fee average ${trendAvg} - this prediction (${score}) is ${landsClause(score, trendAvg)} that.`;
+    feeDesc.textContent = `At ${formatMoney(feeEur)}, transfers around this fee average ${trendAvg}; this prediction (${score}) is ${landsClause(score, trendAvg)} that.`;
   } else {
     feeChart.innerHTML = "";
     feeDesc.textContent = "A free transfer has no fee to plot against the sitewide fee trend.";
@@ -321,7 +321,7 @@ async function renderTrendMarkers(score, age, feeEur) {
   document.getElementById("age-trend-chart").innerHTML = buildTrendMarkerChart(trends.age_trend, age, score, "linear");
   const ageTrendAvg = nearestTrendAvg(trends.age_trend, age);
   document.getElementById("age-trend-desc").textContent =
-    `At age ${age.toFixed(1)}, transfers around this age average ${ageTrendAvg} - this prediction (${score}) is ${landsClause(score, ageTrendAvg)} that.`;
+    `At age ${age.toFixed(1)}, transfers around this age average ${ageTrendAvg}; this prediction (${score}) is ${landsClause(score, ageTrendAvg)} that.`;
 }
 
 /** Render a /api/predict response into the #result panel. Factored out from the click handler so a settings change (currency) can re-render the last result without re-predicting. */
