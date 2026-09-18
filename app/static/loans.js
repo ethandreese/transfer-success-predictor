@@ -74,6 +74,54 @@ function conversionBadge(convertedToPermanent, conversionDate, conversionScore) 
   return `<span class="loan-conversion-badge" title="Signed permanently on ${conversionDate.slice(0, 7)}, scored ${conversionScore}">&#10003; Permanent</span>`;
 }
 
+/** Render "N loans, avg score X, avg duration Y days" above the table, from /api/loans' summary (computed over the *full* filtered set server-side, not just the current page). */
+function renderResultsSummary(total, summary) {
+  const el = document.getElementById("results-summary");
+  if (!total) {
+    el.textContent = "";
+    return;
+  }
+  el.textContent = `${total.toLocaleString()} loan${total === 1 ? "" : "s"}, avg score ${summary.avg_score}, avg duration ${durationDisplay(summary.avg_duration_days, false)}`;
+}
+
+/**
+ * Click-to-sort table headers, an alternative to the Sort by dropdown -
+ * both drive the same sort-select value, so everything downstream stays
+ * in sync no matter which control was used. Clicking the already-active
+ * column toggles its order; clicking a different one switches to it at a
+ * sensible default direction. Same pattern as browse.js's own version -
+ * every field/direction combination this can produce must exist as a
+ * real <option> in the dropdown (see loans.html).
+ */
+const SORTABLE_COLUMN_DEFAULT_ORDER = {
+  transfer_date: "desc", age_at_transfer: "asc", tenure_days: "desc", loan_success_score: "desc",
+};
+
+function wireSortableHeaders() {
+  document.querySelectorAll(".sortable-th").forEach(th => {
+    th.addEventListener("click", () => {
+      const field = th.dataset.sort;
+      const sortSelect = document.getElementById("sort-select");
+      const [currentField, currentOrder] = sortSelect.value.split(":");
+      const order = currentField === field
+        ? (currentOrder === "desc" ? "asc" : "desc")
+        : SORTABLE_COLUMN_DEFAULT_ORDER[field];
+      sortSelect.value = `${field}:${order}`;
+      resetAndLoad();
+    });
+  });
+}
+
+/** Add a small ▲/▼ to whichever column header matches the current sort-select value, and mark it .is-active-sort - called after every table load so the indicator tracks the dropdown too, not just header clicks. */
+function updateSortIndicator() {
+  const [field, order] = document.getElementById("sort-select").value.split(":");
+  document.querySelectorAll(".sortable-th").forEach(th => {
+    const isActive = th.dataset.sort === field;
+    th.classList.toggle("is-active-sort", isActive);
+    th.innerHTML = th.textContent.replace(/\s*[▲▼]$/, "") + (isActive ? ` <span class="sort-arrow">${order === "asc" ? "▲" : "▼"}</span>` : "");
+  });
+}
+
 /** Fetch the current page of loans (per currentParams()) and render the table body, pagination controls, and per-row click handlers. */
 async function loadTable() {
   const tbody = document.getElementById("table-body");
@@ -81,6 +129,8 @@ async function loadTable() {
   const res = await fetch(`/api/loans?${currentParams().toString()}`);
   const data = await res.json();
   state.total = data.total;
+  renderResultsSummary(data.total, data.summary);
+  updateSortIndicator();
 
   if (!data.results.length) {
     tbody.innerHTML = `<tr><td colspan="9">No loans match these filters.</td></tr>`;
@@ -327,6 +377,8 @@ if (urlParams.min_age) document.getElementById("min-age-input").value = urlParam
 if (urlParams.max_age) document.getElementById("max-age-input").value = urlParams.max_age;
 if (urlParams.min_duration) document.getElementById("min-duration-input").value = (parseFloat(urlParams.min_duration) / 365.25).toFixed(1);
 if (urlParams.max_duration) document.getElementById("max-duration-input").value = (parseFloat(urlParams.max_duration) / 365.25).toFixed(1);
+
+wireSortableHeaders();
 
 if (urlParams.position || urlParams.league) {
   loadFilters().then(() => {

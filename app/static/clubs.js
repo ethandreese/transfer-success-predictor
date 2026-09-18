@@ -490,9 +490,12 @@ function showCard(club) {
   state.openClub = club;
   state.openTransfer = null;
   const content = document.getElementById("card-modal-content");
+  const trendClause = club.score_improvement != null
+    ? ` Recruiting trend: <strong style="color:${totalColor(club.score_improvement)}">${club.score_improvement >= 0 ? "+" : ""}${club.score_improvement} pts</strong> (second half vs. first half of this club's incoming transfers, by date).`
+    : "";
   const buyerSection = club.transfers_in ? `
     <h3>As a buyer</h3>
-    <p>${club.transfers_in} incoming transfers, averaging <strong style="color:${scoreColor(club.avg_incoming_score)}">${club.avg_incoming_score}</strong> / 100, ${formatMoney(club.total_spent)} spent.</p>
+    <p>${club.transfers_in} incoming transfers, averaging <strong style="color:${scoreColor(club.avg_incoming_score)}">${club.avg_incoming_score}</strong> / 100, ${formatMoney(club.total_spent)} spent.${trendClause}</p>
     ${highlightLine("Best signing", club.best_signing)}
     ${highlightLine("Worst signing", club.worst_signing)}
   ` : `<h3>As a buyer</h3><p>No scored incoming transfers.</p>`;

@@ -828,6 +828,12 @@ button.predict-btn:disabled {
   border-bottom: 1px solid var(--border);
 }
 
+/** A clickable column header (see wireSortableHeaders in browse.js/loans.js/surprises.js) - the same sort a page's dropdown already offers, reachable directly from the table itself. */
+.sortable-th { cursor: pointer; user-select: none; }
+.sortable-th:hover { color: var(--text); }
+.sortable-th.is-active-sort { color: var(--text); }
+.sortable-th .sort-arrow { margin-left: 0.3rem; color: var(--accent); font-size: 0.75em; }
+
 .transfers-table td {
   padding: 0.6rem 0.7rem;
   border-bottom: 1px solid var(--border);

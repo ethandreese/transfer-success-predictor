@@ -502,6 +502,39 @@ function renderAll() {
   const years = data.by_year.map(d => d.year);
   document.getElementById("volume-desc").textContent =
     `${years[0]}-${years[years.length - 1]} (the current in-progress year is excluded - see League Trends for why). Both series are indexed to ${years[0]} = 100 so a headcount and a euro amount can share one axis. Click/tap any point for that year's exact number.`;
+
+  document.getElementById("feature-importance-desc").textContent =
+    "The trained model's own learned weight for each numeric input (standardized, so every one of these is directly comparable to every other) - not an analysis of this page's own data, but literally what the deployed model keys off when it predicts a score. Categorical features (position, foot, origin/destination league) aren't shown - each expands into many individual category weights, not one number a ranking like this could use.";
+  renderFeatureImportance(data.feature_importance);
+}
+
+/**
+ * "What actually predicts success" - the trained model's own learned
+ * feature weights (see /api/analytics' feature_importance), ranked by
+ * magnitude. Reuses the exact .explain-row/.explain-bar-fill markup
+ * Predict/Compare already use for per-feature contributions - same
+ * visual language (green raises the score, red lowers it), just applied
+ * to the model's fixed, sitewide coefficients instead of one specific
+ * prediction's swap-and-measure contributions. Bar width is relative to
+ * the single largest |coefficient| in the list, not an absolute scale -
+ * these are standardized-feature coefficients, useful for ranking
+ * against each other but not meaningful as a raw percentage of anything.
+ */
+function renderFeatureImportance(importance) {
+  const maxAbs = Math.max(...importance.map(f => Math.abs(f.coefficient)));
+  document.getElementById("feature-importance-list").innerHTML = importance.map(f => {
+    const positive = f.coefficient >= 0;
+    const width = Math.abs(f.coefficient) / maxAbs * 100;
+    return `
+      <div class="explain-row">
+        <span class="explain-label">${f.label}</span>
+        <div class="explain-bar-track">
+          <div class="explain-bar-fill ${positive ? "pos" : "neg"}" style="width:${width}%"></div>
+        </div>
+        <span class="explain-value">${positive ? "+" : ""}${f.coefficient}</span>
+      </div>
+    `;
+  }).join("");
 }
 
 async function load() {

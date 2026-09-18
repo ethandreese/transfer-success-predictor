@@ -13,7 +13,7 @@
   <meta name="twitter:title" content="Analytics - Transfer Success Predictor" />
   <meta name="twitter:description" content="Five charts across every scored transfer, from fee/age/height vs. success to the market over time." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="stylesheet" href="/style.css?v=54" />
+  <link rel="stylesheet" href="/style.css?v=55" />
 </head>
 <body>
   <header>
@@ -109,6 +109,12 @@
       <div class="timeline-chart-wrap" id="volume-chart"></div>
       <div class="timeline-legend" id="volume-legend"></div>
     </section>
+
+    <section class="card">
+      <h2>What actually predicts success</h2>
+      <p class="surprises-intro" id="feature-importance-desc">Loading...</p>
+      <div id="feature-importance-list"></div>
+    </section>
   </main>
 
   <div class="modal-backdrop" id="card-modal-backdrop">
@@ -120,7 +126,7 @@
 
   <div id="chart-tooltip" role="status" hidden></div>
 
-  <script src="/settings.js?v=54"></script>
-  <script src="/analytics.js?v=54"></script>
+  <script src="/settings.js?v=55"></script>
+  <script src="/analytics.js?v=55"></script>
 </body>
 </html>

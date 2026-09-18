@@ -276,7 +276,13 @@ rather than doubling as the predict form (see Project history).
   exists, so trying a range of fees doesn't need a re-click of "Predict
   success" for each one. Age has no equivalent slider - a player's age at
   a hypothetical transfer isn't something to explore a range of the way a
-  fee is, so it stays a plain editable field.
+  fee is, so it stays a plain editable field. A "What would move this
+  most" section (hidden when there's nothing to show) runs the reverse of
+  "why this score": it swaps a handful of genuinely player-improvable
+  stats (recent scoring rate, the four FotMob composites) to a better
+  value and reports the score gain, ranked biggest first - a scouting-
+  style answer to "what should this player actually get better at,"
+  distinct from the fee/club-value context "why this score" explains.
 - **`/compare.html`** — set up 2-4 hypothetical transfers side by side
   (same player to different clubs, or entirely different players) and see
   every prediction, range, and top factors together, with the highest
@@ -288,25 +294,37 @@ rather than doubling as the predict form (see Project history).
   and club by id (`/api/players/{id}`, `/api/clubs/{id}`) and re-runs the
   comparison automatically. A stale or mistyped link (an id that no
   longer resolves) leaves the form untouched rather than populating
-  whichever scenarios happened to succeed while another sat blank.
+  whichever scenarios happened to succeed while another sat blank. A
+  "Compare by factor" table below the score cards shows every scenario's
+  full set of factors (`top_k=25` internally, comfortably more than the
+  ~17-20 that exist) side by side, most-differentiating first, with the
+  cell each factor favors most highlighted - unlike each scenario's own
+  "Top factors" list (its own top 3), this answers not just *that* one
+  option wins but *which specific factors* actually carry it.
 - **`/browse.html`** — every scored transfer (~8,300), filterable by
   position, destination league, fee range, and age range, searchable by
-  player/club name, sortable by score/date/fee/age, paginated. Click any
-  row to open that transfer's full card (score + breakdown) in a modal.
-  Every filter/search/sort selection syncs to the URL, and an "Export
-  these results as CSV" link (`/api/transfers/export`, uncapped - it
-  ignores pagination and returns every matching row) always reflects the
-  current filters.
+  player/club name, sortable by score/date/fee/age (via the dropdown or
+  by clicking a sortable column header directly, both driving the same
+  state so neither can drift out of sync), paginated. Click any row to
+  open that transfer's full card (score + breakdown) in a modal. A
+  results-summary line above the table ("8,358 transfers, avg score
+  49.1, €46.97b total spent") reads on the *entire* filtered set, not
+  just the current page. Every filter/search/sort selection syncs to the
+  URL, and an "Export these results as CSV" link
+  (`/api/transfers/export`, uncapped - it ignores pagination and returns
+  every matching row) always reflects the current filters.
 - **`/loans.html`** — every scored loan spell (~4,300), same browse/filter/
-  search/click-to-view-card/URL-sync/CSV-export experience as
-  `/browse.html` (filterable by age range and loan duration rather than
-  fee, since most loans carry no real fee), but scored on the loan-specific
-  formula above (no fee/resale rows in the breakdown, and duration shown
-  in months rather than years). A loan whose player later signed
-  permanently for the same club they were on loan at (detected by matching
-  player + from/to club against a later row in the transfers data - see
-  `find_loan_conversion()`) gets a "✓ Permanent" badge, in both the table
-  and the detail card, linking to that conversion's date and score.
+  search/click-to-view-card/URL-sync/CSV-export/click-to-sort/results-
+  summary experience as `/browse.html` (filterable by age range and loan
+  duration rather than fee, since most loans carry no real fee, and the
+  summary reads avg duration instead of total spend for the same reason),
+  but scored on the loan-specific formula above (no fee/resale rows in
+  the breakdown, and duration shown in months rather than years). A loan
+  whose player later signed permanently for the same club they were on
+  loan at (detected by matching player + from/to club against a later
+  row in the transfers data - see `find_loan_conversion()`) gets a
+  "✓ Permanent" badge, in both the table and the detail card, linking to
+  that conversion's date and score.
 - **`/surprises.html`** ("Model vs Reality") — a predicted-vs-actual
   scatter (`/api/surprises/scatter`, every held-out prediction at once,
   unfiltered - same "ship everything" approach as Analytics) with a
@@ -319,7 +337,10 @@ rather than doubling as the predict form (see Project history).
   or (via the Show filter) the calls it got closest to right. Same
   filter/search/click-to-view-card experience as Browse, plus the
   model's own number shown alongside the real one; clicking a scatter
-  point opens the same detail card.
+  point opens the same detail card. A second collapsible chart, "Model
+  accuracy over time," plots the held-out model's mean absolute error by
+  transfer year - is the model's calibration actually improving as more
+  training data accumulates, not just how it did on any one prediction.
 - **`/clubs.html`** — every club that's bought or sold at least one scored
   permanent transfer, ranked as a recruiter: incoming transfers and their
   average score, total spent, buy-develop-resell profit on the subset it
@@ -337,7 +358,13 @@ rather than doubling as the predict form (see Project history).
   side by side, with the unambiguous "higher is better" rows (avg incoming
   score, avg resale profit) highlighting whichever club wins - synced to
   the URL (`club_a`/`club_b`) so a comparison is bookmarkable and
-  shareable, the same as every other filtered view on the site.
+  shareable, the same as every other filtered view on the site. A
+  "Most improved recruiters first" sort option ranks clubs by
+  second-half-vs-first-half average incoming score (split by count of
+  transfers, not a fixed year window, so every club clearing
+  `MIN_CLUB_TRANSFERS` gets a fair comparison regardless of how many
+  years its history spans) - the number itself shows up as a
+  "Recruiting trend" line in the club's own report card too.
 - **`/player.html`** — search a player to see their whole scored career as
   a timeline: one point per permanent transfer or loan, positioned by its
   real date (not just evenly spaced) and colored by score, connected in
@@ -355,7 +382,10 @@ rather than doubling as the predict form (see Project history).
   whose career trajectory (how it started, ended, and swung - see
   `nearest_similar_careers`) is closest to the one just searched;
   clicking a suggestion loads it straight into the comparison so the
-  claimed similarity is immediately checkable, not just asserted.
+  claimed similarity is immediately checkable, not just asserted. A
+  small star marks each shown career's single highest-scored stop - a
+  "where was the peak" cue on a long timeline, shown for both careers at
+  once in a comparison.
 - **`/leagues.html`** — every league with at least 15 scored permanent
   transfers, ranked by transfer volume, average score/fee, or the change
   between its earliest and most recent 3 complete years (the current,
@@ -367,7 +397,9 @@ rather than doubling as the predict form (see Project history).
   themselves - and a cross-league flow breakdown: its top trading
   partners by transfer count, incoming and outgoing, excluding transfers
   that stayed within the league itself (e.g. the Premier League's
-  biggest source is Ligue 1, its biggest outflow is to Laliga).
+  biggest source is Ligue 1, its biggest outflow is to Laliga) - and a
+  position-mix breakdown of that same league's incoming transfers (does
+  it buy disproportionately more attackers than others, say).
 - **`/analytics.html`** — five hand-drawn SVG charts over every scored
   permanent transfer (`/api/analytics`, computed fresh per request - the
   dataset's small enough that there's no need to precompute at startup):
@@ -387,7 +419,12 @@ rather than doubling as the predict form (see Project history).
   yearly point shows a small tooltip with its exact numbers (see
   `showChartTooltip()` in `analytics.js` - a native `<title>` hover
   tooltip is also present as a free bonus on desktop, but never fires on
-  a touch device, so it isn't the thing actually relied on).
+  a touch device, so it isn't the thing actually relied on). A sixth
+  section, "What actually predicts success," ranks the *deployed model's*
+  own learned feature weights (the trained Ridge pipeline's coefficients
+  on its standardized numeric features, pulled directly from `pipeline`,
+  not a fresh analysis) - the real answer to what the model keys off,
+  reusing Predict/Compare's `.explain-row` bar markup.
 - **`/about.html`** — what the site does and how the numbers are computed,
   in plain language.
 
@@ -608,6 +645,45 @@ the git history.
   symmetric playing-time rule that doesn't apply to loans).
 
 **Frontend**
+- Added eight features from a second brainstorm pass, one per page
+  (Predict, Compare, Browse/Loans, Model vs Reality, Club Report Cards,
+  League Trends, Analytics, Player Timelines):
+  - Predict: "What would move this most" (`sensitivity_analysis` in
+    `app/main.py`) - swaps a handful of genuinely player-improvable
+    stats to a better value and reports the gain, the inverse question
+    from the existing "why this score" (typical-value comparison).
+  - Compare: a "Compare by factor" table showing every scenario's full
+    factor set side by side (`/api/predict` gained an optional `top_k`
+    param, defaulting to 5 for Predict's own display; `compare()` passes
+    25 so no two scenarios' explanations can fail to cover the same
+    factors), ranked by cross-scenario spread, winning cell highlighted.
+  - Browse/Loans: a results-summary line reading `/api/transfers`'/
+    `/api/loans`' new `summary` field (avg score + total spent/avg
+    duration, computed over the full filtered set server-side before
+    pagination) and click-to-sort table headers, driving the same
+    sort-select value the dropdown already did so the two can never
+    drift apart - added the previously-missing reverse-direction sort
+    options (`transfer_fee:asc`, `age_at_transfer:desc`, `tenure_days:*`)
+    so every sortable column has both directions available either way.
+  - Model vs Reality: a second collapsible chart, "Model accuracy over
+    time" (mean absolute surprise per year, from `/api/surprises/scatter`'s
+    new `accuracy_by_year`) - required porting the click/tap chart-
+    tooltip pattern (`showChartTooltip`/`#chart-tooltip`) into
+    `surprises.js`, which hadn't needed it before this chart.
+  - Club Report Cards: a "Most improved recruiters first" sort
+    (`score_improvement` - second-half-vs-first-half average incoming
+    score, split by transfer count rather than a fixed year window so
+    it works regardless of how many years a club's own history spans),
+    surfaced as a "Recruiting trend" line in the club's own report card.
+  - League Trends: a position-mix breakdown of each league's incoming
+    transfers, reusing the same `.breakdown-row` bar markup as the
+    cross-league flow lists right above it.
+  - Analytics: "What actually predicts success" - the *deployed model's*
+    own learned feature weights (`FEATURE_IMPORTANCE`, computed once at
+    import from `pipeline.named_steps["model"].coef_`, not a fresh
+    analysis), reusing Predict/Compare's `.explain-row` bar markup.
+  - Player Timelines: a star marking each shown career's single highest-
+    scored stop, shown for both careers at once in a comparison.
 - Added a new Analytics chart: height vs. success score, split into four
   per-position trend lines via `height_trend_by_position`, rather than
   one sitewide line that would hide whether the relationship actually

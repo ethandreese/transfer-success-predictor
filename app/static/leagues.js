@@ -160,9 +160,24 @@ function showLeague(league) {
           ${renderLeagueFlow(league.sells_to)}
         </div>
       </div>
+      <h3>Position mix</h3>
+      ${renderPositionMix(league.position_mix)}
     </div>
   `;
   cardModal.open();
+}
+
+/** This league's incoming transfers by position (see /api/leagues/trends' position_mix), as bar rows scaled to each position's share of the league's total - the same .breakdown-row/.breakdown-bar-fill markup Club Report Cards' position breakdown and the cross-league flow lists above already use for a labeled bar list. */
+function renderPositionMix(mix) {
+  return mix.map(m => `
+    <div class="breakdown-row">
+      <span class="breakdown-label">${m.position} <span style="color:var(--muted)">(${m.transfers})</span></span>
+      <div class="breakdown-bar-track">
+        <div class="breakdown-bar-fill" style="width:${m.pct}%; background:var(--accent)"></div>
+      </div>
+      <span class="breakdown-value">${m.pct}%</span>
+    </div>
+  `).join("");
 }
 
 /** Close the league modal. */

@@ -84,6 +84,58 @@ function tenureDisplay(days, stillAtClub) {
   return `${years}y${stillAtClub ? " (current)" : ""}`;
 }
 
+/** Render "N transfers, avg score X, €Y total spent" above the table, from /api/transfers' summary (computed over the *full* filtered set server-side, not just the current page) - a read on the filtered view as a whole, not just whichever page happens to be showing. */
+function renderResultsSummary(total, summary) {
+  const el = document.getElementById("results-summary");
+  if (!total) {
+    el.textContent = "";
+    return;
+  }
+  el.textContent = `${total.toLocaleString()} transfer${total === 1 ? "" : "s"}, avg score ${summary.avg_score}, ${formatMoney(summary.total_spent)} total spent`;
+}
+
+/**
+ * Click-to-sort table headers, an alternative to the Sort by dropdown -
+ * both drive the same sort-select value, so everything downstream
+ * (currentParams/syncURL/the dropdown's own displayed selection) stays
+ * in sync automatically no matter which control was actually used.
+ * Clicking the already-active column's header toggles its order;
+ * clicking a different one switches to it at a sensible default
+ * direction. Every field/direction combination this can produce must
+ * exist as a real <option> in the dropdown (see browse.html) - setting
+ * sort-select.value to a string with no matching option would silently
+ * fail to select anything and desync the header's own indicator from
+ * what's actually being requested.
+ */
+const SORTABLE_COLUMN_DEFAULT_ORDER = {
+  transfer_date: "desc", age_at_transfer: "asc", transfer_fee: "desc", tenure_days: "desc", success_score: "desc",
+};
+
+function wireSortableHeaders() {
+  document.querySelectorAll(".sortable-th").forEach(th => {
+    th.addEventListener("click", () => {
+      const field = th.dataset.sort;
+      const sortSelect = document.getElementById("sort-select");
+      const [currentField, currentOrder] = sortSelect.value.split(":");
+      const order = currentField === field
+        ? (currentOrder === "desc" ? "asc" : "desc")
+        : SORTABLE_COLUMN_DEFAULT_ORDER[field];
+      sortSelect.value = `${field}:${order}`;
+      resetAndLoad();
+    });
+  });
+}
+
+/** Add a small ▲/▼ to whichever column header matches the current sort-select value, and mark it .is-active-sort - called after every table load so the indicator tracks the dropdown too, not just header clicks. */
+function updateSortIndicator() {
+  const [field, order] = document.getElementById("sort-select").value.split(":");
+  document.querySelectorAll(".sortable-th").forEach(th => {
+    const isActive = th.dataset.sort === field;
+    th.classList.toggle("is-active-sort", isActive);
+    th.innerHTML = th.textContent.replace(/\s*[▲▼]$/, "") + (isActive ? ` <span class="sort-arrow">${order === "asc" ? "▲" : "▼"}</span>` : "");
+  });
+}
+
 /** Fetch the current page of transfers (per currentParams()) and render the table body, pagination controls, and per-row click handlers. */
 async function loadTable() {
   const tbody = document.getElementById("table-body");
@@ -91,6 +143,8 @@ async function loadTable() {
   const res = await fetch(`/api/transfers?${currentParams().toString()}`);
   const data = await res.json();
   state.total = data.total;
+  renderResultsSummary(data.total, data.summary);
+  updateSortIndicator();
 
   if (!data.results.length) {
     tbody.innerHTML = `<tr><td colspan="9">No transfers match these filters.</td></tr>`;
@@ -351,6 +405,8 @@ if (urlParams.max_fee) state.maxFeeEurM = parseFloat(urlParams.max_fee) / 1_000_
 updateFeeCurrencyDisplay();
 if (urlParams.min_age) document.getElementById("min-age-input").value = urlParams.min_age;
 if (urlParams.max_age) document.getElementById("max-age-input").value = urlParams.max_age;
+
+wireSortableHeaders();
 
 if (urlParams.position || urlParams.league) {
   loadFilters().then(() => {

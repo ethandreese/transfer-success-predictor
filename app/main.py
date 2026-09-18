@@ -492,6 +492,24 @@ def build_club_report_cards(df):
             "transfer_date": str(r["transfer_date"])[:10],
         }
 
+    def improvement_score(g):
+        """
+        Second-half vs. first-half average incoming score, split by count
+        (not a fixed year window) within this club's own transfers-in,
+        sorted chronologically - "is this club's recruiting trending up or
+        down." A per-club adaptation of League Trends' early-vs-recent
+        comparison: a fixed multi-year window works there because a
+        handful of major leagues all have long, dense histories, but most
+        individual clubs don't - splitting by count instead means every
+        club with enough transfers to clear MIN_CLUB_TRANSFERS gets a
+        real, evenly-sized two-period comparison regardless of how many
+        years its history happens to span.
+        """
+        g = g.sort_values("transfer_date")
+        mid = len(g) // 2
+        first_half, second_half = g.iloc[:mid], g.iloc[mid:]
+        return float(second_half["success_score"].mean() - first_half["success_score"].mean())
+
     rows = {}
     for club, g in df.groupby("to_club_name"):
         mode = g["to_domestic_competition_id"].mode()
@@ -510,6 +528,7 @@ def build_club_report_cards(df):
             "total_resale_profit": float(profit.sum()),
             "best_flip": flip_highlight(resold, profit, best=True) if len(resold) else None,
             "worst_flip": flip_highlight(resold, profit, best=False) if len(resold) else None,
+            "score_improvement": improvement_score(g) if len(g) >= MIN_CLUB_TRANSFERS else None,
         }
 
     for club, g in df.groupby("from_club_name"):
@@ -522,6 +541,7 @@ def build_club_report_cards(df):
             "best_signing": None, "worst_signing": None,
             "resales_count": 0, "avg_resale_profit_pct": None,
             "total_resale_profit": 0.0, "best_flip": None, "worst_flip": None,
+            "score_improvement": None,
         })
         if row["league_id"] is None:
             mode = g["from_domestic_competition_id"].mode()
@@ -567,6 +587,13 @@ def league_flow(g, id_col):
     """
     counts = g[id_col].value_counts().head(TOP_LEAGUE_FLOW_COUNT)
     return [{"league_id": lid, "league": league_display_name(lid), "transfers": int(n)} for lid, n in counts.items()]
+
+
+def position_mix(g):
+    """This league's incoming transfers (g) grouped by position - count and share of the league's total, ranked most-common first. Powers League Trends' position-mix breakdown (does this league buy disproportionately more attackers than others, say)."""
+    counts = g["position"].value_counts()
+    total = len(g)
+    return [{"position": p, "transfers": int(n), "pct": round(float(n) / total * 100, 1)} for p, n in counts.items()]
 
 
 def build_league_trends(df):
@@ -631,6 +658,7 @@ def build_league_trends(df):
             "by_year": [],
             "buys_from": league_flow(g[g["from_domestic_competition_id"] != league_id], "from_domestic_competition_id"),
             "sells_to": league_flow(outgoing[outgoing["to_domestic_competition_id"] != league_id], "to_domestic_competition_id"),
+            "position_mix": position_mix(g),
         }
 
         complete = g[g["year"] < current_year]
@@ -1803,6 +1831,69 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_data_f
     return contributions[:top_k]
 
 
+# The features sensitivity_analysis is willing to swap to a *better* value
+# - genuinely player-improvable performance stats only. Everything else in
+# NUMERIC_FEATURES describes the deal (fee, club value) or a fixed trait
+# (age, height) rather than something a player could realistically get
+# better at, and pre_apps/pre_minutes/pre_mins_per_app (recent playing
+# time) are excluded even though they're arguably improvable - the three
+# are structurally dependent (see explain_prediction's own reasoning for
+# swapping them jointly), and a flat percentage boost on all three at once
+# doesn't obviously mean "a realistically better stretch" the way it does
+# for one rate stat on its own.
+SENSITIVITY_FEATURES = [
+    "pre_goals_p90", "pre_ga_p90",
+    "pre_fotmob_rating_pct", "pre_fotmob_attacking_pct", "pre_fotmob_defensive_pct", "pre_fotmob_possession_pct",
+]
+
+
+def sensitivity_analysis(feature_row: pd.DataFrame, base_score: float, real_data_flags: dict, top_k: int = 3):
+    """
+    "What would move this score most" - the inverse question from
+    explain_prediction, which compares the actual value against a
+    *typical* transfer's. This swaps each of SENSITIVITY_FEATURES to a
+    *better* value and measures the score change: for the four 0-100
+    FotMob composites, a realistic ceiling of 15 points higher (capped at
+    95); for the two uncapped rate stats (goals/goal contributions per
+    90), a flat 25% boost. Skips a feature entirely when real_data_flags
+    marks it as imputed (no real pre-transfer number to improve), when
+    it's already at/above the ceiling (nothing meaningfully better to
+    show), or when improving it wouldn't actually raise the score (a
+    genuinely possible outcome for a nonlinear... well, linear-in-its-
+    own-inputs-but-position-interacted model - not every "better" number
+    helps every player's specific prediction).
+    """
+    def swap_and_score(feat, value):
+        modified = feature_row.copy()
+        modified[feat] = value
+        modified_score = float(pipeline.predict(modified)[0])
+        return round(modified_score - base_score, 1)
+
+    results = []
+    for feat in SENSITIVITY_FEATURES:
+        if not real_data_flags.get(feat, True):
+            continue
+        actual = feature_row[feat].iloc[0]
+        if feat in PRETRANSFER_FOTMOB_COMPOSITE_RAW_FEATURES:
+            target = min(actual + 15, 95)
+            if target <= actual:
+                continue
+            gain = swap_and_score(feat, target)
+            detail = f"a {ordinal(target)}-percentile level (up from {ordinal(actual)}) would raise the score by {gain} pts"
+        else:
+            if actual <= 0:
+                continue
+            target = actual * 1.25
+            gain = swap_and_score(feat, target)
+            detail = f"a 25% higher rate ({actual:.2f} → {target:.2f}) would raise the score by {gain} pts"
+        if gain <= 0:
+            continue
+        results.append({"feature": feat, "label": FEATURE_LABELS[feat], "gain": gain, "detail": detail})
+
+    results.sort(key=lambda r: r["gain"], reverse=True)
+    return results[:top_k]
+
+
 def find_comparables(feature_row: pd.DataFrame, k: int = 5):
     """
     Look up the k most similar historical transfers to `feature_row` using
@@ -2177,6 +2268,11 @@ CLUB_SORT_FIELDS = {
     "total_resale_profit": (None, 0),
     "transfers_in": (None, 0),
     "transfers_out": (None, 0),
+    # No min_field here unlike avg_incoming_score above - score_improvement
+    # is already None below MIN_CLUB_TRANSFERS at the source (see
+    # improvement_score/build_club_report_cards), so the dropna(subset=...)
+    # a few lines below already excludes every club too thin to rank.
+    "score_improvement": (None, 0),
 }
 
 
@@ -2199,6 +2295,7 @@ def club_row_dict(r):
         "avg_departure_score": None if pd.isna(r["avg_departure_score"]) else round(float(r["avg_departure_score"]), 1),
         "best_departure": r["best_departure"],
         "worst_departure": r["worst_departure"],
+        "score_improvement": None if pd.isna(r["score_improvement"]) else round(float(r["score_improvement"]), 1),
     }
 
 
@@ -2382,6 +2479,7 @@ def leagues_trends(sort: str = "transfers", order: str = "desc"):
             "by_year": r["by_year"],
             "buys_from": r["buys_from"],
             "sells_to": r["sells_to"],
+            "position_mix": r["position_mix"],
         })
     return {"total": len(results), "results": results}
 
@@ -2396,13 +2494,19 @@ def get_club(club_id: int):
 
 
 @app.post("/api/predict")
-def predict(req: PredictRequest):
+def predict(req: PredictRequest, top_k: int = 5):
     """
     Score a hypothetical transfer: run the model, clip to [0, 100], and
     attach a likely score_range (min/max among the nearest comparable
     historical transfers - a single point estimate would overstate how
-    confident a R^2~0.10 model can be), the top-5 feature explanation, and
-    the comparables themselves.
+    confident a R^2~0.10 model can be), the top-`top_k` feature
+    explanation, a sensitivity analysis (see sensitivity_analysis - "what
+    would move this score most"), and the comparables themselves. top_k
+    defaults to 5 (Predict's own single-scenario display) but compare()
+    below passes a much larger value, so every scenario's explanation
+    covers the same full set of factors and can be compared side by side
+    factor-for-factor rather than just whichever 5 happened to rank
+    highest for that one scenario.
 
     When there's no real recent-performance data at all (see
     impute_recent_performance), the *displayed* score comes from
@@ -2421,7 +2525,8 @@ def predict(req: PredictRequest):
     always); only the headline number is upgraded to the marginalized one -
     the two already don't sum to exactly the same thing for any nonlinear-
     model prediction here, so this doesn't introduce a new kind of gap,
-    just widens the existing one slightly for this one case.
+    just widens the existing one slightly for this one case. sensitivity_analysis
+    is likewise built from median_point_score for the same reason.
     """
     try:
         feature_row, real_data_flags = build_feature_row(req)
@@ -2433,7 +2538,8 @@ def predict(req: PredictRequest):
             raw_score = predict_marginalized_recent_performance(feature_row, position)
         score = max(0.0, min(100.0, raw_score))
         comps = find_comparables(feature_row)
-        explanation = explain_prediction(feature_row, median_point_score, real_data_flags)
+        explanation = explain_prediction(feature_row, median_point_score, real_data_flags, top_k=top_k)
+        sensitivity = sensitivity_analysis(feature_row, median_point_score, real_data_flags)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     comp_scores = [c["success_score"] for c in comps]
@@ -2443,6 +2549,7 @@ def predict(req: PredictRequest):
         "score_range": score_range,
         "comparable_transfers": comps,
         "explanation": explanation,
+        "sensitivity": sensitivity,
         "model_test_mae": metadata["test_mae"],
         "model_test_r2": metadata["test_r2"],
     }
@@ -2461,8 +2568,16 @@ class CompareRequest(BaseModel):
 
 @app.post("/api/compare")
 def compare(req: CompareRequest):
-    """Score every scenario via predict() and return them together, for the compare page."""
-    return {"results": [{**predict(s.request), "label": s.label} for s in req.scenarios]}
+    """
+    Score every scenario via predict() and return them together, for the
+    compare page. top_k=25 comfortably covers every factor predict()'s
+    explanation can produce (~17 today) - Compare's per-factor comparison
+    table needs every scenario's explanation to cover the same full set
+    of factors, not just whichever 5 happened to matter most for that one
+    scenario, or two scenarios could end up with no factors in common to
+    compare at all.
+    """
+    return {"results": [{**predict(s.request, top_k=25), "label": s.label} for s in req.scenarios]}
 
 
 TRANSFER_SORT_FIELDS = {
@@ -2560,18 +2675,29 @@ def list_transfers(
     min_age: float | None = None,
     max_age: float | None = None,
 ):
-    """Paginated, filterable, sortable listing of every scored transfer, for the browse page's table."""
+    """
+    Paginated, filterable, sortable listing of every scored transfer, for
+    the browse page's table. summary (avg_score/total_spent) is computed
+    over the *full* filtered set, before the page-size slice below - a
+    read on the filtered view as a whole (not just whichever 25 rows are
+    currently showing), so the frontend's summary strip doesn't have to
+    fetch every page and sum it client-side.
+    """
     df = filter_transfers(position, league, q, min_fee, max_fee, min_age, max_age)
 
     sort_field = sort if sort in TRANSFER_SORT_FIELDS else "success_score"
     df = df.sort_values(sort_field, ascending=(order == "asc"))
 
     total = len(df)
+    summary = {
+        "avg_score": round(float(df["success_score"].mean()), 1) if total else None,
+        "total_spent": float(df["transfer_fee"].fillna(0).sum()),
+    }
     limit = max(1, min(limit, 100))
     page = df.iloc[offset:offset + limit]
 
     results = [transfer_row_dict(r) for _, r in page.iterrows()]
-    return {"total": total, "limit": limit, "offset": offset, "results": results}
+    return {"total": total, "limit": limit, "offset": offset, "summary": summary, "results": results}
 
 
 @app.get("/api/transfers/export")
@@ -2662,6 +2788,9 @@ def list_surprises(
     return {"total": total, "limit": limit, "offset": offset, "results": results}
 
 
+MIN_SURPRISE_YEAR_SAMPLE = 10
+
+
 @app.get("/api/surprises/scatter")
 def get_surprises_scatter():
     """
@@ -2673,8 +2802,32 @@ def get_surprises_scatter():
     reusing /api/surprises' paginated+filtered listing: the chart's job is
     to show the model's overall calibration, not whatever position/league/
     search the table below happens to have applied at the moment.
+
+    accuracy_by_year is a second, much smaller series alongside the same
+    scatter data: mean absolute surprise (the model's typical miss, in
+    points) per year, for the "is the model's held-out accuracy actually
+    improving over time" chart - excludes the dataset's current
+    in-progress year (same reasoning as every other by-year series on the
+    site) and any year with fewer than MIN_SURPRISE_YEAR_SAMPLE
+    predictions, too few to read as a real yearly trend rather than noise.
     """
     df = transfers_df[transfers_df["predicted_score"].notna()]
+
+    year_df = df.copy()
+    year_df["year"] = pd.to_datetime(year_df["transfer_date"]).dt.year
+    current_year = int(year_df["year"].max())
+    accuracy_grouped = (
+        year_df[year_df["year"] < current_year]
+        .groupby("year")
+        .agg(mae=("surprise_delta", lambda s: s.abs().mean()), n=("surprise_delta", "size"))
+        .reset_index()
+    )
+    accuracy_grouped = accuracy_grouped[accuracy_grouped["n"] >= MIN_SURPRISE_YEAR_SAMPLE]
+    accuracy_by_year = [
+        {"year": int(r["year"]), "mae": round(float(r["mae"]), 1), "n": int(r["n"])}
+        for _, r in accuracy_grouped.sort_values("year").iterrows()
+    ]
+
     return {
         "player_id": df["player_id"].astype(int).tolist(),
         "transfer_date": [str(v)[:10] for v in df["transfer_date"]],
@@ -2682,6 +2835,7 @@ def get_surprises_scatter():
         "predicted_score": numeric_column(df["predicted_score"], ndigits=1),
         "success_score": numeric_column(df["success_score"], ndigits=1),
         "surprise_delta": numeric_column(df["surprise_delta"], ndigits=1),
+        "accuracy_by_year": accuracy_by_year,
     }
 
 
@@ -2791,18 +2945,29 @@ def list_loans(
     min_duration: int | None = None,
     max_duration: int | None = None,
 ):
-    """Paginated, filterable, sortable listing of every scored loan spell, for the loans page's table."""
+    """
+    Paginated, filterable, sortable listing of every scored loan spell,
+    for the loans page's table. summary (avg_score/avg_duration_days) is
+    computed over the *full* filtered set, before the page-size slice
+    below - same reasoning as list_transfers' own summary. Duration
+    rather than spend, unlike transfers - most loans carry no real fee,
+    so a total-spend figure here would mostly just report near-zero.
+    """
     df = filter_loans(position, league, q, min_age, max_age, min_duration, max_duration)
 
     sort_field = sort if sort in LOAN_SORT_FIELDS else "loan_success_score"
     df = df.sort_values(sort_field, ascending=(order == "asc"))
 
     total = len(df)
+    summary = {
+        "avg_score": round(float(df["loan_success_score"].mean()), 1) if total else None,
+        "avg_duration_days": round(float(df["tenure_days"].mean())) if total else None,
+    }
     limit = max(1, min(limit, 100))
     page = df.iloc[offset:offset + limit]
 
     results = [loan_row_dict(r) for _, r in page.iterrows()]
-    return {"total": total, "limit": limit, "offset": offset, "results": results}
+    return {"total": total, "limit": limit, "offset": offset, "summary": summary, "results": results}
 
 
 @app.get("/api/loans/export")
@@ -2932,6 +3097,31 @@ def get_analytics_trends():
     }
 
 
+# The trained model's own learned weights for its numeric features (the
+# StandardScaler-preprocessed Ridge coefficients, in the same order as
+# NUMERIC_FEATURES - ColumnTransformer concatenates the "num" transformer's
+# output first) - "what actually predicts success," for Analytics' feature-
+# importance chart. Every numeric feature was standardized before training,
+# so these coefficients already sit on a comparable scale and need no
+# further normalization to rank by. Computed once at import (a property of
+# the trained model, not of any request), unlike every other /api/analytics
+# field which is recomputed per request from transfers_df. Excludes the 4
+# has_pre_*_data flags - data-quality flags, not football signals (the same
+# exclusion explain_prediction already makes, for the same reason) - and
+# every categorical feature (position, foot, leagues), which OneHotEncoder
+# expands into one coefficient per category rather than a single value a
+# feature-level ranking could use.
+FEATURE_IMPORTANCE = sorted(
+    (
+        {"feature": f, "label": FEATURE_LABELS[f], "coefficient": round(float(c), 3)}
+        for f, c in zip(NUMERIC_FEATURES, pipeline.named_steps["model"].coef_[:len(NUMERIC_FEATURES)])
+        if not f.startswith("has_pre_")
+    ),
+    key=lambda x: abs(x["coefficient"]),
+    reverse=True,
+)
+
+
 @app.get("/api/analytics")
 def get_analytics():
     """
@@ -3005,6 +3195,7 @@ def get_analytics():
         "age_trend": age_trend,
         "by_year": by_year,
         "height_trend_by_position": height_trend_by_position(df),
+        "feature_importance": FEATURE_IMPORTANCE,
     }
 
 

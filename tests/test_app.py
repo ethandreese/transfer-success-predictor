@@ -320,6 +320,46 @@ def test_predict_rejects_invalid_payload():
     assert res.status_code == 422
 
 
+def test_predict_sensitivity_only_shows_genuine_improvements(sample_predict_payload):
+    """Every sensitivity entry's gain must be strictly positive - a feature that's already at/above its ceiling, or whose 'better' value wouldn't actually raise this specific prediction, should never appear."""
+    res = client.post("/api/predict", json=sample_predict_payload)
+    assert res.status_code == 200
+    sensitivity = res.json()["sensitivity"]
+    assert isinstance(sensitivity, list)
+    for entry in sensitivity:
+        assert entry["gain"] > 0
+        assert entry["feature"] in {
+            "pre_goals_p90", "pre_ga_p90",
+            "pre_fotmob_rating_pct", "pre_fotmob_attacking_pct", "pre_fotmob_defensive_pct", "pre_fotmob_possession_pct",
+        }
+    gains = [e["gain"] for e in sensitivity]
+    assert gains == sorted(gains, reverse=True)
+    assert len(sensitivity) <= 3
+
+
+def test_predict_sensitivity_never_includes_recent_playing_time_or_situational_features():
+    """Fee, club value, age, height, and the joint playing-time trio are deliberately excluded - none of them describe something a player could realistically 'get better at' the way a scoring rate or a FotMob composite does."""
+    payload = {
+        "age_at_transfer": 24.0, "height_in_cm": 182.0, "position": "Attack", "sub_position": "Centre-Forward", "foot": "right",
+        "pre_apps": 30.0, "pre_minutes": 2500.0, "pre_goals_p90": 0.1, "pre_ga_p90": 0.1, "pre_mins_per_app": 83.0,
+        "transfer_fee": 50_000_000.0, "value_before": 40_000_000.0,
+        "from_domestic_competition_id": "L1", "to_domestic_competition_id": "GB1",
+        "from_total_market_value": 500_000_000.0, "to_total_market_value": 800_000_000.0,
+    }
+    res = client.post("/api/predict", json=payload)
+    features = {e["feature"] for e in res.json()["sensitivity"]}
+    assert features.isdisjoint({"pre_apps", "pre_minutes", "pre_mins_per_app", "log_transfer_fee", "age_at_transfer", "height_vs_position", "log_value_before"})
+
+
+def test_predict_top_k_param_controls_explanation_length(sample_predict_payload):
+    """top_k should cap the explanation list at that many entries - the default (5, Predict's own display) and a larger value (25, what Compare requests) must both be honored."""
+    default_res = client.post("/api/predict", json=sample_predict_payload)
+    assert len(default_res.json()["explanation"]) == 5
+
+    full_res = client.post("/api/predict", json=sample_predict_payload, params={"top_k": 25})
+    assert len(full_res.json()["explanation"]) > 5
+
+
 def test_compare_returns_one_result_per_scenario_in_order(sample_predict_payload):
     """/api/compare should score every scenario and return them in the same order, each carrying its own label."""
     other = dict(sample_predict_payload, transfer_fee=10_000_000.0)
@@ -357,6 +397,22 @@ def test_compare_rejects_fewer_than_two_or_more_than_four_scenarios(sample_predi
         {"request": sample_predict_payload, "label": f"Option {i}"} for i in range(5)
     ]}
     assert client.post("/api/compare", json=five).status_code == 422
+
+
+def test_compare_explanations_cover_the_full_factor_set_for_every_scenario(sample_predict_payload):
+    """Compare requests top_k=25 internally so every scenario's explanation covers the same full set of factors (~17), not just whichever 5 happened to rank highest for that one scenario - otherwise a per-factor comparison table could find two scenarios with no factor in common at all."""
+    other = dict(sample_predict_payload, transfer_fee=10_000_000.0)
+    res = client.post("/api/compare", json={
+        "scenarios": [
+            {"request": sample_predict_payload, "label": "A"},
+            {"request": other, "label": "B"},
+        ],
+    })
+    results = res.json()["results"]
+    labels_a = {e["feature"] for e in results[0]["explanation"]}
+    labels_b = {e["feature"] for e in results[1]["explanation"]}
+    assert len(labels_a) > 5
+    assert labels_a == labels_b
 
 
 def test_players_search_is_accent_insensitive():
@@ -508,6 +564,15 @@ def test_transfers_list_fee_and_age_range_filters():
     assert all(30 <= r["age_at_transfer"] <= 32 for r in data2["results"])
 
 
+def test_transfers_list_summary_reflects_the_full_filtered_set_not_just_the_page():
+    """summary.avg_score/total_spent must be computed over every matching transfer, not just the current page's limit - narrowing the filter to a small, high-fee range should visibly raise both above the unfiltered baseline."""
+    baseline = client.get("/api/transfers", params={"limit": 5}).json()["summary"]
+    narrowed = client.get("/api/transfers", params={"min_fee": 80_000_000, "limit": 5}).json()["summary"]
+    assert narrowed["avg_score"] is not None
+    assert narrowed["total_spent"] > 0
+    assert narrowed["avg_score"] != baseline["avg_score"]
+
+
 def test_transfers_export_matches_the_current_filters_as_csv():
     """/api/transfers/export must return every transfer matching the filters (not paginated like /api/transfers) as a real CSV, so a filtered Browse view can be exported wholesale."""
     res = client.get("/api/transfers/export", params={"position": "Goalkeeper"})
@@ -617,6 +682,15 @@ def test_loans_list_age_and_duration_range_filters():
     data2 = res2.json()
     assert data2["total"] > 0
     assert all(150 <= r["tenure_days"] <= 200 for r in data2["results"])
+
+
+def test_loans_list_summary_reflects_the_full_filtered_set_not_just_the_page():
+    """summary.avg_score/avg_duration_days must be computed over every matching loan, not just the current page's limit."""
+    res = client.get("/api/loans", params={"min_duration": 300, "max_duration": 320, "limit": 5})
+    data = res.json()
+    assert data["total"] > 0
+    assert data["summary"]["avg_score"] is not None
+    assert 300 <= data["summary"]["avg_duration_days"] <= 320
 
 
 def test_loans_export_matches_the_current_filters_as_csv():
@@ -761,6 +835,20 @@ def test_surprises_scatter_delta_matches_actual_minus_predicted():
         assert data["surprise_delta"][i] == pytest.approx(data["success_score"][i] - data["predicted_score"][i], abs=0.05)
 
 
+def test_surprises_scatter_accuracy_by_year_excludes_current_year_and_thin_samples():
+    """accuracy_by_year should exclude the dataset's in-progress year and any year below MIN_SURPRISE_YEAR_SAMPLE, and be sorted ascending by year."""
+    current_year = pd.read_csv("data/transfers_processed.csv")["transfer_date"].str[:4].astype(int).max()
+    res = client.get("/api/surprises/scatter")
+    accuracy = res.json()["accuracy_by_year"]
+    assert len(accuracy) > 0
+    years = [p["year"] for p in accuracy]
+    assert current_year not in years
+    assert years == sorted(years)
+    for p in accuracy:
+        assert p["mae"] > 0
+        assert p["n"] >= 10
+
+
 def test_clubs_leaderboard_pagination():
     """A limit=10 request should return exactly 10 results, with the true total count reported separately."""
     res = client.get("/api/clubs/leaderboard", params={"limit": 10, "offset": 0})
@@ -778,6 +866,29 @@ def test_clubs_leaderboard_default_sort_respects_minimum_sample():
     assert scores == sorted(scores, reverse=True)
     for r in data["results"]:
         assert r["transfers_in"] >= 5
+
+
+def test_clubs_leaderboard_score_improvement_sort_respects_minimum_sample_and_matches_split():
+    """score_improvement ranks clubs by second-half-vs-first-half avg incoming score (split by count, not a fixed year window) - every ranked club must clear MIN_CLUB_TRANSFERS, and the top club's own value must match an independent recomputation from real transfer rows."""
+    res = client.get("/api/clubs/leaderboard", params={"sort": "score_improvement", "order": "desc", "limit": 25})
+    data = res.json()
+    assert data["total"] > 0
+    improvements = [r["score_improvement"] for r in data["results"]]
+    assert improvements == sorted(improvements, reverse=True)
+    for r in data["results"]:
+        assert r["transfers_in"] >= 5
+        assert r["score_improvement"] is not None
+
+    # Recomputed from the app's own in-memory transfers_df, not a fresh
+    # read of the raw CSV - to_club_name there is already alias-merged
+    # (see CLUB_NAME_ALIASES), which the raw CSV on disk isn't, and a
+    # club report card is exactly the kind of thing likely to involve a
+    # merged name.
+    top_club = data["results"][0]["club_name"]
+    g = transfers_df[transfers_df["to_club_name"] == top_club].sort_values("transfer_date")
+    mid = len(g) // 2
+    expected = g.iloc[mid:]["success_score"].mean() - g.iloc[:mid]["success_score"].mean()
+    assert data["results"][0]["score_improvement"] == pytest.approx(expected, abs=0.05)
 
 
 def test_clubs_leaderboard_resale_profit_sort_respects_its_own_minimum():
@@ -1435,7 +1546,7 @@ def test_leagues_trends_endpoint_never_leaks_raw_nan(monkeypatch):
         "early_years": None, "recent_years": None,
         "early_avg_fee": None, "recent_avg_fee": None, "fee_growth_pct": None,
         "early_avg_score": None, "recent_avg_score": None, "score_change": None,
-        "by_year": [], "buys_from": [], "sells_to": [],
+        "by_year": [], "buys_from": [], "sells_to": [], "position_mix": [],
     }
     monkeypatch.setattr(main, "league_trends_df", pd.DataFrame([synthetic_row]))
 
@@ -1489,6 +1600,15 @@ def test_league_trends_cross_league_flow_counts_are_real_cross_checked_transfers
         & (df["from_domestic_competition_id"] == top_source["league_id"])
     ])
     assert top_source["transfers"] == real_count
+
+
+def test_league_trends_position_mix_covers_all_four_positions_and_sums_to_the_total():
+    res = client.get("/api/leagues/trends")
+    prem = next(r for r in res.json()["results"] if r["league"] == "Premier League")
+    mix = prem["position_mix"]
+    assert {m["position"] for m in mix} == {"Goalkeeper", "Defender", "Midfield", "Attack"}
+    assert sum(m["transfers"] for m in mix) == prem["transfers"]
+    assert sum(m["pct"] for m in mix) == pytest.approx(100.0, abs=0.2)
 
 
 def test_analytics_scatter_columns_are_all_the_same_length():
@@ -1608,3 +1728,26 @@ def test_analytics_height_trend_goalkeepers_are_tallest_on_average():
     for position in ("Defender", "Midfield", "Attack"):
         outfield_avg = sum(p["x"] for p in by_position[position]) / len(by_position[position])
         assert gk_avg > outfield_avg, position
+
+
+def test_analytics_feature_importance_excludes_flags_and_categoricals_and_is_ranked():
+    """feature_importance should cover only genuine numeric football features (never the 4 has_pre_*_data flags or any categorical), sorted by |coefficient| descending."""
+    res = client.get("/api/analytics")
+    importance = res.json()["feature_importance"]
+    assert len(importance) > 0
+    features = {i["feature"] for i in importance}
+    assert not any(f.startswith("has_pre_") for f in features)
+    assert features.isdisjoint({"position", "sub_position", "foot", "from_domestic_competition_id", "to_domestic_competition_id"})
+    magnitudes = [abs(i["coefficient"]) for i in importance]
+    assert magnitudes == sorted(magnitudes, reverse=True)
+
+
+def test_analytics_feature_importance_matches_the_trained_pipelines_own_coefficients():
+    """Not just internally consistent - the reported coefficients must be the actual trained Ridge model's own learned weights, not a recomputation or approximation."""
+    from app.main import NUMERIC_FEATURES, pipeline
+
+    res = client.get("/api/analytics")
+    importance = {i["feature"]: i["coefficient"] for i in res.json()["feature_importance"]}
+    coefs = dict(zip(NUMERIC_FEATURES, pipeline.named_steps["model"].coef_[:len(NUMERIC_FEATURES)]))
+    for feature, coefficient in importance.items():
+        assert coefficient == pytest.approx(coefs[feature], abs=0.001)

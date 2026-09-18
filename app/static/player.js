@@ -116,6 +116,16 @@ function setupAutocomplete({ inputId, listId, endpoint, onSelect, renderLabel })
   });
 }
 
+/** A small star above a career's single highest-scored stop - "where was the peak" at a glance on a long timeline. Shared by the solo and overlay chart builders below; `points` are the same screen coordinates each builder already computed for its dots, so this never recomputes the x/y scale itself. */
+function peakMarker(stops, points) {
+  let peakIndex = 0;
+  for (let i = 1; i < stops.length; i++) {
+    if (stops[i].score > stops[peakIndex].score) peakIndex = i;
+  }
+  const { x: cx, y: cy } = points[peakIndex];
+  return `<text x="${cx}" y="${cy - 12}" text-anchor="middle" font-size="13" fill="var(--accent-mid)"><title>Career peak: ${stops[peakIndex].score}</title>&#9733;</text>`;
+}
+
 /**
  * Build the career timeline as an inline SVG: one point per stop,
  * positioned by its real transfer_date along the x-axis (not just evenly
@@ -168,6 +178,7 @@ function buildTimelineSVG(stops) {
     ${gridlines}
     ${line}
     ${dots}
+    ${peakMarker(stops, points)}
     ${firstYear !== lastYear ? yearLabels : ""}
   </svg>`;
 }
@@ -218,7 +229,7 @@ function buildOverlayTimelineSVG(careerA, careerB) {
       const label = `${career.name}: ${s.from_club} → ${s.to_club} (${s.transfer_date.slice(0, 7)}), ${s.score}`;
       return `<g class="timeline-point" data-player="${playerKey}" data-index="${i}" style="cursor:pointer">${shape}<title>${label}</title></g>`;
     }).join("");
-    return line + dots;
+    return line + dots + peakMarker(career.stops, points);
   }
 
   const sortedDates = [...dates].sort((a, b) => a - b);
@@ -292,6 +303,7 @@ function renderLegend(careerA, careerB) {
     legend.innerHTML = `
       <span><span class="legend-dot legend-dot-permanent"></span> Permanent transfer</span>
       <span><span class="legend-dot legend-dot-loan"></span> Loan</span>
+      <span>&#9733; Career peak</span>
       <span class="legend-note">Colored by score - green high, red low</span>
     `;
     return;
@@ -299,6 +311,7 @@ function renderLegend(careerA, careerB) {
   legend.innerHTML = `
     <span>&#9679; / &#9675; ${careerA.name} (permanent/loan)</span>
     <span>&#9632; / &#9633; ${careerB.name} (permanent/loan)</span>
+    <span>&#9733; Career peak</span>
     <span class="legend-note">Colored by score - green high, red low</span>
   `;
 }

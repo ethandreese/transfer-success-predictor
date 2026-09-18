@@ -358,7 +358,59 @@ function renderCompareResult(data) {
       </div>
     </div>
   `).join("");
+  renderFactorComparison(results);
   document.getElementById("compare-delta").textContent = verdictSentence(results);
+}
+
+/**
+ * A per-factor comparison table across every active scenario - unlike
+ * each scenario's own "Top factors" list (renderExplanation, top 3 by
+ * that scenario's own ranking), this shows the *same* set of factors for
+ * every scenario side by side, so a reader can see not just that one
+ * option wins overall but which specific factors actually carry it.
+ * Requires every scenario's explanation to cover the same factor set -
+ * true here since /api/compare requests top_k=25 (comfortably more than
+ * the ~17-20 factors that actually exist) for exactly this reason. Rows
+ * are ranked by spread (max contribution minus min, across scenarios) -
+ * the most differentiating factors first, not whatever order one
+ * scenario's own ranking happened to produce. The winning cell per row
+ * (highest contribution - most favorable for that scenario specifically)
+ * reuses .club-compare-table/.is-winner-cell, the same restrained
+ * accent-text treatment Club Report Cards' own head-to-head comparison
+ * already uses for the same idea.
+ */
+function renderFactorComparison(results) {
+  const byFeature = results.map(r => {
+    const map = {};
+    r.explanation.forEach(e => { map[e.feature] = e; });
+    return map;
+  });
+
+  const rows = results[0].explanation
+    .map(({ feature, label }) => {
+      const cells = byFeature.map(m => m[feature]);
+      const contributions = cells.map(c => c.contribution);
+      return { label, cells, spread: Math.max(...contributions) - Math.min(...contributions) };
+    })
+    .sort((a, b) => b.spread - a.spread)
+    .map(({ label, cells }) => {
+      const maxContribution = Math.max(...cells.map(c => c.contribution));
+      const tds = cells.map(c => {
+        const positive = c.contribution >= 0;
+        return `<td class="${c.contribution === maxContribution ? "is-winner-cell" : ""}" style="color:${positive ? "var(--accent)" : "var(--accent-bad)"}">${positive ? "+" : ""}${c.contribution}</td>`;
+      }).join("");
+      return `<tr><td>${label}</td>${tds}</tr>`;
+    })
+    .join("");
+
+  document.getElementById("factor-compare-wrap").innerHTML = `
+    <h2>Compare by factor</h2>
+    <p class="surprises-intro">Every factor behind each option's score, most differentiating first. The highlighted cell is whichever option that specific factor favors most.</p>
+    <table class="club-compare-table">
+      <thead><tr><th></th>${results.map(r => `<th>${r.label}</th>`).join("")}</tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
 }
 
 let lastCompareData = null;

@@ -306,7 +306,75 @@ function wireScatterClicks(containerId) {
   });
 }
 
-/** Fetch every scored transfer's held-out prediction (unfiltered, unpaginated - see /api/surprises/scatter) and render the predicted-vs-actual chart. Independent of the table below: this chart shows the model's overall calibration, not whatever filter/page the table currently has applied, so it's fetched once and never reloaded by a filter/sort/page change. */
+/**
+ * The model's typical miss (mean absolute surprise, in points) per year -
+ * lower is better - from /api/surprises/scatter's accuracy_by_year. A
+ * single plain line, not indexed to 100 the way the site's multi-series
+ * charts are (League Trends, Analytics' market-over-time) - there's only
+ * one series here, so raw point values are already directly comparable
+ * year to year without needing a shared index.
+ */
+function buildAccuracyChart(accuracyByYear) {
+  const W = 900, H = 220, padL = 34, padR = 16, padT = 16, padB = 26;
+  const chartW = W - padL - padR, chartH = H - padT - padB;
+  const years = accuracyByYear.map(d => d.year);
+  const maes = accuracyByYear.map(d => d.mae);
+  const minMae = Math.min(...maes) * 0.9, maxMae = Math.max(...maes) * 1.1;
+
+  const x = (i) => years.length === 1 ? padL + chartW / 2 : padL + (i / (years.length - 1)) * chartW;
+  const y = (v) => padT + (1 - (v - minMae) / (maxMae - minMae)) * chartH;
+
+  const points = maes.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const dots = accuracyByYear.map((d, i) => {
+    const cx = x(i).toFixed(1), cy = y(d.mae).toFixed(1);
+    const label = `${d.year}: typical miss ${d.mae.toFixed(1)} pts (${d.n.toLocaleString()} predictions)`;
+    return `
+      <g style="cursor:pointer" data-tooltip="${label}">
+        <circle cx="${cx}" cy="${cy}" r="9" fill="transparent" />
+        <circle cx="${cx}" cy="${cy}" r="4" fill="var(--trend-line)" stroke="var(--panel)" stroke-width="1" />
+        <title>${label}</title>
+      </g>
+    `;
+  }).join("");
+
+  const yTicks = [minMae, (minMae + maxMae) / 2, maxMae];
+  const yLabels = yTicks.map(v => `<text x="${padL - 6}" y="${(y(v) + 3).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--muted)">${v.toFixed(1)}</text>`).join("");
+  const yearLabels = years.map((yr, i) => `<text x="${x(i).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="10" fill="var(--muted)">${yr}</text>`).join("");
+
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="Model prediction error by year">
+    <polyline points="${points}" fill="none" stroke="var(--trend-line)" stroke-width="2" />
+    ${dots}
+    ${yLabels}
+    ${yearLabels}
+  </svg>`;
+}
+
+const chartTooltip = document.getElementById("chart-tooltip");
+
+/** Show the shared chart-tooltip box near a click/tap position, clamped so it never runs off the right/bottom edge - the real interaction behind the accuracy chart's yearly points, same reasoning as analytics.js's identical helper: a native <title> hover tooltip never fires on a touch device at all. */
+function showChartTooltip(text, clientX, clientY) {
+  chartTooltip.textContent = text;
+  chartTooltip.hidden = false;
+  const pad = 14;
+  const rect = chartTooltip.getBoundingClientRect();
+  let left = clientX + pad, top = clientY + pad;
+  if (left + rect.width > window.innerWidth) left = clientX - rect.width - pad;
+  if (top + rect.height > window.innerHeight) top = clientY - rect.height - pad;
+  chartTooltip.style.left = `${Math.max(4, left)}px`;
+  chartTooltip.style.top = `${Math.max(4, top)}px`;
+}
+
+function hideChartTooltip() {
+  chartTooltip.hidden = true;
+}
+
+document.addEventListener("click", (e) => {
+  const marked = e.target.closest("[data-tooltip]");
+  if (marked) showChartTooltip(marked.dataset.tooltip, e.clientX, e.clientY);
+  else if (!e.target.closest("#chart-tooltip")) hideChartTooltip();
+});
+
+/** Fetch every scored transfer's held-out prediction (unfiltered, unpaginated - see /api/surprises/scatter) and render the predicted-vs-actual chart plus the model-accuracy-over-time chart - both come from the same response, so one fetch covers both cards. Independent of the table below: these charts show the model's overall calibration, not whatever filter/page the table currently has applied, so they're fetched once and never reloaded by a filter/sort/page change. */
 async function loadScatter() {
   const res = await fetch("/api/surprises/scatter");
   const data = await res.json();
@@ -316,7 +384,21 @@ async function loadScatter() {
   const pct = Math.round((overCount / rows.length) * 100);
   document.getElementById("predicted-actual-desc").textContent =
     `${rows.length.toLocaleString()} scored transfers with a held-out prediction. ${overCount.toLocaleString()} (${pct}%) landed on or above the model's guess, ${(rows.length - overCount).toLocaleString()} below it. Click/tap any point for that transfer's full breakdown.`;
+
+  const accuracy = data.accuracy_by_year;
+  document.getElementById("accuracy-chart").innerHTML = buildAccuracyChart(accuracy);
+  const first = accuracy[0], last = accuracy[accuracy.length - 1];
+  const trendWord = last.mae < first.mae ? "improved" : "worsened";
+  document.getElementById("accuracy-desc").textContent =
+    `The held-out model's typical miss by transfer year, ${first.year}–${last.year} (the current in-progress year excluded, same reasoning as every other by-year chart on the site). It's ${trendWord} from ${first.mae.toFixed(1)} to ${last.mae.toFixed(1)} points. Click/tap any point for that year's exact numbers.`;
 }
+
+/** Toggle the model-accuracy chart card open/closed, same pattern as the predicted-vs-actual card. */
+document.getElementById("accuracy-toggle").addEventListener("click", (e) => {
+  const expanded = e.currentTarget.getAttribute("aria-expanded") === "true";
+  e.currentTarget.setAttribute("aria-expanded", String(!expanded));
+  document.getElementById("accuracy-body").hidden = expanded;
+});
 
 /** Toggle the predicted-vs-actual chart card open/closed - it's the one card-length chart on a page that's otherwise a table, so letting it collapse saves scrolling past ~7,800 plotted points to reach the filters. */
 document.getElementById("predicted-actual-toggle").addEventListener("click", (e) => {
@@ -332,7 +414,7 @@ document.getElementById("card-modal-backdrop").addEventListener("click", (e) => 
   if (e.target.id === "card-modal-backdrop") closeCard();
 });
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") closeCard();
+  if (e.key === "Escape") { closeCard(); hideChartTooltip(); }
 });
 
 document.getElementById("search-input").addEventListener("input", () => {

@@ -361,6 +361,26 @@ function renderPredictResult(data) {
       </div>
     `;
   }).join("");
+  renderSensitivity(data.sensitivity);
+}
+
+/** Render "What would move this most" (see /api/predict's sensitivity field) - same .explain-row/.explain-bar-fill markup as "Why this score" above, always the "pos" (green) bar since every entry here is by construction a genuine improvement. Hides the whole section when sensitivity is empty (nothing left with real data and room to improve) rather than showing an empty heading. */
+function renderSensitivity(sensitivity) {
+  const section = document.getElementById("sensitivity-section");
+  section.hidden = sensitivity.length === 0;
+  if (!sensitivity.length) return;
+  document.getElementById("sensitivity-list").innerHTML = sensitivity.map(s => `
+    <div class="explain-row">
+      <span class="tooltip-wrap explain-label">
+        ${s.label}
+        <span class="tooltip-box">${s.detail}</span>
+      </span>
+      <div class="explain-bar-track">
+        <div class="explain-bar-fill pos" style="width:${Math.min(s.gain * 15, 100)}%"></div>
+      </div>
+      <span class="explain-value">+${s.gain}</span>
+    </div>
+  `).join("");
 }
 
 const feeLabel = document.querySelector('label[for="fee"]');

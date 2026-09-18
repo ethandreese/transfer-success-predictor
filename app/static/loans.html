@@ -13,7 +13,7 @@
   <meta name="twitter:title" content="Browse Loans - Transfer Success Predictor" />
   <meta name="twitter:description" content="Browse ~4,300 scored loan spells, graded separately from permanent transfers." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="stylesheet" href="/style.css?v=54" />
+  <link rel="stylesheet" href="/style.css?v=55" />
 </head>
 <body>
   <header>
@@ -80,6 +80,7 @@
             <option value="tenure_days:desc">Duration (longest first)</option>
             <option value="tenure_days:asc">Duration (shortest first)</option>
             <option value="age_at_transfer:asc">Age (youngest first)</option>
+            <option value="age_at_transfer:desc">Age (oldest first)</option>
             <option value="to_club_name:asc" id="club-sort-option" hidden>Club (A-Z)</option>
           </select>
         </div>
@@ -103,6 +104,8 @@
 
       <a class="browse-link" id="export-link" href="#" target="_blank" rel="noopener">Export these results as CSV &rarr;</a>
 
+      <p class="surprises-intro" id="results-summary"></p>
+
       <div class="table-wrap">
         <table class="transfers-table" id="loans-table">
           <thead>
@@ -111,10 +114,10 @@
               <th>Position</th>
               <th>Route</th>
               <th>League</th>
-              <th>Date</th>
-              <th>Age</th>
-              <th>Duration</th>
-              <th>Score</th>
+              <th class="sortable-th" data-sort="transfer_date">Date</th>
+              <th class="sortable-th" data-sort="age_at_transfer">Age</th>
+              <th class="sortable-th" data-sort="tenure_days">Duration</th>
+              <th class="sortable-th" data-sort="loan_success_score">Score</th>
               <th>Converted</th>
             </tr>
           </thead>
@@ -139,7 +142,7 @@
     </div>
   </div>
 
-  <script src="/settings.js?v=54"></script>
-  <script src="/loans.js?v=54"></script>
+  <script src="/settings.js?v=55"></script>
+  <script src="/loans.js?v=55"></script>
 </body>
 </html>

@@ -13,7 +13,7 @@
   <meta name="twitter:title" content="Model vs Reality - Transfer Success Predictor" />
   <meta name="twitter:description" content="How real transfers compare to a held-out model's pre-transfer-only prediction." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="stylesheet" href="/style.css?v=54" />
+  <link rel="stylesheet" href="/style.css?v=55" />
 </head>
 <body>
   <header>
@@ -82,6 +82,18 @@
     </section>
 
     <section class="card">
+      <h2>
+        <button class="collapse-toggle" id="accuracy-toggle" aria-expanded="true" aria-controls="accuracy-body">
+          Model accuracy over time <span class="collapse-caret" aria-hidden="true">&#9662;</span>
+        </button>
+      </h2>
+      <div id="accuracy-body">
+        <p class="surprises-intro" id="accuracy-desc">Loading...</p>
+        <div class="timeline-chart-wrap" id="accuracy-chart"></div>
+      </div>
+    </section>
+
+    <section class="card">
       <div class="browse-controls">
         <div class="field">
           <label for="search-input">Search</label>
@@ -144,7 +156,9 @@
     </div>
   </div>
 
-  <script src="/settings.js?v=54"></script>
-  <script src="/surprises.js?v=54"></script>
+  <div id="chart-tooltip" role="status" hidden></div>
+
+  <script src="/settings.js?v=55"></script>
+  <script src="/surprises.js?v=55"></script>
 </body>
 </html>
