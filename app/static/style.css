@@ -207,6 +207,20 @@ h2 {
    than a filled background. */
 .club-compare-table td.is-winner-cell { font-weight: 700; color: var(--accent); }
 
+/** A clickable "similar career shape" suggestion pill (Player Timelines) - the same rounded-pill shape as .selected-chip, but interactive rather than a static label. */
+.similar-career-btn {
+  display: inline-block;
+  margin: 0.25rem 0.4rem 0.25rem 0;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.similar-career-btn:hover, .similar-career-btn:focus-visible { border-color: var(--accent); color: var(--accent); }
+
 .examples-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -725,6 +739,20 @@ button.predict-btn:disabled {
 #stops-table th:nth-child(3), #stops-table td:nth-child(3) { width: 15%; }
 #stops-table th:nth-child(4), #stops-table td:nth-child(4) { width: 10%; }
 #stops-table th:nth-child(5), #stops-table td:nth-child(5) { width: 15%; }
+
+/* A leading Player column (see renderStopsTable in player.js) only
+   appears once a comparison is active, shifting every other column over
+   by one - table-layout: fixed sizes columns purely by nth-child
+   position, so the 5-column widths above would otherwise land on the
+   wrong columns entirely rather than just looking cramped. The extra
+   class selector outranks the base rules' specificity, so this variant
+   applies cleanly whenever it's present. */
+#stops-table.compare-mode th:nth-child(1), #stops-table.compare-mode td:nth-child(1) { width: 15%; }
+#stops-table.compare-mode th:nth-child(2), #stops-table.compare-mode td:nth-child(2) { width: 12%; }
+#stops-table.compare-mode th:nth-child(3), #stops-table.compare-mode td:nth-child(3) { width: 33%; }
+#stops-table.compare-mode th:nth-child(4), #stops-table.compare-mode td:nth-child(4) { width: 12%; }
+#stops-table.compare-mode th:nth-child(5), #stops-table.compare-mode td:nth-child(5) { width: 8%; }
+#stops-table.compare-mode th:nth-child(6), #stops-table.compare-mode td:nth-child(6) { width: 20%; }
 
 #leagues-table { min-width: 700px; }
 #leagues-table th:nth-child(1), #leagues-table td:nth-child(1) { width: 30%; }

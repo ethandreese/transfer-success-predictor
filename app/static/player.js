@@ -1,4 +1,4 @@
-const state = { openStop: null };
+const state = { openStop: null, careerA: null, careerB: null };
 const cardModal = makeModalAccessible(document.getElementById("card-modal-backdrop"));
 
 /** Green/amber/red for a 0-100 score, shared by every score display on the page. */
@@ -151,10 +151,10 @@ function buildTimelineSVG(stops) {
     const { x: cx, y: cy } = points[i];
     const color = scoreColor(s.score);
     const circle = s.type === "loan"
-      ? `<circle class="timeline-point" data-index="${i}" cx="${cx}" cy="${cy}" r="6" fill="var(--panel)" stroke="${color}" stroke-width="3" />`
-      : `<circle class="timeline-point" data-index="${i}" cx="${cx}" cy="${cy}" r="7" fill="${color}" stroke="var(--panel)" stroke-width="2" />`;
+      ? `<circle cx="${cx}" cy="${cy}" r="6" fill="var(--panel)" stroke="${color}" stroke-width="3" />`
+      : `<circle cx="${cx}" cy="${cy}" r="7" fill="${color}" stroke="var(--panel)" stroke-width="2" />`;
     const label = `${s.from_club} → ${s.to_club} (${s.transfer_date.slice(0, 7)}): ${s.score}`;
-    return `<g style="cursor:pointer">${circle}<title>${label}</title></g>`;
+    return `<g class="timeline-point" data-player="a" data-index="${i}" style="cursor:pointer">${circle}<title>${label}</title></g>`;
   }).join("");
 
   const firstYear = stops[0].transfer_date.slice(0, 4);
@@ -172,20 +172,110 @@ function buildTimelineSVG(stops) {
   </svg>`;
 }
 
-/** Render the player header (name, position, current club, span of years) above the chart. */
-function renderPlayerHeader(career) {
-  const years = `${career.stops[0].transfer_date.slice(0, 4)}–${career.stops[career.stops.length - 1].transfer_date.slice(0, 4)}`;
-  const meta = [career.position, career.current_club ? `currently at ${career.current_club}` : null].filter(Boolean).join(" · ");
+/**
+ * Both careers plotted on one shared chart, real calendar date on the
+ * x-axis (same convention as the solo chart, not age-normalized - this
+ * is "who was doing what and when," a genuinely different question from
+ * the shape-only comparison nearest_similar_careers answers). Career A
+ * keeps the solo chart's circle/ring shapes; Career B reuses square/
+ * hollow-square instead, so which dot belongs to which player reads at a
+ * glance without needing a color of its own - dot color is still
+ * reserved for score, the one visual language every chart on this site
+ * shares. A dashed connecting line for B backs up the same distinction
+ * for anyone tracing a path rather than reading individual dots.
+ */
+function buildOverlayTimelineSVG(careerA, careerB) {
+  const W = 900, H = 260, padL = 34, padR = 16, padT = 14, padB = 26;
+  const chartW = W - padL - padR, chartH = H - padT - padB;
+  const allStops = [...careerA.stops, ...careerB.stops];
+  const dates = allStops.map(s => new Date(s.transfer_date).getTime());
+  const minDate = Math.min(...dates), maxDate = Math.max(...dates);
+  const span = maxDate - minDate;
+
+  const x = (d) => span === 0 ? padL + chartW / 2 : padL + ((d - minDate) / span) * chartW;
+  const y = (score) => padT + ((100 - score) / 100) * chartH;
+
+  const gridlines = [0, 25, 50, 75, 100].map(score => `
+    <line x1="${padL}" y1="${y(score)}" x2="${W - padR}" y2="${y(score)}" stroke="var(--border)" stroke-width="1" />
+    <text x="${padL - 6}" y="${y(score) + 3}" text-anchor="end" font-size="10" fill="var(--muted)">${score}</text>
+  `).join("");
+
+  function seriesMarkup(career, playerKey, squares) {
+    const points = career.stops.map(s => ({ x: x(new Date(s.transfer_date).getTime()), y: y(s.score) }));
+    const line = points.length > 1
+      ? `<polyline points="${points.map(p => `${p.x},${p.y}`).join(" ")}" fill="none" stroke="var(--muted)" stroke-width="1.5" opacity="0.5" ${squares ? 'stroke-dasharray="6 4"' : ""} />`
+      : "";
+    const dots = career.stops.map((s, i) => {
+      const { x: cx, y: cy } = points[i];
+      const color = scoreColor(s.score);
+      const shape = squares
+        ? (s.type === "loan"
+            ? `<rect x="${cx - 6}" y="${cy - 6}" width="12" height="12" fill="var(--panel)" stroke="${color}" stroke-width="3" />`
+            : `<rect x="${cx - 6}" y="${cy - 6}" width="12" height="12" fill="${color}" stroke="var(--panel)" stroke-width="2" />`)
+        : (s.type === "loan"
+            ? `<circle cx="${cx}" cy="${cy}" r="6" fill="var(--panel)" stroke="${color}" stroke-width="3" />`
+            : `<circle cx="${cx}" cy="${cy}" r="7" fill="${color}" stroke="var(--panel)" stroke-width="2" />`);
+      const label = `${career.name}: ${s.from_club} → ${s.to_club} (${s.transfer_date.slice(0, 7)}), ${s.score}`;
+      return `<g class="timeline-point" data-player="${playerKey}" data-index="${i}" style="cursor:pointer">${shape}<title>${label}</title></g>`;
+    }).join("");
+    return line + dots;
+  }
+
+  const sortedDates = [...dates].sort((a, b) => a - b);
+  const firstYear = new Date(sortedDates[0]).getFullYear();
+  const lastYear = new Date(sortedDates[sortedDates.length - 1]).getFullYear();
+  const yearLabels = `
+    <text x="${padL}" y="${H - 6}" font-size="10" fill="var(--muted)">${firstYear}</text>
+    <text x="${W - padR}" y="${H - 6}" text-anchor="end" font-size="10" fill="var(--muted)">${lastYear}</text>
+  `;
+
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="Overlaid career timeline comparison">
+    ${gridlines}
+    ${seriesMarkup(careerA, "a", false)}
+    ${seriesMarkup(careerB, "b", true)}
+    ${firstYear !== lastYear ? yearLabels : ""}
+  </svg>`;
+}
+
+/** Render the player header - name/position/current club/span of years for a solo view, or "A vs. B" plus both stop counts once a comparison is active. */
+function renderPlayerHeader(careerA, careerB) {
+  const allStops = careerB ? [...careerA.stops, ...careerB.stops] : careerA.stops;
+  const sorted = [...allStops].sort((x, y) => x.transfer_date.localeCompare(y.transfer_date));
+  const years = `${sorted[0].transfer_date.slice(0, 4)}–${sorted[sorted.length - 1].transfer_date.slice(0, 4)}`;
+  if (careerB) {
+    document.getElementById("player-header").innerHTML = `
+      <div class="name" style="font-size:1.3rem;">${careerA.name} vs. ${careerB.name}</div>
+      <div class="route">${careerA.stops.length} + ${careerB.stops.length} scored moves combined (${years})</div>
+    `;
+    return;
+  }
+  const meta = [careerA.position, careerA.current_club ? `currently at ${careerA.current_club}` : null].filter(Boolean).join(" · ");
   document.getElementById("player-header").innerHTML = `
-    <div class="name" style="font-size:1.3rem;">${career.name}</div>
-    <div class="route">${meta ? meta + " · " : ""}${career.stops.length} scored move${career.stops.length === 1 ? "" : "s"} (${years})</div>
+    <div class="name" style="font-size:1.3rem;">${careerA.name}</div>
+    <div class="route">${meta ? meta + " · " : ""}${careerA.stops.length} scored move${careerA.stops.length === 1 ? "" : "s"} (${years})</div>
   `;
 }
 
-/** Render the plain-table fallback/detail list of every stop below the chart. */
-function renderStopsTable(stops) {
+/** Merge both careers' stops into one date-sorted list, each tagged with which player it belongs to (playerKey/playerName) - the comparison table's row data. */
+function mergedStopsWithPlayer(careerA, careerB) {
+  const tagged = [
+    ...careerA.stops.map(s => ({ ...s, playerKey: "a", playerName: careerA.name })),
+    ...careerB.stops.map(s => ({ ...s, playerKey: "b", playerName: careerB.name })),
+  ];
+  tagged.sort((x, y) => x.transfer_date.localeCompare(y.transfer_date));
+  return tagged;
+}
+
+/** Render the plain-table fallback/detail list of every stop below the chart - an extra leading Player column once a comparison is active, so a merged, interleaved list still says whose move each row is. */
+function renderStopsTable(stops, showPlayerColumn) {
+  document.getElementById("stops-table").classList.toggle("compare-mode", showPlayerColumn);
+  document.getElementById("stops-table-head").innerHTML = `
+    ${showPlayerColumn ? "<th>Player</th>" : ""}
+    <th>Date</th><th>Route</th><th>Type</th><th>Age</th><th>Score</th>
+  `;
   document.getElementById("stops-body").innerHTML = stops.map((s, i) => `
     <tr data-index="${i}" tabindex="0" role="button" aria-label="View details: ${s.from_club} to ${s.to_club}">
+      ${showPlayerColumn ? `<td>${s.playerName}</td>` : ""}
       <td>${s.transfer_date.slice(0, 7)}</td>
       <td>${s.from_club} &rarr; ${s.to_club}</td>
       <td>${s.type === "loan" ? "Loan" : "Permanent"}</td>
@@ -193,6 +283,41 @@ function renderStopsTable(stops) {
       <td style="color:${scoreColor(s.score)}; font-weight:700">${s.score}</td>
     </tr>
   `).join("");
+}
+
+/** Swap the legend between solo mode (permanent/loan shape key) and comparison mode (which shape belongs to which player, since dot color is reserved for score in both modes). */
+function renderLegend(careerA, careerB) {
+  const legend = document.getElementById("timeline-legend");
+  if (!careerB) {
+    legend.innerHTML = `
+      <span><span class="legend-dot legend-dot-permanent"></span> Permanent transfer</span>
+      <span><span class="legend-dot legend-dot-loan"></span> Loan</span>
+      <span class="legend-note">Colored by score - green high, red low</span>
+    `;
+    return;
+  }
+  legend.innerHTML = `
+    <span>&#9679; / &#9675; ${careerA.name} (permanent/loan)</span>
+    <span>&#9632; / &#9633; ${careerB.name} (permanent/loan)</span>
+    <span class="legend-note">Colored by score - green high, red low</span>
+  `;
+}
+
+/** Render "similar career shape" suggestions (see /api/players/{id}/career's similar_careers) as clickable pills - clicking one loads it as the comparison side, so the claimed similarity is immediately checkable on the overlay chart rather than just asserted. Clears the section entirely (rather than an empty-state message) when there's nothing to suggest, e.g. a one-stop career with no real "shape" to match. */
+function renderSimilarCareers(entries) {
+  const container = document.getElementById("similar-careers-section");
+  if (!entries.length) {
+    container.innerHTML = "";
+    return;
+  }
+  container.innerHTML = `
+    <h3>Similar career shape</h3>
+    <p class="surprises-intro">Other players whose career started, ended, and swung a similar way - click one to compare them side by side.</p>
+    ${entries.map(e => `<button type="button" class="similar-career-btn" data-player-id="${e.player_id}">${e.name}</button>`).join("")}
+  `;
+  container.querySelectorAll(".similar-career-btn").forEach(btn => {
+    btn.addEventListener("click", () => loadPlayerB(Number(btn.dataset.playerId)));
+  });
 }
 
 /** Render one card's score-component breakdown (label + bar + hover tooltip), same shape as browse.js/loans.js. */
@@ -220,15 +345,18 @@ function renderBreakdown(breakdown) {
  * loan, since the two live in separate tables with slightly different
  * field names (success_score/loan_success_score, still_at_club/
  * still_on_loan) - see build_transfer_card/build_loan_card in app/main.py.
+ * playerId is explicit (not read from a single "current player" global)
+ * since a comparison view has two, and a clicked stop's own player_id
+ * depends on which of the two it came from.
  */
-async function showCard(stop) {
-  state.openStop = stop;
+async function showCard(stop, playerId) {
+  state.openStop = { stop, playerId };
   const content = document.getElementById("card-modal-content");
   content.innerHTML = "Loading...";
   cardModal.open();
   try {
     const endpoint = stop.type === "loan" ? "/api/loans/detail" : "/api/transfers/detail";
-    const res = await fetch(`${endpoint}?player_id=${state.currentPlayerId}&transfer_date=${stop.transfer_date}`);
+    const res = await fetch(`${endpoint}?player_id=${playerId}&transfer_date=${stop.transfer_date}`);
     if (!res.ok) throw new Error("Could not load this transfer.");
     const ex = await res.json();
     const score = stop.type === "loan" ? ex.loan_success_score : ex.success_score;
@@ -263,32 +391,87 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") closeCard();
 });
 
-/** Fetch and render one player's full career timeline (chart + table), wiring click handlers on both. */
-async function loadCareer(playerId) {
-  state.currentPlayerId = playerId;
-  const res = await fetch(`/api/players/${playerId}/career`);
-  if (!res.ok) return;
-  const career = await res.json();
-
+/**
+ * Render the chart/header/legend/table (and, solo-only, similar-career
+ * suggestions) from state.careerA/careerB - called after either one
+ * changes. Chart points are indexed within their own career's stops
+ * array and tagged data-player="a"/"b" (buildTimelineSVG always tags
+ * "a", even in solo mode, so one listener setup covers both chart
+ * types). Table rows are indexed within whichever list was actually
+ * rendered - the merged, playerKey-tagged list in comparison mode, or
+ * careerA.stops directly in solo mode, where a row's absent playerKey
+ * correctly falls through to careerA's own id below.
+ */
+function renderTimeline() {
+  const { careerA, careerB } = state;
   document.getElementById("empty-state").hidden = true;
   document.getElementById("timeline-section").hidden = false;
 
-  renderPlayerHeader(career);
-  document.getElementById("timeline-chart-wrap").innerHTML = buildTimelineSVG(career.stops);
-  renderStopsTable(career.stops);
+  renderPlayerHeader(careerA, careerB);
+  renderLegend(careerA, careerB);
+  document.getElementById("timeline-chart-wrap").innerHTML = careerB
+    ? buildOverlayTimelineSVG(careerA, careerB)
+    : buildTimelineSVG(careerA.stops);
 
-  const open = (i) => showCard(career.stops[i]);
+  const tableRows = careerB ? mergedStopsWithPlayer(careerA, careerB) : careerA.stops;
+  renderStopsTable(tableRows, !!careerB);
+
   document.querySelectorAll(".timeline-point").forEach(el => {
-    el.addEventListener("click", () => open(Number(el.dataset.index)));
+    el.addEventListener("click", () => {
+      const career = el.dataset.player === "b" ? careerB : careerA;
+      showCard(career.stops[Number(el.dataset.index)], career.player_id);
+    });
   });
   [...document.querySelectorAll("#stops-body tr")].forEach(row => {
-    row.addEventListener("click", () => open(Number(row.dataset.index)));
+    const open = () => {
+      const s = tableRows[Number(row.dataset.index)];
+      showCard(s, s.playerKey === "b" ? careerB.player_id : careerA.player_id);
+    };
+    row.addEventListener("click", open);
     row.addEventListener("keydown", (e) => {
       if (e.key !== "Enter" && e.key !== " ") return;
       e.preventDefault();
-      open(Number(row.dataset.index));
+      open();
     });
   });
+
+  // Suggestions only make sense before a comparison exists - clicking one
+  // once careerB is already set would just silently swap it, surprising
+  // rather than useful.
+  renderSimilarCareers(careerB ? [] : careerA.similar_careers);
+}
+
+/** Fetch and render the primary player's career - starts (or restarts) a solo view, clearing any active comparison, since searching a brand-new primary player makes the old comparison partner unrelated. */
+async function loadPlayerA(playerId) {
+  const res = await fetch(`/api/players/${playerId}/career`);
+  if (!res.ok) return;
+  state.careerA = await res.json();
+  state.careerB = null;
+  document.getElementById("player-b-search").value = "";
+  document.getElementById("player-b-chip").innerHTML = "";
+  document.getElementById("player-b-field").hidden = false;
+  renderTimeline();
+}
+
+/** Fetch and render the comparison player's career, overlaying it onto the primary player's chart/table/legend. Ignored if it's the same player as careerA - comparing someone with themselves has nothing to show. */
+async function loadPlayerB(playerId) {
+  if (!state.careerA || playerId === state.careerA.player_id) return;
+  const res = await fetch(`/api/players/${playerId}/career`);
+  if (!res.ok) return;
+  state.careerB = await res.json();
+  document.getElementById("player-b-search").value = state.careerB.name;
+  document.getElementById("player-b-chip").innerHTML =
+    `<span class="selected-chip">${state.careerB.name} <button type="button" id="remove-compare-btn" aria-label="Remove comparison" style="background:none; border:none; color:inherit; cursor:pointer; padding:0 0 0 0.3rem; font:inherit;">&times;</button></span>`;
+  document.getElementById("remove-compare-btn").addEventListener("click", removeComparison);
+  renderTimeline();
+}
+
+/** Drop the active comparison and return to the primary player's own solo view. */
+function removeComparison() {
+  state.careerB = null;
+  document.getElementById("player-b-search").value = "";
+  document.getElementById("player-b-chip").innerHTML = "";
+  renderTimeline();
 }
 
 setupAutocomplete({
@@ -296,12 +479,20 @@ setupAutocomplete({
   listId: "player-list",
   endpoint: "/api/players/career-search",
   renderLabel: (p) => p.name,
-  onSelect: (p) => loadCareer(p.player_id),
+  onSelect: (p) => loadPlayerA(p.player_id),
+});
+
+setupAutocomplete({
+  inputId: "player-b-search",
+  listId: "player-b-list",
+  endpoint: "/api/players/career-search",
+  renderLabel: (p) => p.name,
+  onSelect: (p) => loadPlayerB(p.player_id),
 });
 
 // A currency change doesn't affect this page (no fees shown directly), but
 // a currency-formatted breakdown description inside an open card does -
 // refresh it in place, same pattern as browse.js/loans.js.
 document.addEventListener("settingschange", () => {
-  if (state.openStop) showCard(state.openStop);
+  if (state.openStop) showCard(state.openStop.stop, state.openStop.playerId);
 });

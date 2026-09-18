@@ -346,7 +346,16 @@ rather than doubling as the predict form (see Project history).
   any point (or the table row below it) for that stop's full breakdown
   card. Search covers every player with a scored transfer or loan, not
   just the smaller set the Predict page's autocomplete can see (see Known
-  limitations).
+  limitations). A "Compare with" search overlays a second player's career
+  on the same chart (real calendar dates on both, not age-normalized) -
+  Player B's stops render as squares instead of circles so the two are
+  distinguishable without touching the dot's own score color, and the
+  table below gains a Player column, merged and date-sorted across both.
+  Below the chart, "Similar career shape" suggests up to 5 other players
+  whose career trajectory (how it started, ended, and swung - see
+  `nearest_similar_careers`) is closest to the one just searched;
+  clicking a suggestion loads it straight into the comparison so the
+  claimed similarity is immediately checkable, not just asserted.
 - **`/leagues.html`** — every league with at least 15 scored permanent
   transfers, ranked by transfer volume, average score/fee, or the change
   between its earliest and most recent 3 complete years (the current,
@@ -355,7 +364,10 @@ rather than doubling as the predict form (see Project history).
   early-period baseline, plus a plain-language verdict sentence - answers
   "are fees inflating faster than performance?" directly rather than
   leaving two differently-scaled numbers for the reader to compare
-  themselves.
+  themselves - and a cross-league flow breakdown: its top trading
+  partners by transfer count, incoming and outgoing, excluding transfers
+  that stayed within the league itself (e.g. the Premier League's
+  biggest source is Ligue 1, its biggest outflow is to Laliga).
 - **`/analytics.html`** — four hand-drawn SVG charts over every scored
   permanent transfer (`/api/analytics`, computed fresh per request - the
   dataset's small enough that there's no need to precompute at startup):
@@ -591,6 +603,40 @@ the git history.
   symmetric playing-time rule that doesn't apply to loans).
 
 **Frontend**
+- Added a two-player overlay comparison and "similar career shape"
+  suggestions to Player Timelines. A new career-shape feature vector
+  (n_stops, first/last/avg score, score_range, score_trend, span_years -
+  see `build_player_shape_vectors`) is precomputed once at startup for
+  every player with scored history and z-score normalized, so
+  `nearest_similar_careers` can rank all ~12,700 players by normalized
+  Euclidean distance to a query player in one vectorized pass rather than
+  per-pair dynamic time warping - a deliberately lightweight heuristic
+  ("did these two careers start, end, and swing a similar way"), not a
+  claimed exact trajectory match. `/api/players/{id}/career` now carries
+  its own `similar_careers` (top 5, empty for a one-stop career - no real
+  "shape" to match) alongside the existing timeline data, so the
+  suggestions need no second request. On the frontend, clicking a
+  suggestion (or manually searching a second player) overlays their
+  career onto the same chart on real calendar dates - Player B's stops
+  render as squares rather than circles so the two are visually
+  distinguishable without needing a second dot color, since color is
+  already reserved sitewide for score. The stops table gains a Player
+  column and merges both careers' rows by date; searching a brand-new
+  primary player clears any active comparison, since the old comparison
+  partner is no longer relevant to a different career.
+- Added a cross-league flow breakdown to League Trends: each league's
+  modal now shows its top trading partners by transfer count (incoming
+  grouped by origin league, outgoing grouped by destination league),
+  excluding any transfer that stayed within the league itself - otherwise
+  every league's own top "buys from" entry would trivially be itself.
+  Computed for all ~20-25 qualifying leagues at startup
+  (`league_flow()`/`build_league_trends`) rather than on demand, unlike
+  the per-club detail added to Club Report Cards below - few enough
+  leagues that precomputing every one is cheap, and `/api/leagues/trends`
+  already ships every row unpaginated. Reuses the same
+  `.breakdown-row`/`.breakdown-bar-fill` bar markup as Club Report Cards'
+  position breakdown, scaled to each list's own top count rather than a
+  0-100 score.
 - Added three Club Report Cards features together: a head-to-head club
   comparison (two autocomplete pickers over a new lightweight
   `/api/clubs/report-card-search`, which searches club_report_cards_df's

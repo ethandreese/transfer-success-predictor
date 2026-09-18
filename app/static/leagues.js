@@ -117,7 +117,22 @@ function verdictSentence(r) {
     (${signed(r.score_change)} pts).`;
 }
 
-/** Open the modal and render one league's trend chart + verdict, entirely from data already returned by /api/leagues/trends - no second request needed. */
+/** One league's top trading-partner list (buys_from or sells_to - see /api/leagues/trends) as bar rows, width scaled to the largest count in *this* list rather than a 0-100 score - these are raw transfer counts, so a plain accent bar rather than scoreColor's green/amber/red. Reuses the same .breakdown-row/.breakdown-bar-track/.breakdown-bar-fill markup the transfer-card score breakdown and Club Report Cards' position breakdown already use elsewhere on the site. */
+function renderLeagueFlow(entries) {
+  if (!entries.length) return `<p class="surprises-intro">No other league accounts for enough transfers here.</p>`;
+  const max = Math.max(...entries.map(e => e.transfers));
+  return entries.map(e => `
+    <div class="breakdown-row">
+      <span class="breakdown-label">${e.league}</span>
+      <div class="breakdown-bar-track">
+        <div class="breakdown-bar-fill" style="width:${(e.transfers / max * 100).toFixed(1)}%; background:var(--accent)"></div>
+      </div>
+      <span class="breakdown-value">${e.transfers}</span>
+    </div>
+  `).join("");
+}
+
+/** Open the modal and render one league's trend chart + verdict + cross-league flow, entirely from data already returned by /api/leagues/trends - no second request needed. buys_from/sells_to render unconditionally (unlike the trend chart) since they don't depend on TREND_WINDOW_YEARS history the way early/recent-era comparison does - even a league too young for a trend still has real incoming/outgoing transfers to show. */
 function showLeague(league) {
   state.openLeague = league;
   const content = document.getElementById("card-modal-content");
@@ -134,6 +149,17 @@ function showLeague(league) {
         </div>
         <p class="surprise-banner">${verdictSentence(league)}</p>
       ` : `<p class="surprise-banner">Not enough historical spread yet for a trend (needs at least 6 complete years of data).</p>`}
+      <h3>Cross-league flow</h3>
+      <div class="compare-grid">
+        <div>
+          <h3>Buys from</h3>
+          ${renderLeagueFlow(league.buys_from)}
+        </div>
+        <div>
+          <h3>Sells to</h3>
+          ${renderLeagueFlow(league.sells_to)}
+        </div>
+      </div>
     </div>
   `;
   cardModal.open();

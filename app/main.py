@@ -550,6 +550,23 @@ club_report_cards_df = build_club_report_cards(transfers_df)
 MIN_LEAGUE_TRANSFERS = 15
 MIN_LEAGUE_YEAR_SAMPLE = 5
 TREND_WINDOW_YEARS = 3
+TOP_LEAGUE_FLOW_COUNT = 8
+
+
+def league_flow(g, id_col):
+    """
+    The top TOP_LEAGUE_FLOW_COUNT other leagues by transfer count, from one
+    side of a league's cross-border flow (g is already filtered to one
+    league's incoming or outgoing transfers, minus any transfer that
+    stayed within that same league - see build_league_trends). A raw count needs
+    no minimum-sample filter the way an average would - one real transfer
+    is one real data point, not a noisy average (same reasoning as
+    CLUB_SORT_FIELDS' raw-total fields above). value_counts() drops NaN
+    league ids by default, so an origin/destination outside the 23 mapped
+    leagues just doesn't appear rather than showing as "Unknown league".
+    """
+    counts = g[id_col].value_counts().head(TOP_LEAGUE_FLOW_COUNT)
+    return [{"league_id": lid, "league": league_display_name(lid), "transfers": int(n)} for lid, n in counts.items()]
 
 
 def build_league_trends(df):
@@ -571,19 +588,38 @@ def build_league_trends(df):
     (see MIN_LEAGUE_SAMPLE in train_model.py for the same idea applied to
     a whole-league baseline instead of one league-year).
 
+    buys_from/sells_to (see league_flow above) are this league's top
+    trading partners by transfer count - incoming transfers grouped by
+    origin league, outgoing transfers grouped by destination league, both
+    excluding transfers that stayed within the league itself (a club
+    buying from another club in its own league isn't "cross-league flow",
+    and would otherwise dominate every league's own top-partner list
+    trivially). Only a couple dozen leagues exist here, so computing both
+    sides for every one of them at startup is cheap - unlike a per-club
+    breakdown (build_club_report_cards), there's no reason to defer this
+    to a per-request lookup.
+
     Precomputed once at startup into league_trends_df below; the
     /api/leagues/trends endpoint only filters/sorts it - each row already
-    carries its own by_year series, so the frontend's trend chart needs no
-    second request.
+    carries its own by_year series (and now buys_from/sells_to), so the
+    frontend's trend chart and cross-league flow tables need no second
+    request.
     """
     df = df.copy()
     df["year"] = pd.to_datetime(df["transfer_date"]).dt.year
     current_year = int(df["year"].max())
 
+    # Grouped once outside the main loop (keyed by from_domestic_competition_id)
+    # so each league's sells_to lookup below is a dict lookup, not a fresh
+    # full-dataframe filter per league.
+    outgoing_by_league = dict(list(df.groupby("from_domestic_competition_id")))
+    empty_group = df.iloc[0:0]
+
     rows = []
     for league_id, g in df.groupby("to_domestic_competition_id"):
         if len(g) < MIN_LEAGUE_TRANSFERS:
             continue
+        outgoing = outgoing_by_league.get(league_id, empty_group)
         row = {
             "league_id": league_id,
             "transfers": len(g),
@@ -593,6 +629,8 @@ def build_league_trends(df):
             "early_avg_fee": None, "recent_avg_fee": None, "fee_growth_pct": None,
             "early_avg_score": None, "recent_avg_score": None, "score_change": None,
             "by_year": [],
+            "buys_from": league_flow(g[g["from_domestic_competition_id"] != league_id], "from_domestic_competition_id"),
+            "sells_to": league_flow(outgoing[outgoing["to_domestic_competition_id"] != league_id], "to_domestic_competition_id"),
         }
 
         complete = g[g["year"] < current_year]
@@ -644,6 +682,85 @@ PLAYER_CAREER_SEARCH_DF = pd.concat([
     transfers_df[["player_id", "name", "_name_fold"]],
     loans_df[["player_id", "name", "_name_fold"]],
 ]).drop_duplicates(subset="player_id")
+
+
+PLAYER_SHAPE_FEATURES = ["n_stops", "first_score", "last_score", "avg_score", "score_range", "score_trend", "span_years"]
+
+
+def build_player_shape_vectors():
+    """
+    A small per-player "career shape" feature vector - n_stops, first/last/
+    average score, score_range (max-min), score_trend (last-first), and
+    span_years - for every player with at least one scored transfer or
+    loan (the same population as PLAYER_CAREER_SEARCH_DF). Powers Player
+    Timelines' "similar career shape" suggestions (see
+    nearest_similar_careers below) via nearest-neighbor search on these
+    features, computed once here rather than per request.
+
+    This is deliberately not an exact trajectory match - no per-point
+    alignment or DTW against a reference library, both of which would
+    need real tuning to mean anything and a new dependency for the
+    latter. A handful of summary numbers capturing how a career started,
+    ended, and swung is a cheap, explainable heuristic for "did these two
+    careers go a similar way," not a scientific claim.
+    """
+    combined = pd.concat([
+        transfers_df[["player_id", "transfer_date", "success_score"]].rename(columns={"success_score": "score"}),
+        loans_df[["player_id", "transfer_date", "loan_success_score"]].rename(columns={"loan_success_score": "score"}),
+    ])
+    combined["transfer_date"] = pd.to_datetime(combined["transfer_date"])
+    combined = combined.sort_values("transfer_date")
+
+    rows = []
+    for player_id, g in combined.groupby("player_id"):
+        scores = g["score"].tolist()
+        dates = g["transfer_date"].tolist()
+        rows.append({
+            "player_id": player_id,
+            "n_stops": len(g),
+            "first_score": scores[0],
+            "last_score": scores[-1],
+            "avg_score": sum(scores) / len(scores),
+            "score_range": max(scores) - min(scores),
+            "score_trend": scores[-1] - scores[0],
+            "span_years": (dates[-1] - dates[0]).days / 365.25,
+        })
+    return pd.DataFrame(rows).set_index("player_id")
+
+
+PLAYER_SHAPE_DF = build_player_shape_vectors()
+# Z-score normalized once at startup (each feature against its own
+# population mean/std) so nearest_similar_careers' Euclidean distance
+# doesn't let avg_score (0-100) drown out span_years (0-15) or n_stops
+# (1-15) just because it happens to live on a bigger scale. std().replace(0, 1)
+# guards a hypothetical zero-variance feature from a division by zero -
+# not reachable with today's data, but cheap insurance.
+_shape_mean = PLAYER_SHAPE_DF[PLAYER_SHAPE_FEATURES].mean()
+_shape_std = PLAYER_SHAPE_DF[PLAYER_SHAPE_FEATURES].std().replace(0, 1)
+PLAYER_SHAPE_NORMALIZED = (PLAYER_SHAPE_DF[PLAYER_SHAPE_FEATURES] - _shape_mean) / _shape_std
+PLAYER_NAMES_BY_ID = PLAYER_CAREER_SEARCH_DF.set_index("player_id")["name"]
+
+
+def nearest_similar_careers(player_id, limit=5):
+    """
+    The `limit` other players whose career-shape vector (see
+    build_player_shape_vectors/PLAYER_SHAPE_NORMALIZED) is closest in
+    normalized Euclidean distance to player_id's own - "similar career
+    shape" for Player Timelines. Returns [] for a player with fewer than
+    2 stops (a single data point has no real "shape" to match against)
+    or one missing from PLAYER_SHAPE_NORMALIZED entirely (shouldn't
+    happen for any id /api/players/{id}/career itself would 404 on, but
+    guarded rather than assumed).
+    """
+    if player_id not in PLAYER_SHAPE_NORMALIZED.index:
+        return []
+    if PLAYER_SHAPE_DF.loc[player_id, "n_stops"] < 2:
+        return []
+    query = PLAYER_SHAPE_NORMALIZED.loc[player_id].values
+    diffs = PLAYER_SHAPE_NORMALIZED.values - query
+    dists = pd.Series(np.sqrt((diffs ** 2).sum(axis=1)), index=PLAYER_SHAPE_NORMALIZED.index)
+    nearest_ids = dists.drop(player_id).sort_values().head(limit).index
+    return [{"player_id": int(pid), "name": PLAYER_NAMES_BY_ID.get(pid, "Unknown")} for pid in nearest_ids]
 
 
 NUMERIC_FEATURES = metadata["numeric_features"]
@@ -1986,7 +2103,10 @@ def player_career(player_id: int):
     move - score is normalized to one shared "score" field either way
     (success_score / loan_success_score) so the frontend chart doesn't
     need to know which table a given stop came from, only how to route a
-    click on it to the right detail endpoint.
+    click on it to the right detail endpoint. Also carries
+    similar_careers (see nearest_similar_careers) - up to 5 other players
+    with the closest career-shape vector, so a first paint of the page
+    doesn't need a second request just to suggest them.
     """
     permanent = transfers_df[transfers_df["player_id"] == player_id]
     loan_rows = loans_df[loans_df["player_id"] == player_id]
@@ -2028,6 +2148,7 @@ def player_career(player_id: int):
         "position": position,
         "current_club": current_club,
         "stops": stops,
+        "similar_careers": nearest_similar_careers(player_id),
     }
 
 
@@ -2259,6 +2380,8 @@ def leagues_trends(sort: str = "transfers", order: str = "desc"):
             "recent_avg_score": None if pd.isna(r["recent_avg_score"]) else round(float(r["recent_avg_score"]), 1),
             "score_change": None if pd.isna(r["score_change"]) else round(float(r["score_change"]), 1),
             "by_year": r["by_year"],
+            "buys_from": r["buys_from"],
+            "sells_to": r["sells_to"],
         })
     return {"total": len(results), "results": results}
 

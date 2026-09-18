@@ -1340,6 +1340,40 @@ def test_player_career_degrades_gracefully_without_players_lookup_entry():
     assert data["current_club"] is None
 
 
+def test_player_career_includes_similar_careers_field():
+    """/api/players/{id}/career should carry its own similar_careers list (see nearest_similar_careers) so the frontend needs no second request for the 'similar career shape' suggestions."""
+    res = client.get("/api/players/81999/career")  # Joselu - 5+ stops
+    data = res.json()
+    assert "similar_careers" in data
+    assert 0 < len(data["similar_careers"]) <= 5
+    for entry in data["similar_careers"]:
+        assert "player_id" in entry and "name" in entry
+        assert entry["player_id"] != 81999
+
+
+def test_similar_careers_empty_for_a_single_stop_career():
+    """A career with only one stop has no real 'shape' to match against - similar_careers should be empty, not a handful of arbitrary players."""
+    res = client.get("/api/players/418560/career")  # Erling Haaland - exactly one scored permanent transfer
+    data = res.json()
+    assert len(data["stops"]) == 1
+    assert data["similar_careers"] == []
+
+
+def test_similar_careers_matches_normalized_euclidean_nearest_neighbor():
+    """nearest_similar_careers' own ranking should agree with an independent, direct recomputation of normalized Euclidean distance over PLAYER_SHAPE_NORMALIZED - not just internally consistent, but actually the nearest points."""
+    from app.main import PLAYER_SHAPE_DF, PLAYER_SHAPE_NORMALIZED, nearest_similar_careers
+
+    query_id = PLAYER_SHAPE_DF[PLAYER_SHAPE_DF["n_stops"] >= 2].index[0]
+
+    query_vec = PLAYER_SHAPE_NORMALIZED.loc[query_id]
+    diffs = PLAYER_SHAPE_NORMALIZED.drop(query_id) - query_vec
+    dists = (diffs ** 2).sum(axis=1) ** 0.5
+    expected_top5 = set(dists.sort_values().head(5).index)
+
+    actual = {entry["player_id"] for entry in nearest_similar_careers(query_id)}
+    assert actual == expected_top5
+
+
 def test_league_trends_excludes_thin_leagues():
     """Every league in league_trends_df must have at least MIN_LEAGUE_TRANSFERS - a league with a handful of transfers shouldn't get a report card at all, let alone a noisy year-by-year trend."""
     assert len(league_trends_df) > 0
@@ -1401,7 +1435,7 @@ def test_leagues_trends_endpoint_never_leaks_raw_nan(monkeypatch):
         "early_years": None, "recent_years": None,
         "early_avg_fee": None, "recent_avg_fee": None, "fee_growth_pct": None,
         "early_avg_score": None, "recent_avg_score": None, "score_change": None,
-        "by_year": [],
+        "by_year": [], "buys_from": [], "sells_to": [],
     }
     monkeypatch.setattr(main, "league_trends_df", pd.DataFrame([synthetic_row]))
 
@@ -1421,6 +1455,40 @@ def test_leagues_trends_row_has_no_second_request_needed_fields():
         if r["fee_growth_pct"] is not None:
             assert len(r["by_year"]) > 0
             assert all({"year", "avg_score", "avg_fee", "count"} <= set(point.keys()) for point in r["by_year"])
+
+
+def test_league_trends_cross_league_flow_excludes_transfers_within_the_league():
+    """buys_from/sells_to are cross-league flow - a league's own top entry must never be itself (an intra-league transfer isn't cross-league flow)."""
+    res = client.get("/api/leagues/trends")
+    for r in res.json()["results"]:
+        for entry in r["buys_from"]:
+            assert entry["league_id"] != r["league_id"]
+        for entry in r["sells_to"]:
+            assert entry["league_id"] != r["league_id"]
+
+
+def test_league_trends_cross_league_flow_is_ranked_by_transfer_count_descending():
+    res = client.get("/api/leagues/trends", params={"sort": "transfers", "order": "desc"})
+    prem = next(r for r in res.json()["results"] if "Premier League" == r["league"])
+    buys_counts = [e["transfers"] for e in prem["buys_from"]]
+    sells_counts = [e["transfers"] for e in prem["sells_to"]]
+    assert buys_counts == sorted(buys_counts, reverse=True)
+    assert sells_counts == sorted(sells_counts, reverse=True)
+    assert len(prem["buys_from"]) <= 8
+    assert len(prem["sells_to"]) <= 8
+
+
+def test_league_trends_cross_league_flow_counts_are_real_cross_checked_transfers():
+    """The Premier League's top buys_from entry's transfer count should match a direct filter of the raw processed data - not just internally self-consistent, but actually correct."""
+    df = pd.read_csv("data/transfers_processed.csv")
+    res = client.get("/api/leagues/trends")
+    prem = next(r for r in res.json()["results"] if r["league"] == "Premier League")
+    top_source = prem["buys_from"][0]
+    real_count = len(df[
+        (df["to_domestic_competition_id"] == "GB1")
+        & (df["from_domestic_competition_id"] == top_source["league_id"])
+    ])
+    assert top_source["transfers"] == real_count
 
 
 def test_analytics_scatter_columns_are_all_the_same_length():

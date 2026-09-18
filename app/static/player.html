@@ -13,7 +13,7 @@
   <meta name="twitter:title" content="Player Timelines - Transfer Success Predictor" />
   <meta name="twitter:description" content="Every player's career charted as a timeline of scored transfers and loans." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="stylesheet" href="/style.css?v=50" />
+  <link rel="stylesheet" href="/style.css?v=52" />
 </head>
 <body>
   <header>
@@ -51,17 +51,25 @@
 
   <main class="wide">
     <section class="card">
-      <div class="field" style="max-width: 420px;">
-        <label for="player-search">Player</label>
-        <input id="player-search" type="text" placeholder="Search a player, e.g. Joselu" autocomplete="off" />
-        <div class="autocomplete-list" id="player-list"></div>
+      <div class="compare-grid">
+        <div class="field">
+          <label for="player-search">Player</label>
+          <input id="player-search" type="text" placeholder="Search a player, e.g. Joselu" autocomplete="off" />
+          <div class="autocomplete-list" id="player-list"></div>
+        </div>
+        <div class="field" id="player-b-field" hidden>
+          <label for="player-b-search">Compare with (optional)</label>
+          <input id="player-b-search" type="text" placeholder="Search another player" autocomplete="off" />
+          <div class="autocomplete-list" id="player-b-list"></div>
+          <div id="player-b-chip"></div>
+        </div>
       </div>
     </section>
 
     <section class="card" id="timeline-section" hidden>
       <div id="player-header"></div>
       <div class="timeline-chart-wrap" id="timeline-chart-wrap"></div>
-      <div class="timeline-legend">
+      <div class="timeline-legend" id="timeline-legend">
         <span><span class="legend-dot legend-dot-permanent"></span> Permanent transfer</span>
         <span><span class="legend-dot legend-dot-loan"></span> Loan</span>
         <span class="legend-note">Colored by score - green high, red low</span>
@@ -70,7 +78,7 @@
       <div class="table-wrap">
         <table class="transfers-table" id="stops-table">
           <thead>
-            <tr>
+            <tr id="stops-table-head">
               <th>Date</th>
               <th>Route</th>
               <th>Type</th>
@@ -81,6 +89,8 @@
           <tbody id="stops-body"></tbody>
         </table>
       </div>
+
+      <div id="similar-careers-section"></div>
     </section>
 
     <section class="card" id="empty-state">
@@ -95,7 +105,7 @@
     </div>
   </div>
 
-  <script src="/settings.js?v=50"></script>
-  <script src="/player.js?v=50"></script>
+  <script src="/settings.js?v=52"></script>
+  <script src="/player.js?v=52"></script>
 </body>
 </html>
