@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -3226,6 +3227,22 @@ class NoCacheStaticFiles(StaticFiles):
         response = await super().get_response(path, scope)
         response.headers["Cache-Control"] = "no-store"
         return response
+
+
+@app.api_route("/favicon.ico", methods=["GET", "HEAD"], include_in_schema=False)
+async def favicon_ico():
+    """
+    Browsers request /favicon.ico by default even when a page's <link
+    rel="icon"> points elsewhere, which otherwise 404s since the site only
+    ships favicon.svg. Serving the same SVG here (browsers that requested
+    .ico render whatever image type comes back) avoids maintaining a
+    second, rasterized icon file just for this fallback request.
+    """
+    return FileResponse(
+        os.path.join(BASE_DIR, "static", "favicon.svg"),
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 app.mount("/", NoCacheStaticFiles(directory=os.path.join(BASE_DIR, "static"), html=True), name="static")
