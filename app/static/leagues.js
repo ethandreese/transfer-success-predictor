@@ -118,12 +118,32 @@ function verdictSentence(r) {
 }
 
 /** One league's top trading-partner list (buys_from or sells_to - see /api/leagues/trends) as bar rows, width scaled to the largest count in *this* list rather than a 0-100 score - these are raw transfer counts, so a plain accent bar rather than scoreColor's green/amber/red. Reuses the same .breakdown-row/.breakdown-bar-track/.breakdown-bar-fill markup the transfer-card score breakdown and Club Report Cards' position breakdown already use elsewhere on the site. */
+/**
+ * A handful of league names that are long enough to wrap onto a second
+ * line inside the flow list's fixed 7.5rem label column (checked
+ * directly - "Bundesliga (Germany)" and "Scottish Premiership", both 20
+ * characters, wrap there; "Jupiler Pro League" at 18 doesn't, so 18 is
+ * roughly the real budget). Only covers names that actually reach it in
+ * practice (plus each one's less-common sibling, e.g. Bundesliga
+ * (Austria) alongside Germany's) - short names pass through renderLeagueFlow
+ * unchanged via the lookup's fallback below.
+ */
+const LEAGUE_SHORT_NAMES = {
+  "Bundesliga (Germany)": "Bundesliga (Ger.)",
+  "Bundesliga (Austria)": "Bundesliga (Aut.)",
+  "Premier Liga (Russia)": "Prem. Liga (Rus.)",
+  "Premier Liga (Ukraine)": "Prem. Liga (Ukr.)",
+  "Superliga (Denmark)": "Superliga (Den.)",
+  "Superliga (Romania)": "Superliga (Rom.)",
+  "Scottish Premiership": "Scottish Prem.",
+};
+
 function renderLeagueFlow(entries) {
   if (!entries.length) return `<p class="surprises-intro">No other league accounts for enough transfers here.</p>`;
   const max = Math.max(...entries.map(e => e.transfers));
   return entries.map(e => `
     <div class="breakdown-row">
-      <span class="breakdown-label">${e.league}</span>
+      <span class="breakdown-label" title="${e.league}">${LEAGUE_SHORT_NAMES[e.league] || e.league}</span>
       <div class="breakdown-bar-track">
         <div class="breakdown-bar-fill" style="width:${(e.transfers / max * 100).toFixed(1)}%; background:var(--accent)"></div>
       </div>

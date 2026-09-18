@@ -645,6 +645,13 @@ the git history.
   symmetric playing-time rule that doesn't apply to loans).
 
 **Frontend**
+- Abbreviated a handful of long league names ("Bundesliga (Germany)" ->
+  "Bundesliga (Ger.)", "Scottish Premiership" -> "Scottish Prem.") in
+  League Trends' cross-league flow list - checked directly that these
+  were the two actually wrapping onto a second line in the list's fixed
+  7.5rem label column (`LEAGUE_SHORT_NAMES` in `leagues.js`); the full
+  name is still available via a `title` hover tooltip on the abbreviated
+  label.
 - Added eight features from a second brainstorm pass, one per page
   (Predict, Compare, Browse/Loans, Model vs Reality, Club Report Cards,
   League Trends, Analytics, Player Timelines):
