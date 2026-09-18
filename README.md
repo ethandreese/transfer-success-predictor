@@ -368,21 +368,26 @@ rather than doubling as the predict form (see Project history).
   partners by transfer count, incoming and outgoing, excluding transfers
   that stayed within the league itself (e.g. the Premier League's
   biggest source is Ligue 1, its biggest outflow is to Laliga).
-- **`/analytics.html`** — four hand-drawn SVG charts over every scored
+- **`/analytics.html`** — five hand-drawn SVG charts over every scored
   permanent transfer (`/api/analytics`, computed fresh per request - the
   dataset's small enough that there's no need to precompute at startup):
   fee vs. success score and age vs. success score (both scatter plots with
-  a binned trend line overlaid), fee vs. market value (log-log scatter
-  with a y=x reference line, dots still colored by outcome), and transfer
-  count vs. average fee by year (both indexed to the first year = 100, the
-  same trick League Trends' own chart uses to share one axis between two
-  differently-scaled series). No table or filters, but every chart is
-  click/tap-interactive: a scatter point opens that transfer's full
-  `/api/transfers/detail` card, and a trend-line/yearly point shows a
-  small tooltip with its exact numbers (see `showChartTooltip()` in
-  `analytics.js` - a native `<title>` hover tooltip is also present as a
-  free bonus on desktop, but never fires on a touch device, so it isn't
-  the thing actually relied on).
+  a binned trend line overlaid), height vs. success score with a separate
+  trend line per position (does height matter more at some positions than
+  others - e.g. a real premium for goalkeepers) rather than one blended
+  line - a "Split by position" dropdown isolates any one position's dots
+  and trend line alone, for a reader who wants to check one position's
+  slope without the other three crowding the chart - fee vs. market value
+  (log-log scatter with a y=x reference line, dots still colored by
+  outcome), and transfer count vs. average fee by year (both indexed to
+  the first year = 100, the same trick League Trends' own chart uses to
+  share one axis between two differently-scaled series). No table or
+  filters, but every scatter chart is click/tap-interactive: a point opens
+  that transfer's full `/api/transfers/detail` card, and a trend-line/
+  yearly point shows a small tooltip with its exact numbers (see
+  `showChartTooltip()` in `analytics.js` - a native `<title>` hover
+  tooltip is also present as a free bonus on desktop, but never fires on
+  a touch device, so it isn't the thing actually relied on).
 - **`/about.html`** — what the site does and how the numbers are computed,
   in plain language.
 
@@ -603,6 +608,27 @@ the git history.
   symmetric playing-time rule that doesn't apply to loans).
 
 **Frontend**
+- Added a new Analytics chart: height vs. success score, split into four
+  per-position trend lines via `height_trend_by_position`, rather than
+  one sitewide line that would hide whether the relationship actually
+  differs by role. `trendLinePath()` in `analytics.js` gained an
+  overridable `color` param so the four lines could each get their own
+  hue without duplicating the whole function; four new `--pos-*` CSS
+  variables back those colors, deliberately not reusing
+  `--accent`/`--accent-mid`/`--accent-bad` since the scatter dots
+  underneath already use that triad for score - a position line in one
+  of those same colors would read as a score claim instead of a position
+  label. A "Split by position" dropdown re-renders the chart scoped to
+  just one position's dots and trend line at a time (or all four
+  overlaid, the default), toggling the corresponding legend entries -
+  `buildHeightScoreChart()` itself doesn't know or care whether it's
+  been handed all four positions' rows/trends or one, so no separate
+  code path was needed for the filtered view. Also tried a foot vs.
+  success score chart (a plain bar breakdown, right/left/both); dropped
+  it after building it - the real spread between the three was under a
+  point, not worth a permanent chart. Skipped the third Analytics idea
+  from the original brainstorm (a finer sub-position breakdown) per
+  explicit direction.
 - Added a two-player overlay comparison and "similar career shape"
   suggestions to Player Timelines. A new career-shape feature vector
   (n_stops, first/last/avg score, score_range, score_trend, span_years -

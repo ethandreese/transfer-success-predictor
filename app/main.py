@@ -2865,6 +2865,23 @@ def binned_trend(df, col, q):
     ]
 
 
+POSITION_ORDER = ["Goalkeeper", "Defender", "Midfield", "Attack"]
+
+
+def height_trend_by_position(df, q=6):
+    """
+    Per-position binned height-vs-score trend (see binned_trend) - one
+    series per position rather than one sitewide line, so the Analytics
+    page's Height vs. Score chart can show whether the relationship
+    actually differs by role (e.g. a real premium on height at centre-
+    back/goalkeeper that doesn't hold for attackers) instead of blending
+    four different questions into one average. q=6 rather than the fee/
+    age charts' 10-12: the smallest position (Goalkeeper, ~470 transfers)
+    would otherwise leave some buckets with a noisy handful of players.
+    """
+    return {position: binned_trend(g, "height_in_cm", q=q) for position, g in df.groupby("position")}
+
+
 def numeric_column(series, ndigits=None):
     """
     A float column as a plain JSON-safe list, for the /api/analytics scatter
@@ -2946,6 +2963,10 @@ def get_analytics():
       league_trends_df's `current_year` handling above, an in-progress
       year runs far below a normal year's count and would read as a
       sudden collapse rather than the incomplete data it is.
+    - height_trend_by_position: see its own docstring - the Height vs.
+      Score chart's per-position trend lines, alongside height_in_cm
+      added to the scatter payload itself for that chart's underlying
+      dots.
     """
     df = transfers_df
 
@@ -2958,6 +2979,7 @@ def get_analytics():
         "market_value_in_eur": numeric_column(df["market_value_in_eur"], ndigits=-3),
         "age_at_transfer": numeric_column(df["age_at_transfer"], ndigits=1),
         "success_score": numeric_column(df["success_score"], ndigits=1),
+        "height_in_cm": numeric_column(df["height_in_cm"], ndigits=0),
     }
 
     fee_trend = binned_trend(df[df["transfer_fee"] > 0], "transfer_fee", q=10)
@@ -2982,6 +3004,7 @@ def get_analytics():
         "fee_trend": fee_trend,
         "age_trend": age_trend,
         "by_year": by_year,
+        "height_trend_by_position": height_trend_by_position(df),
     }
 
 

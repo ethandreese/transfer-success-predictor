@@ -4,16 +4,16 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Analytics - Transfer Success Predictor</title>
-  <meta name="description" content="Four charts across every scored transfer: fee vs. success, age vs. success, fee vs. market value, and the market over time." />
+  <meta name="description" content="Five charts across every scored transfer: fee, age, and height (splittable by position) vs. success, fee vs. market value, and the market over time." />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Analytics - Transfer Success Predictor" />
-  <meta property="og:description" content="Four charts across every scored transfer: fee vs. success, age vs. success, fee vs. market value, and the market over time." />
+  <meta property="og:description" content="Five charts across every scored transfer: fee, age, and height (splittable by position) vs. success, fee vs. market value, and the market over time." />
   <meta property="og:url" content="https://transfer-success-predictor.onrender.com/analytics.html" />
   <meta name="twitter:card" content="summary" />
   <meta name="twitter:title" content="Analytics - Transfer Success Predictor" />
-  <meta name="twitter:description" content="Four charts across every scored transfer, from fee vs. success to the market over time." />
+  <meta name="twitter:description" content="Five charts across every scored transfer, from fee/age/height vs. success to the market over time." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="stylesheet" href="/style.css?v=52" />
+  <link rel="stylesheet" href="/style.css?v=54" />
 </head>
 <body>
   <header>
@@ -52,11 +52,11 @@
   <main>
     <section class="card">
       <p class="surprises-intro">
-        Four charts drawn from every scored permanent transfer (~8,300 of them). On the three
-        scatter charts, hover a point for a quick look or click/tap it for that transfer's full
-        breakdown card. Fee and market value are missing for some transfers (a free/undisclosed
-        fee, or no market-value snapshot at the time) - those charts plot only the transfers
-        that have the number they need.
+        Five charts drawn from every scored permanent transfer (~8,300 of them). On the scatter
+        charts, hover a point for a quick look or click/tap it for that transfer's full
+        breakdown card. Fee, market value, and height are each missing for a small number of
+        transfers (a free/undisclosed fee, no market-value snapshot at the time, or no recorded
+        height) - those charts plot only the transfers that have the number they need.
       </p>
     </section>
 
@@ -70,6 +70,28 @@
       <h2>Age vs. success score</h2>
       <p class="surprises-intro" id="age-score-desc">Loading...</p>
       <div class="timeline-chart-wrap" id="age-score-chart"></div>
+    </section>
+
+    <section class="card">
+      <h2>Height vs. success score, by position</h2>
+      <p class="surprises-intro" id="height-score-desc">Loading...</p>
+      <div class="field" style="max-width: 260px;">
+        <label for="height-position-filter">Split by position</label>
+        <select id="height-position-filter">
+          <option value="">All positions</option>
+          <option value="Goalkeeper">Goalkeeper only</option>
+          <option value="Defender">Defender only</option>
+          <option value="Midfield">Midfield only</option>
+          <option value="Attack">Attack only</option>
+        </select>
+      </div>
+      <div class="timeline-chart-wrap" id="height-score-chart"></div>
+      <div class="timeline-legend" id="height-score-legend">
+        <span data-position="Goalkeeper"><span class="legend-dot" style="background:var(--pos-goalkeeper); border:none;"></span> Goalkeeper</span>
+        <span data-position="Defender"><span class="legend-dot" style="background:var(--pos-defender); border:none;"></span> Defender</span>
+        <span data-position="Midfield"><span class="legend-dot" style="background:var(--pos-midfield); border:none;"></span> Midfield</span>
+        <span data-position="Attack"><span class="legend-dot" style="background:var(--pos-attack); border:none;"></span> Attack</span>
+      </div>
     </section>
 
     <section class="card">
@@ -98,7 +120,7 @@
 
   <div id="chart-tooltip" role="status" hidden></div>
 
-  <script src="/settings.js?v=52"></script>
-  <script src="/analytics.js?v=52"></script>
+  <script src="/settings.js?v=54"></script>
+  <script src="/analytics.js?v=54"></script>
 </body>
 </html>

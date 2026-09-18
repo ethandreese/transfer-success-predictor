@@ -1579,3 +1579,32 @@ def test_analytics_by_year_excludes_current_partial_year():
     assert len(years) > 0
     assert current_year not in years
     assert years == sorted(years)
+
+
+def test_analytics_scatter_height_is_json_safe():
+    """height_in_cm is missing for a handful of transfers - it must serialize as JSON null, not a raw NaN token, same as fee/market_value's existing nulls."""
+    res = client.get("/api/analytics")
+    assert "NaN" not in res.text
+    scatter = res.json()["scatter"]
+    assert None in scatter["height_in_cm"]
+
+
+def test_analytics_height_trend_by_position_covers_all_four_positions():
+    """height_trend_by_position should have one entry per real position, each a non-empty, x-sorted binned trend (same shape as fee_trend/age_trend)."""
+    res = client.get("/api/analytics")
+    by_position = res.json()["height_trend_by_position"]
+    assert set(by_position.keys()) == {"Goalkeeper", "Defender", "Midfield", "Attack"}
+    for position, trend in by_position.items():
+        assert len(trend) > 0, position
+        xs = [p["x"] for p in trend]
+        assert xs == sorted(xs), position
+
+
+def test_analytics_height_trend_goalkeepers_are_tallest_on_average():
+    """Sanity-checks the actual data, not just the plumbing: goalkeepers' height trend should sit well above every outfield position's, matching the real-world premium on GK height."""
+    res = client.get("/api/analytics")
+    by_position = res.json()["height_trend_by_position"]
+    gk_avg = sum(p["x"] for p in by_position["Goalkeeper"]) / len(by_position["Goalkeeper"])
+    for position in ("Defender", "Midfield", "Attack"):
+        outfield_avg = sum(p["x"] for p in by_position[position]) / len(by_position[position])
+        assert gk_avg > outfield_avg, position

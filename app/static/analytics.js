@@ -21,10 +21,20 @@ function zipScatter(scatter) {
       market_value_in_eur: scatter.market_value_in_eur[i],
       age_at_transfer: scatter.age_at_transfer[i],
       success_score: scatter.success_score[i],
+      height_in_cm: scatter.height_in_cm[i],
     });
   }
   return rows;
 }
+
+/** Position display order shared by the Height vs. Score chart's trend lines and legend - goalkeepers first (fewest transfers, tallest on average), then outfield positions back to front. */
+const POSITION_ORDER = ["Goalkeeper", "Defender", "Midfield", "Attack"];
+const POSITION_COLORS = {
+  Goalkeeper: "var(--pos-goalkeeper)",
+  Defender: "var(--pos-defender)",
+  Midfield: "var(--pos-midfield)",
+  Attack: "var(--pos-attack)",
+};
 
 function linearScale(d0, d1, r0, r1) {
   return (v) => d1 === d0 ? (r0 + r1) / 2 : r0 + (v - d0) / (d1 - d0) * (r1 - r0);
@@ -62,21 +72,27 @@ function scatterPoint(cx, cy, color, opacity, playerId, transferDate, tooltip) {
 }
 
 /**
- * The binned-average trend line overlaid on the fee/age scatter charts: a
- * dashed line in a color distinct from both the scoreColor'd dots and the
- * theme's plain text/border colors (see --trend-line), with a marker at
- * each underlying bucket. Each marker carries both a `<title>` (a free
- * hover tooltip on desktop, once the browser's own hover delay elapses)
- * and a `data-tooltip` attribute - the real interaction, read by the
- * document-level click listener near the end of this file to show
- * showChartTooltip() on click/tap, since `<title>` alone never fires on
- * a touch device at all (there's no hover state to trigger it). Each
- * marker also gets the same small-visible-dot/larger-invisible-hit-circle
- * treatment as scatterPoint() above - at r=3.5 alone the visible dot is a
- * hard target to land a click on exactly, especially with only 10-12 of
- * them spread across the full chart width.
+ * The binned-average trend line overlaid on a scatter chart: a dashed
+ * line in a color distinct from both the scoreColor'd dots and the
+ * theme's plain text/border colors (--trend-line by default), with a
+ * marker at each underlying bucket. `color` is overridable so the Height
+ * vs. Score chart can draw four of these at once, one per position, each
+ * in its own --pos-* color (see POSITION_COLORS) - reusing --trend-line
+ * for all four would make them indistinguishable from each other and,
+ * worse, other charts wouldn't get where "trend-line blue" stops meaning
+ * "the sitewide reference line" and starts meaning "this one position."
+ * Each marker carries both a `<title>` (a free hover tooltip on desktop,
+ * once the browser's own hover delay elapses) and a `data-tooltip`
+ * attribute - the real interaction, read by the document-level click
+ * listener near the end of this file to show showChartTooltip() on
+ * click/tap, since `<title>` alone never fires on a touch device at all
+ * (there's no hover state to trigger it). Each marker also gets the same
+ * small-visible-dot/larger-invisible-hit-circle treatment as
+ * scatterPoint() above - at r=3.5 alone the visible dot is a hard target
+ * to land a click on exactly, especially with only 6-12 of them spread
+ * across the full chart width.
  */
-function trendLinePath(trend, x, y, labelFor) {
+function trendLinePath(trend, x, y, labelFor, color = "var(--trend-line)") {
   const pts = trend.map(t => `${x(t.x).toFixed(1)},${y(t.avg_score).toFixed(1)}`).join(" ");
   const markers = trend.map(t => {
     const cx = x(t.x).toFixed(1), cy = y(t.avg_score).toFixed(1);
@@ -84,13 +100,13 @@ function trendLinePath(trend, x, y, labelFor) {
     return `
       <g style="cursor:pointer" data-tooltip="${label}">
         <circle cx="${cx}" cy="${cy}" r="10" fill="transparent" />
-        <circle cx="${cx}" cy="${cy}" r="3.5" fill="var(--trend-line)" stroke="var(--panel)" stroke-width="1" />
+        <circle cx="${cx}" cy="${cy}" r="3.5" fill="${color}" stroke="var(--panel)" stroke-width="1" />
         <title>${label}</title>
       </g>
     `;
   }).join("");
   return `
-    <polyline points="${pts}" fill="none" stroke="var(--trend-line)" stroke-width="2.5" stroke-dasharray="7 4" stroke-linecap="round" opacity="0.9" />
+    <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2.5" stroke-dasharray="7 4" stroke-linecap="round" opacity="0.9" />
     ${markers}
   `;
 }
@@ -162,6 +178,55 @@ function buildAgeScoreChart(rows, trend) {
     ${dots}
     ${trendLine}
     ${xLabels.join("")}
+  </svg>`;
+}
+
+/**
+ * Height (linear x-axis - 160-203cm is too narrow a range to need a log
+ * scale) vs. success score, with an overlaid trend line per position
+ * (see POSITION_ORDER/POSITION_COLORS and height_trend_by_position on
+ * the backend) instead of the fee/age charts' single sitewide line - the
+ * whole point of this chart is whether the height-score relationship
+ * actually differs by role (a real premium at centre-back/goalkeeper
+ * that doesn't hold for attackers, say), which one blended average
+ * would hide entirely. `rows`/`trendByPosition` are whatever the "Split
+ * by position" filter left in (see renderHeightChart) - all four
+ * positions by default, or just one once the reader isolates it; this
+ * function itself doesn't know or care which.
+ */
+function buildHeightScoreChart(rows, trendByPosition) {
+  const points = rows.filter(r => r.height_in_cm != null);
+  const W = 900, H = 320, padL = 40, padR = 16, padT = 14, padB = 30;
+  const chartW = W - padL - padR, chartH = H - padT - padB;
+  const heights = points.map(p => p.height_in_cm);
+  const minH = Math.min(...heights), maxH = Math.max(...heights);
+  const x = linearScale(minH, maxH, padL, W - padR);
+  const y = (score) => padT + (100 - score) / 100 * chartH;
+
+  const dots = points.map(p => scatterPoint(
+    x(p.height_in_cm).toFixed(1), y(p.success_score).toFixed(1), scoreColor(p.success_score), 0.35,
+    p.player_id, p.transfer_date, `${p.name}: ${p.height_in_cm}cm, score ${p.success_score} (click for details)`,
+  )).join("");
+
+  const trendLines = POSITION_ORDER.map(position => {
+    const trend = (trendByPosition[position] || []).filter(t => t.x >= minH && t.x <= maxH);
+    if (!trend.length) return "";
+    return trendLinePath(
+      trend, x, y,
+      (t) => `${position} around ${t.x.toFixed(0)}cm: avg score ${t.avg_score} (${t.n.toLocaleString()} transfers)`,
+      POSITION_COLORS[position],
+    );
+  }).join("");
+
+  const ticks = [];
+  for (let h = Math.ceil(minH / 10) * 10; h <= maxH; h += 10) ticks.push(h);
+  const xLabels = ticks.map(t => `<text x="${x(t).toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="10" fill="var(--muted)">${t}cm</text>`).join("");
+
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="Height vs success score scatter plot, by position">
+    ${scoreGridlines(y, padL, padR, W)}
+    ${dots}
+    ${trendLines}
+    ${xLabels}
   </svg>`;
 }
 
@@ -358,6 +423,7 @@ document.addEventListener("keydown", (e) => {
 });
 wireScatterClicks("fee-score-chart");
 wireScatterClicks("age-score-chart");
+wireScatterClicks("height-score-chart");
 wireScatterClicks("fee-value-chart");
 
 // Any click on a data-tooltip element (a trend-line marker or a
@@ -370,6 +436,35 @@ document.addEventListener("click", (e) => {
   if (marked) showChartTooltip(marked.dataset.tooltip, e.clientX, e.clientY);
   else if (!e.target.closest("#chart-tooltip")) hideChartTooltip();
 });
+
+/**
+ * Render the Height vs. Score chart, description, and legend from the
+ * current "Split by position" filter - all four positions overlaid by
+ * default, or just one isolated once the reader picks it from the
+ * <select>, which re-plots that position alone rather than leaving the
+ * other three lines cluttering a comparison the reader has already
+ * decided they don't need. Called from renderAll() (initial load,
+ * settingschange) and directly from the filter's own change listener -
+ * switching the filter doesn't need every other chart on the page to
+ * redraw too.
+ */
+function renderHeightChart() {
+  const { data, rows } = state;
+  const filter = document.getElementById("height-position-filter").value;
+  const filteredRows = filter ? rows.filter(r => r.position === filter) : rows;
+  const trendByPosition = filter ? { [filter]: data.height_trend_by_position[filter] } : data.height_trend_by_position;
+
+  const heightPoints = filteredRows.filter(r => r.height_in_cm != null);
+  document.getElementById("height-score-chart").innerHTML = buildHeightScoreChart(filteredRows, trendByPosition);
+  document.getElementById("height-score-desc").textContent = filter
+    ? `${heightPoints.length.toLocaleString()} ${filter.toLowerCase()} transfers with a recorded height. Click/tap a point on the trend line for that height band's average score and sample size.`
+    : `${heightPoints.length.toLocaleString()} transfers with a recorded height. Each position gets its own trend line - click/tap a point on one for that height band's average score and sample size, and compare the four lines' slopes for whether height matters more at some positions than others.`;
+
+  [...document.getElementById("height-score-legend").children].forEach(el => {
+    el.hidden = filter !== "" && el.dataset.position !== filter;
+  });
+}
+document.getElementById("height-position-filter").addEventListener("change", renderHeightChart);
 
 /** Render every chart, description, and legend from the already-fetched /api/analytics response - called once on load and again on a settingschange (currency affects several charts' tick/tooltip labels, and there's no harm re-drawing the rest). */
 function renderAll() {
@@ -391,6 +486,8 @@ function renderAll() {
   document.getElementById("age-score-chart").innerHTML = buildAgeScoreChart(rows, data.age_trend);
   document.getElementById("age-score-desc").textContent =
     `All ${rows.length.toLocaleString()} scored transfers. The trend line's average score falls from ${data.age_trend[0].avg_score} for the youngest transfers to ${data.age_trend[data.age_trend.length - 1].avg_score} for the oldest - buying young tends to pay off, at least on average. Click/tap any point on it for that bucket's exact numbers.`;
+
+  renderHeightChart();
 
   const valuePoints = rows.filter(r => r.transfer_fee > 0 && r.market_value_in_eur > 0);
   document.getElementById("fee-value-chart").innerHTML = buildFeeValueChart(rows);

@@ -14,6 +14,17 @@
      (as var(--text) previously was) a flat black/white slash competing
      with them for attention. */
   --trend-line: #7dd3fc;
+  /* The Height vs. Score chart's four per-position trend lines (see
+     buildHeightScoreChart in analytics.js) - deliberately not reusing
+     --accent/--accent-mid/--accent-bad, which the scatter dots underneath
+     already use for score (green/amber/red); a position line in one of
+     those same colors would read as a score claim instead of a position
+     label. --pos-goalkeeper reuses --trend-line's blue (no score meaning
+     of its own to clash with); the other three are new hues. */
+  --pos-goalkeeper: var(--trend-line);
+  --pos-defender: #a78bfa;
+  --pos-midfield: #f472b6;
+  --pos-attack: #fb923c;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
@@ -29,6 +40,10 @@
   --accent-bad: #dc2626;
   --accent-mid: #d97706;
   --trend-line: #0369a1;
+  --pos-goalkeeper: var(--trend-line);
+  --pos-defender: #7c3aed;
+  --pos-midfield: #db2777;
+  --pos-attack: #ea580c;
 }
 
 * { box-sizing: border-box; }
