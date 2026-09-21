@@ -156,6 +156,17 @@ header {
   color: var(--accent);
 }
 
+/* The fixed .settings-btn floats over the top-right corner of every page,
+   outside normal document flow, so nothing in the flex/grid layout below
+   it "knows" to make room - below ~350px viewport width the kicker's own
+   line (the only content that shares its vertical position) runs long
+   enough to visually collide with it. Shrinking the kicker specifically
+   at that width clears it without touching the wordmark or nav below,
+   which have never been the problem here. */
+@media (max-width: 360px) {
+  .kicker { font-size: 0.62rem; letter-spacing: 0.09em; }
+}
+
 header h1 {
   margin: 0;
   font-family: var(--font-display);
@@ -585,9 +596,19 @@ h2 {
   color: var(--muted);
 }
 
+/* The predict form card sits in the left column of .predict-layout,
+   capped at 420px - narrower than this card was before that two-column
+   layout existed. A viewport-width media query can't tell that apart
+   from the card being full-width (e.g. once .predict-layout itself
+   stacks below 860px), so .form-grid reacts to its own card's rendered
+   width via a container query instead: two columns once the card is
+   actually wide enough for them, one column otherwise, correct in both
+   the narrow-card-wide-viewport and wide-card-narrow-viewport cases. */
+.predict-layout > .card:first-child { container-type: inline-size; }
+
 .form-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 1.25rem;
   /* Without this, CSS Grid's default (stretch) forces every cell in a row
      to the same height - so selecting a player (whose .field grows once
@@ -598,8 +619,8 @@ h2 {
   align-items: start;
 }
 
-@media (max-width: 720px) {
-  .form-grid { grid-template-columns: 1fr; }
+@container (min-width: 480px) {
+  .form-grid { grid-template-columns: 1fr 1fr; }
 }
 
 .field { position: relative; margin-bottom: 0.9rem; }
