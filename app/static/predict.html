@@ -17,12 +17,45 @@
   <meta name="twitter:description" content="Predict how a football transfer is likely to go, trained on ~7,800 real historical transfers." />
   <meta name="twitter:image" content="https://transfer-success-predictor.onrender.com/og-image.png" />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="stylesheet" href="/style.css?v=58" />
+  <link rel="stylesheet" href="/style.css?v=65" />
 </head>
 <body>
   <header>
-    <h1>⚽ Transfer Success Predictor</h1>
-    <p>
+    <div class="masthead-row">
+      <div class="brand">
+        <p class="kicker">Football Transfer Analytics</p>
+        <h1>Transfer Success Predictor</h1>
+      </div>
+        <nav class="topnav">
+        <a href="/">Home</a>
+        <div class="nav-dropdown">
+          <button class="nav-dropdown-toggle active" aria-expanded="false" aria-haspopup="true">Predict <span class="nav-caret">&#9662;</span></button>
+          <div class="nav-dropdown-menu">
+            <a href="/predict.html" class="active">Predict a transfer</a>
+            <a href="/compare.html">Compare transfers</a>
+          </div>
+        </div>
+        <div class="nav-dropdown">
+          <button class="nav-dropdown-toggle" aria-expanded="false" aria-haspopup="true">Browse <span class="nav-caret">&#9662;</span></button>
+          <div class="nav-dropdown-menu">
+            <a href="/browse.html">All transfers</a>
+            <a href="/loans.html">Loans</a>
+          </div>
+        </div>
+        <div class="nav-dropdown">
+          <button class="nav-dropdown-toggle" aria-expanded="false" aria-haspopup="true">Insights <span class="nav-caret">&#9662;</span></button>
+          <div class="nav-dropdown-menu">
+            <a href="/surprises.html">Model vs reality</a>
+            <a href="/clubs.html">Club report cards</a>
+            <a href="/player.html">Player timelines</a>
+            <a href="/leagues.html">League trends</a>
+            <a href="/analytics.html">Analytics</a>
+          </div>
+        </div>
+        <a href="/about.html">About</a>
+      </nav>
+    </div>
+    <p class="header-sub">
       Search a real player and a destination club to see how a hypothetical transfer might
       score. Trained on ~7,800 real permanent transfers (2013&ndash;2026), the model only
       ever sees information available <em>before</em> a move happens: age, recent form,
@@ -31,66 +64,45 @@
       <a href="/loans.html">Browse loans</a>); see <a href="/about.html">About</a> for what
       the 0&ndash;100 score itself measures.
     </p>
-    <nav class="topnav">
-      <a href="/">Home</a>
-      <div class="nav-dropdown">
-        <button class="nav-dropdown-toggle active" aria-expanded="false" aria-haspopup="true">Predict <span class="nav-caret">&#9662;</span></button>
-        <div class="nav-dropdown-menu">
-          <a href="/predict.html" class="active">Predict a transfer</a>
-          <a href="/compare.html">Compare transfers</a>
-        </div>
-      </div>
-      <div class="nav-dropdown">
-        <button class="nav-dropdown-toggle" aria-expanded="false" aria-haspopup="true">Browse <span class="nav-caret">&#9662;</span></button>
-        <div class="nav-dropdown-menu">
-          <a href="/browse.html">All transfers</a>
-          <a href="/loans.html">Loans</a>
-        </div>
-      </div>
-      <div class="nav-dropdown">
-        <button class="nav-dropdown-toggle" aria-expanded="false" aria-haspopup="true">Insights <span class="nav-caret">&#9662;</span></button>
-        <div class="nav-dropdown-menu">
-          <a href="/surprises.html">Model vs reality</a>
-          <a href="/clubs.html">Club report cards</a>
-          <a href="/player.html">Player timelines</a>
-          <a href="/leagues.html">League trends</a>
-          <a href="/analytics.html">Analytics</a>
-        </div>
-      </div>
-      <a href="/about.html">About</a>
-    </nav>
   </header>
 
   <main>
-    <section class="card">
-      <h2>Predict a transfer</h2>
-      <div class="form-grid">
-        <div class="field">
-          <label for="player-search">Player</label>
-          <input id="player-search" type="text" placeholder="Search a player, e.g. Haaland" autocomplete="off" />
-          <div class="autocomplete-list" id="player-list"></div>
-          <div id="player-chip"></div>
+    <div class="predict-layout">
+      <section class="card">
+        <h2>Predict a transfer</h2>
+        <div class="form-grid">
+          <div class="field">
+            <label for="player-search">Player</label>
+            <input id="player-search" type="text" placeholder="Search a player, e.g. Haaland" autocomplete="off" />
+            <div class="autocomplete-list" id="player-list"></div>
+            <div id="player-chip"></div>
+          </div>
+          <div class="field">
+            <label for="club-search">Destination club</label>
+            <input id="club-search" type="text" placeholder="Search a club, e.g. Real Madrid" autocomplete="off" />
+            <div class="autocomplete-list" id="club-list"></div>
+            <div id="club-chip"></div>
+          </div>
+          <div class="field">
+            <label for="fee">Transfer fee (&euro;m)</label>
+            <input id="fee" type="number" min="0" step="0.5" value="50" />
+            <input id="fee-slider" type="range" min="0" max="200" step="0.5" value="50" aria-label="Transfer fee slider" />
+          </div>
+          <div class="field">
+            <label for="age-override">Age at transfer (auto-filled, editable)</label>
+            <input id="age-override" type="number" min="15" max="42" step="0.1" />
+          </div>
         </div>
-        <div class="field">
-          <label for="club-search">Destination club</label>
-          <input id="club-search" type="text" placeholder="Search a club, e.g. Real Madrid" autocomplete="off" />
-          <div class="autocomplete-list" id="club-list"></div>
-          <div id="club-chip"></div>
-        </div>
-        <div class="field">
-          <label for="fee">Transfer fee (&euro;m)</label>
-          <input id="fee" type="number" min="0" step="0.5" value="50" />
-          <input id="fee-slider" type="range" min="0" max="200" step="0.5" value="50" aria-label="Transfer fee slider" />
-        </div>
-        <div class="field">
-          <label for="age-override">Age at transfer (auto-filled, editable)</label>
-          <input id="age-override" type="number" min="15" max="42" step="0.1" />
-        </div>
-      </div>
-      <button class="predict-btn" id="predict-btn" disabled>Predict success</button>
-      <div class="error-box" id="error-box"></div>
+        <button class="predict-btn" id="predict-btn" disabled>Predict success</button>
+        <div class="error-box" id="error-box"></div>
+      </section>
 
-      <div class="result" id="result">
+      <section class="card result-placeholder" id="result-placeholder">
+        <p>Your prediction will appear here.</p>
+        <p class="surprises-intro">Search a player and a destination club, then hit Predict success to see the score, where it lands against similar transfers, and what's driving it.</p>
+      </section>
+
+      <section class="card result" id="result">
         <div class="score-display">
           <div class="big" id="score-value">-</div>
           <div class="score-label">/ 100 predicted success score</div>
@@ -124,11 +136,11 @@
           and squad fit over multiple years matter as much as the numbers here. Treat
           this as a rough signal, not a certainty.
         </p>
-      </div>
-    </section>
+      </section>
+    </div>
   </main>
 
-  <script src="/settings.js?v=58"></script>
-  <script src="/app.js?v=58"></script>
+  <script src="/settings.js?v=65"></script>
+  <script src="/app.js?v=65"></script>
 </body>
 </html>

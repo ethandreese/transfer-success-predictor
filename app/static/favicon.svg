@@ -1,1 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text x="50" y="78" font-size="80" text-anchor="middle">⚽</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <circle cx="50" cy="50" r="48" fill="#3c8a5c"/>
+  <polyline points="26,64 42,46 54,56 76,28" fill="none" stroke="#fbf8f1" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="60,28 76,28 76,44" fill="none" stroke="#fbf8f1" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
