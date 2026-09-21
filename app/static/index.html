@@ -17,7 +17,7 @@
   <meta name="twitter:description" content="Predict transfers, browse ~8,300 real scored moves, and explore surprises, club records, player careers, and league fee trends." />
   <meta name="twitter:image" content="https://transfer-success-predictor.onrender.com/og-image.png" />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="stylesheet" href="/style.css?v=70" />
+  <link rel="stylesheet" href="/style.css?v=71" />
 </head>
 <body>
   <header>
@@ -65,12 +65,23 @@
 
   <main>
     <section class="card">
-      <h2>Start here</h2>
+      <h2>Examples of the model and historical data</h2>
       <p class="intro-text">
-        Search a real player and a destination club to see a predicted success score, or jump
-        straight into the real historical data: every scored transfer, loan, club, player
-        career, and league is browsable.
+        Four real players, scored two ways: what their actual transfer earned them, and what
+        the model predicts for a different, hypothetical move. Search any real player and
+        destination club yourself below, or jump straight into every one of the ~8,300 real
+        scored transfers.
       </p>
+      <div class="examples-groups">
+        <div>
+          <h3 class="group-label">What actually happened</h3>
+          <div class="examples-grid" id="examples">Loading...</div>
+        </div>
+        <div>
+          <h3 class="group-label">What the model predicts for a different move</h3>
+          <div class="examples-grid" id="hypothetical-examples">Loading...</div>
+        </div>
+      </div>
       <div class="hero-actions">
         <a class="cta-btn" href="/predict.html">Predict a transfer &rarr;</a>
         <a class="cta-btn cta-btn-secondary" href="/browse.html">Browse real transfers &rarr;</a>
@@ -78,15 +89,10 @@
     </section>
 
     <section class="card">
-      <h2>Known transfers, scored by the model</h2>
-      <div class="examples-grid" id="examples">Loading...</div>
-    </section>
-
-    <section class="card">
       <h2>Explore the site</h2>
       <div class="feature-groups">
         <div class="feature-group">
-          <h3>Predict</h3>
+          <h3 class="group-label">Predict</h3>
           <div class="feature-grid">
             <a class="feature-card" href="/predict.html">
               <div class="feature-title">Predict a transfer</div>
@@ -99,7 +105,7 @@
           </div>
         </div>
         <div class="feature-group">
-          <h3>Browse</h3>
+          <h3 class="group-label">Browse</h3>
           <div class="feature-grid">
             <a class="feature-card" href="/browse.html">
               <div class="feature-title">All transfers</div>
@@ -112,7 +118,7 @@
           </div>
         </div>
         <div class="feature-group">
-          <h3>Insights</h3>
+          <h3 class="group-label">Insights</h3>
           <div class="feature-grid">
             <a class="feature-card" href="/surprises.html">
               <div class="feature-title">Model vs reality</div>
@@ -140,7 +146,7 @@
     </section>
   </main>
 
-  <script src="/settings.js?v=70"></script>
-  <script src="/home.js?v=70"></script>
+  <script src="/settings.js?v=71"></script>
+  <script src="/home.js?v=71"></script>
 </body>
 </html>

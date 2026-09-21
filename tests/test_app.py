@@ -79,6 +79,19 @@ def test_examples_returns_known_transfers_with_breakdown():
             assert "description" in component and component["description"]
 
 
+def test_example_predictions_returns_hypothetical_scores_for_every_player():
+    """Every EXAMPLE_HYPOTHETICAL_KEYS pair should resolve to a real prediction (built from players_df/clubs_df directly, not the /api/predict request schema), a valid score, and a destination different from the player's real/current club."""
+    res = client.get("/api/examples/predictions")
+    assert res.status_code == 200
+    data = res.json()
+    assert len(data) == 4
+    for ex in data:
+        assert 0 <= ex["success_score"] <= 100
+        assert ex["transfer_fee"] > 0
+        assert ex["to_club"] != ex["from_club"]
+        assert ex["name"] and ex["position"]
+
+
 def test_resale_profit_description_matches_actual_profit_or_loss():
     """
     Dembélé's Barcelona spell: bought for €148m, later resold to PSG for

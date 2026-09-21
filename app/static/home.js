@@ -51,9 +51,36 @@ async function loadExamples() {
   }
 }
 
+/** Fetch the hypothetical-move predictions from /api/examples/predictions and render them into #hypothetical-examples - the same 4 players as loadExamples() above, each scored for a different destination club instead of their real historical move. A lighter card than .example-card's historical one (no breakdown/tenure-note, since there's no real outcome to describe) - just the route, the predicted score, and the hypothetical fee it was scored at. */
+async function loadHypotheticalExamples() {
+  const el = document.getElementById("hypothetical-examples");
+  try {
+    const res = await fetch("/api/examples/predictions");
+    const data = await res.json();
+    if (!data.length) {
+      el.textContent = "No predictions available.";
+      return;
+    }
+    el.innerHTML = data.map(ex => `
+      <div class="example-card">
+        <div class="name">${ex.name}</div>
+        <div class="route">${ex.from_club} &rarr; ${ex.to_club}</div>
+        <div class="score" style="color:${scoreColor(ex.success_score)}">${ex.success_score}</div>
+        <div class="tenure-note">Predicted for a hypothetical ${formatMoney(ex.transfer_fee)} move</div>
+      </div>
+    `).join("");
+  } catch (e) {
+    el.textContent = "Failed to load predictions.";
+  }
+}
+
 // A currency change doesn't change the underlying data, just how the
-// breakdown's money-mentioning descriptions display - reload the examples
-// grid so they redisplay in the new currency.
-document.addEventListener("settingschange", loadExamples);
+// breakdown's money-mentioning descriptions (and the hypothetical fee
+// note) display - reload both grids so they redisplay in the new currency.
+document.addEventListener("settingschange", () => {
+  loadExamples();
+  loadHypotheticalExamples();
+});
 
 loadExamples();
+loadHypotheticalExamples();
