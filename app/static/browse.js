@@ -26,6 +26,11 @@ function scoreColor(score) {
   return "var(--accent-bad)";
 }
 
+/** Escape a value for safe interpolation inside an HTML attribute (e.g. a title="..." tooltip) - real club names can contain a literal " or & (e.g. Brighton & Hove Albion, or a club whose native name is quoted), which would otherwise break out of the attribute. */
+function escapeAttr(value) {
+  return String(value).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 /** Read the fee/age range filter inputs into API-ready params, converting the fee bounds from their currency-independent EUR-millions state (see updateFeeCurrencyDisplay) to the raw euro amount the API expects - shared by currentFilterParams() and thus by the table fetch, URL sync, and export link alike, so all three always agree on the active range filters. */
 function rangeFilterParams() {
   const params = {};
@@ -151,10 +156,10 @@ async function loadTable() {
   } else {
     tbody.innerHTML = data.results.map(r => `
       <tr data-player-id="${r.player_id}" data-transfer-date="${r.transfer_date}" tabindex="0" role="button" aria-label="View transfer details: ${r.name} to ${r.to_club}">
-        <td>${r.name}</td>
+        <td title="${escapeAttr(r.name)}">${r.name}</td>
         <td>${r.position}</td>
-        <td>${r.from_club} &rarr; ${r.to_club}</td>
-        <td>${r.to_league}</td>
+        <td title="${escapeAttr(r.from_club + " → " + r.to_club)}">${r.from_club} &rarr; ${r.to_club}</td>
+        <td title="${escapeAttr(r.to_league)}">${r.to_league}</td>
         <td>${r.transfer_date.slice(0, 7)}</td>
         <td>${r.age_at_transfer}</td>
         <td>${formatMoney(r.transfer_fee)}</td>

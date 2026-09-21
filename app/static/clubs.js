@@ -11,6 +11,11 @@ function scoreColor(score) {
   return "var(--accent-bad)";
 }
 
+/** Escape a value for safe interpolation inside an HTML attribute (e.g. a title="..." tooltip) - real club names can contain a literal " or & (e.g. Brighton & Hove Albion, or a club whose native name is quoted), which would otherwise break out of the attribute. */
+function escapeAttr(value) {
+  return String(value).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 /** Green for a profitable total, red for a loss - total_resale_profit is a signed euro amount, not a 0-100 scale. */
 function totalColor(amount) {
   return amount >= 0 ? "var(--accent)" : "var(--accent-bad)";
@@ -299,8 +304,8 @@ async function loadTable() {
   } else {
     tbody.innerHTML = data.results.map((r, i) => `
       <tr data-index="${i}" tabindex="0" role="button" aria-label="View report card: ${r.club_name}">
-        <td>${r.club_name}</td>
-        <td>${r.league}</td>
+        <td title="${escapeAttr(r.club_name)}">${r.club_name}</td>
+        <td title="${escapeAttr(r.league)}">${r.league}</td>
         <td>${r.transfers_in}</td>
         <td>${scoreCell(r.avg_incoming_score, r.transfers_in)}</td>
         <td>${r.transfers_in ? formatMoney(r.total_spent) : "—"}</td>

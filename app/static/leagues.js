@@ -8,6 +8,11 @@ function scoreColor(score) {
   return "var(--accent-bad)";
 }
 
+/** Escape a value for safe interpolation inside an HTML attribute (e.g. a title="..." tooltip) - league names can contain a literal " or &, which would otherwise break out of the attribute. */
+function escapeAttr(value) {
+  return String(value).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 /** Green for a score improvement, red for a decline - score_change is signed around 0, not a 0-100 scale. */
 function deltaColor(delta) {
   return delta >= 0 ? "var(--accent)" : "var(--accent-bad)";
@@ -40,7 +45,7 @@ async function loadTable() {
   }
   tbody.innerHTML = data.results.map((r, i) => `
     <tr data-index="${i}" tabindex="0" role="button" aria-label="View trend details: ${r.league}">
-      <td>${r.league}</td>
+      <td title="${escapeAttr(r.league)}">${r.league}</td>
       <td>${r.transfers}</td>
       <td style="color:${scoreColor(r.avg_score)}; font-weight:700">${r.avg_score}</td>
       <td>${formatMoney(r.avg_fee)}</td>

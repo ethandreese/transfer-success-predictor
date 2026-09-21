@@ -8,6 +8,11 @@ function scoreColor(score) {
   return "var(--accent-bad)";
 }
 
+/** Escape a value for safe interpolation inside an HTML attribute (e.g. a title="..." tooltip) - real club/player names can contain a literal " or & (e.g. Brighton & Hove Albion, or a club whose native name is quoted), which would otherwise break out of the attribute. */
+function escapeAttr(value) {
+  return String(value).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 /**
  * "3.1y" / "8mo". A permanent transfer always renders in years, matching
  * browse.js's tenureDisplay exactly (no duration threshold there - every
@@ -286,9 +291,9 @@ function renderStopsTable(stops, showPlayerColumn) {
   `;
   document.getElementById("stops-body").innerHTML = stops.map((s, i) => `
     <tr data-index="${i}" tabindex="0" role="button" aria-label="View details: ${s.from_club} to ${s.to_club}">
-      ${showPlayerColumn ? `<td>${s.playerName}</td>` : ""}
+      ${showPlayerColumn ? `<td title="${escapeAttr(s.playerName)}">${s.playerName}</td>` : ""}
       <td>${s.transfer_date.slice(0, 7)}</td>
-      <td>${s.from_club} &rarr; ${s.to_club}</td>
+      <td title="${escapeAttr(s.from_club + " → " + s.to_club)}">${s.from_club} &rarr; ${s.to_club}</td>
       <td>${s.type === "loan" ? "Loan" : "Permanent"}</td>
       <td>${s.age_at_transfer}</td>
       <td style="color:${scoreColor(s.score)}; font-weight:700">${s.score}</td>

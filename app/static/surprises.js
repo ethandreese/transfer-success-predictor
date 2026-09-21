@@ -8,6 +8,11 @@ function scoreColor(score) {
   return "var(--accent-bad)";
 }
 
+/** Escape a value for safe interpolation inside an HTML attribute (e.g. a title="..." tooltip) - real club names can contain a literal " or & (e.g. Brighton & Hove Albion, or a club whose native name is quoted), which would otherwise break out of the attribute. */
+function escapeAttr(value) {
+  return String(value).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 /** Green for an overachiever (actual beat the model), red for a bust (actual fell short) - unlike scoreColor, this is signed around 0, not an absolute 0-100 scale. */
 function deltaColor(delta) {
   return delta >= 0 ? "var(--accent)" : "var(--accent-bad)";
@@ -140,10 +145,10 @@ async function loadTable() {
   } else {
     tbody.innerHTML = data.results.map(r => `
       <tr data-player-id="${r.player_id}" data-transfer-date="${r.transfer_date}" data-predicted="${r.predicted_score}" data-delta="${r.surprise_delta}" tabindex="0" role="button" aria-label="View transfer details: ${r.name} to ${r.to_club}">
-        <td>${r.name}</td>
+        <td title="${escapeAttr(r.name)}">${r.name}</td>
         <td>${r.position}</td>
-        <td>${r.from_club} &rarr; ${r.to_club}</td>
-        <td>${r.to_league}</td>
+        <td title="${escapeAttr(r.from_club + " → " + r.to_club)}">${r.from_club} &rarr; ${r.to_club}</td>
+        <td title="${escapeAttr(r.to_league)}">${r.to_league}</td>
         <td>${r.transfer_date.slice(0, 7)}</td>
         <td>${r.predicted_score}</td>
         <td style="color:${scoreColor(r.success_score)}; font-weight:700">${r.success_score}</td>

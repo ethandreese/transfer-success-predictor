@@ -8,11 +8,12 @@ import unicodedata
 import joblib
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 BASE_DIR = os.path.dirname(__file__)
 DATA_DIR = os.path.join(BASE_DIR, "..", "data")
@@ -3227,6 +3228,29 @@ class NoCacheStaticFiles(StaticFiles):
         response = await super().get_response(path, scope)
         response.headers["Cache-Control"] = "no-store"
         return response
+
+
+@app.exception_handler(StarletteHTTPException)
+async def not_found_handler(request: Request, exc: StarletteHTTPException):
+    """
+    Without this, a mistyped URL or stale bookmark for any non-API path
+    (StaticFiles raises a plain Starlette 404 for those, same as an unknown
+    /api/... route) fell through to FastAPI's default handler and rendered
+    as a bare, unstyled `{"detail":"Not Found"}` JSON blob - jarring next to
+    every real page's dark/light-themed layout and nav. Only intercepts 404s
+    outside /api/: API callers still get the plain JSON body they can parse,
+    while a human hitting a bad page URL gets the same header/nav/card shell
+    as everything else, with links back to Home and Browse.
+    """
+    if exc.status_code == 404 and not request.url.path.startswith("/api/"):
+        return FileResponse(
+            os.path.join(BASE_DIR, "static", "404.html"),
+            status_code=404,
+            headers={"Cache-Control": "no-store"},
+        )
+    return JSONResponse(
+        {"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers,
+    )
 
 
 @app.api_route("/favicon.ico", methods=["GET", "HEAD"], include_in_schema=False)
