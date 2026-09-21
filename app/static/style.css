@@ -790,10 +790,26 @@ button.predict-btn:disabled {
 .comp-row {
   display: flex;
   justify-content: space-between;
+  /* Without this, flex's default align-items: stretch makes both spans
+     as tall as the row (set by whichever one wraps to two lines), and
+     the score - one line of text in a now two-line-tall box - ends up
+     vertically centered across both lines instead of sitting next to
+     the first one, which reads as squished into the middle rather than
+     attached to the row it belongs to. */
+  align-items: baseline;
+  gap: 0.75rem;
   padding: 0.5rem 0;
   border-bottom: 1px solid var(--border);
   font-size: 0.9rem;
 }
+
+/* The name/route text wraps within its own column instead of crowding
+   the score for room (no explicit sizing here meant both spans just
+   divided up space by content, so a long name could squeeze the score
+   flush against the wrapped text); the score itself never shrinks or
+   wraps, so it stays a stable, readable column on the right. */
+.comp-row span:first-child { flex: 1 1 auto; min-width: 0; }
+.comp-row span:last-child { flex-shrink: 0; font-weight: 600; }
 
 .comp-row:last-child { border-bottom: none; }
 
