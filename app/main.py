@@ -2093,74 +2093,76 @@ def _nn(value):
     return None if pd.isna(value) else float(value)
 
 
-@app.get("/api/examples/predictions")
-def example_predictions():
+def _build_hypothetical_prediction(name, to_club):
     """
-    A hypothetical-move prediction for each EXAMPLE_HYPOTHETICAL_KEYS
-    pair, for the homepage to preview the Predict tool with the same
-    recognizable names as /api/examples' real historical cards, right
-    next to them. Builds each PredictRequest from players_df/clubs_df
-    directly (the same lookup data /api/players/search and
-    /api/clubs/search draw from) and calls predict() as a plain function
-    call rather than over HTTP - the same pattern compare() above already
-    uses to reuse predict() from within another endpoint.
+    One EXAMPLE_HYPOTHETICAL_KEYS pair's hypothetical-move prediction:
+    builds a PredictRequest from players_df/clubs_df directly (the same
+    lookup data /api/players/search and /api/clubs/search draw from) and
+    calls predict() as a plain function call rather than over HTTP - the
+    same pattern compare() uses to reuse predict() from within another
+    endpoint. Returns None if the player or club isn't found.
+
+    Split out from example_predictions() (below) so it can be called once
+    per pair at import time into EXAMPLE_HYPOTHETICAL_PREDICTIONS instead
+    of on every request - predict() alone runs its model pipeline ~15-20
+    times per call (base score, explain_prediction's per-factor swaps,
+    sensitivity_analysis's per-factor swaps), and these 4 pairs are fixed,
+    so a live request was just paying that cost - ~350-450ms combined -
+    for an answer that never changes.
     """
-    out = []
-    for name, to_club in EXAMPLE_HYPOTHETICAL_KEYS:
-        prow = players_df[players_df["name"] == name]
-        to_row = clubs_df[clubs_df["name"] == to_club]
-        if prow.empty or to_row.empty:
-            continue
-        p, to = prow.iloc[0], to_row.iloc[0]
-        from_row = clubs_df[clubs_df["club_id"] == p["current_club_id"]]
-        from_ = from_row.iloc[0] if not from_row.empty else None
-        # Capped at €150m (still a top-5-all-time fee) rather than used
-        # raw - Haaland's own market value is €200m, which would be a new
-        # world record (Neymar's €222m in 2017 is still the highest real
-        # transfer fee ever paid) and reads as implausible for a homepage
-        # example rather than merely "a lot of money."
-        fee = min(round(p["market_value_in_eur"] / 1_000_000) * 1_000_000, 150_000_000) if pd.notna(p["market_value_in_eur"]) else 50_000_000
-        req = PredictRequest(
-            age_at_transfer=float(p["age_now"]),
-            height_in_cm=float(p["height_in_cm"]),
-            position=p["position"],
-            sub_position=p["sub_position"] if pd.notna(p["sub_position"]) else p["position"],
-            foot=p["foot"] if pd.notna(p["foot"]) else "unknown",
-            pre_apps=_nn(p["recent_apps"]),
-            pre_minutes=_nn(p["recent_minutes"]),
-            pre_goals_p90=_nn(p["recent_goals_p90"]),
-            pre_ga_p90=_nn(p["recent_ga_p90"]),
-            pre_mins_per_app=_nn(p["recent_mins_per_app"]),
-            transfer_fee=fee,
-            value_before=float(p["market_value_in_eur"]) if pd.notna(p["market_value_in_eur"]) else 1.0,
-            from_domestic_competition_id=(from_["domestic_competition_id"] if from_ is not None and pd.notna(from_["domestic_competition_id"]) else p["current_club_domestic_competition_id"]) or "unknown",
-            to_domestic_competition_id=to["domestic_competition_id"] or "unknown",
-            from_total_market_value=float(from_["club_value_proxy"]) if from_ is not None and pd.notna(from_["club_value_proxy"]) else 1.0,
-            to_total_market_value=float(to["club_value_proxy"]),
-            pre_fotmob_rating=_nn(p["recent_fotmob_rating"]),
-            pre_fotmob_expected_goals_per_90=_nn(p["recent_fotmob_expected_goals_per_90"]),
-            pre_fotmob_expected_assists_per_90=_nn(p["recent_fotmob_expected_assists_per_90"]),
-            pre_fotmob_chances_created_p90=_nn(p["recent_fotmob_chances_created_p90"]),
-            pre_fotmob_accurate_pass=_nn(p["recent_fotmob_accurate_pass"]),
-            pre_fotmob_won_contest=_nn(p["recent_fotmob_won_contest"]),
-            pre_fotmob_total_tackle=_nn(p["recent_fotmob_total_tackle"]),
-            pre_fotmob_interception=_nn(p["recent_fotmob_interception"]),
-            pre_fotmob_effective_clearance=_nn(p["recent_fotmob_effective_clearance"]),
-            pre_fotmob_ball_recovery=_nn(p["recent_fotmob_ball_recovery"]),
-            pre_fotmob_saves=_nn(p["recent_fotmob_saves"]),
-            pre_fotmob__save_percentage=_nn(p["recent_fotmob__save_percentage"]),
-            pre_fotmob_goals_conceded=_nn(p["recent_fotmob_goals_conceded"]),
-        )
-        result = predict(req, top_k=1)
-        out.append({
-            "name": name,
-            "position": p["position"],
-            "from_club": p["current_club_name"],
-            "to_club": to["name"],
-            "transfer_fee": fee,
-            "success_score": result["success_score"],
-        })
-    return out
+    prow = players_df[players_df["name"] == name]
+    to_row = clubs_df[clubs_df["name"] == to_club]
+    if prow.empty or to_row.empty:
+        return None
+    p, to = prow.iloc[0], to_row.iloc[0]
+    from_row = clubs_df[clubs_df["club_id"] == p["current_club_id"]]
+    from_ = from_row.iloc[0] if not from_row.empty else None
+    # Capped at €150m (still a top-5-all-time fee) rather than used
+    # raw - Haaland's own market value is €200m, which would be a new
+    # world record (Neymar's €222m in 2017 is still the highest real
+    # transfer fee ever paid) and reads as implausible for a homepage
+    # example rather than merely "a lot of money."
+    fee = min(round(p["market_value_in_eur"] / 1_000_000) * 1_000_000, 150_000_000) if pd.notna(p["market_value_in_eur"]) else 50_000_000
+    req = PredictRequest(
+        age_at_transfer=float(p["age_now"]),
+        height_in_cm=float(p["height_in_cm"]),
+        position=p["position"],
+        sub_position=p["sub_position"] if pd.notna(p["sub_position"]) else p["position"],
+        foot=p["foot"] if pd.notna(p["foot"]) else "unknown",
+        pre_apps=_nn(p["recent_apps"]),
+        pre_minutes=_nn(p["recent_minutes"]),
+        pre_goals_p90=_nn(p["recent_goals_p90"]),
+        pre_ga_p90=_nn(p["recent_ga_p90"]),
+        pre_mins_per_app=_nn(p["recent_mins_per_app"]),
+        transfer_fee=fee,
+        value_before=float(p["market_value_in_eur"]) if pd.notna(p["market_value_in_eur"]) else 1.0,
+        from_domestic_competition_id=(from_["domestic_competition_id"] if from_ is not None and pd.notna(from_["domestic_competition_id"]) else p["current_club_domestic_competition_id"]) or "unknown",
+        to_domestic_competition_id=to["domestic_competition_id"] or "unknown",
+        from_total_market_value=float(from_["club_value_proxy"]) if from_ is not None and pd.notna(from_["club_value_proxy"]) else 1.0,
+        to_total_market_value=float(to["club_value_proxy"]),
+        pre_fotmob_rating=_nn(p["recent_fotmob_rating"]),
+        pre_fotmob_expected_goals_per_90=_nn(p["recent_fotmob_expected_goals_per_90"]),
+        pre_fotmob_expected_assists_per_90=_nn(p["recent_fotmob_expected_assists_per_90"]),
+        pre_fotmob_chances_created_p90=_nn(p["recent_fotmob_chances_created_p90"]),
+        pre_fotmob_accurate_pass=_nn(p["recent_fotmob_accurate_pass"]),
+        pre_fotmob_won_contest=_nn(p["recent_fotmob_won_contest"]),
+        pre_fotmob_total_tackle=_nn(p["recent_fotmob_total_tackle"]),
+        pre_fotmob_interception=_nn(p["recent_fotmob_interception"]),
+        pre_fotmob_effective_clearance=_nn(p["recent_fotmob_effective_clearance"]),
+        pre_fotmob_ball_recovery=_nn(p["recent_fotmob_ball_recovery"]),
+        pre_fotmob_saves=_nn(p["recent_fotmob_saves"]),
+        pre_fotmob__save_percentage=_nn(p["recent_fotmob__save_percentage"]),
+        pre_fotmob_goals_conceded=_nn(p["recent_fotmob_goals_conceded"]),
+    )
+    result = predict(req, top_k=1)
+    return {
+        "name": name,
+        "position": p["position"],
+        "from_club": p["current_club_name"],
+        "to_club": to["name"],
+        "transfer_fee": fee,
+        "success_score": result["success_score"],
+    }
 
 
 @app.get("/api/transfers/detail")
@@ -2669,6 +2671,30 @@ def compare(req: CompareRequest):
     compare at all.
     """
     return {"results": [{**predict(s.request, top_k=25), "label": s.label} for s in req.scenarios]}
+
+
+# Computed once here, after predict()/compare() exist, rather than inside
+# example_predictions() below - see _build_hypothetical_prediction's
+# docstring for why. Same precompute-at-startup pattern as
+# club_report_cards_df/league_trends_df above.
+EXAMPLE_HYPOTHETICAL_PREDICTIONS = [
+    result for result in (
+        _build_hypothetical_prediction(name, to_club) for name, to_club in EXAMPLE_HYPOTHETICAL_KEYS
+    )
+    if result is not None
+]
+
+
+@app.get("/api/examples/predictions")
+def example_predictions():
+    """
+    The precomputed hypothetical-move predictions for each
+    EXAMPLE_HYPOTHETICAL_KEYS pair (see EXAMPLE_HYPOTHETICAL_PREDICTIONS
+    above), for the homepage to preview the Predict tool with the same
+    recognizable names as /api/examples' real historical cards, right
+    next to them.
+    """
+    return EXAMPLE_HYPOTHETICAL_PREDICTIONS
 
 
 TRANSFER_SORT_FIELDS = {
