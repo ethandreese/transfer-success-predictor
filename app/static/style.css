@@ -194,9 +194,10 @@ header p.header-sub {
 .topnav a {
   color: var(--muted);
   text-decoration: none;
-  font-size: 0.85rem;
-  font-weight: 500;
-  letter-spacing: 0.01em;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   padding-bottom: 0.2rem;
   border-bottom: 2px solid transparent;
 }
