@@ -240,7 +240,7 @@ header p.header-sub {
 .nav-dropdown-toggle:hover { color: var(--text); }
 .nav-dropdown-toggle.active { color: var(--text); border-bottom-color: var(--accent); }
 
-.nav-caret { font-size: 0.65em; opacity: 0.8; transform: translateY(1px); }
+.nav-caret { font-size: 0.95em; opacity: 0.8; transform: translateY(1px); }
 
 .nav-dropdown-menu {
   display: none;
