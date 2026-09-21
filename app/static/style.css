@@ -70,26 +70,39 @@
   --border: #ddd1b8;
   --text: #211d16;
   --muted: #6c6252;
-  --accent: #1c7a4a;
-  --accent-bad: #c73e2c;
+  /* One more lightness pass on every light-theme accent color - the
+     previous set optimized hard for text contrast (several at 4.5-5:1)
+     and came out darker/heavier than the site's airy cream-paper
+     background wants. These give up a bit more contrast across the
+     board (mostly landing in the high-2s to mid-4s now, see the numbers
+     next to each) in exchange for feeling lighter and more consistent
+     with each other - still legible, especially since almost everything
+     they're used for (score numbers, chart dots, nav underlines) is
+     bold or has size on its side. */
+  --accent: #229359; /* ~3.6:1 on --bg */
+  --accent-bad: #d44f3d; /* ~3.9:1 */
   /* A genuinely dark-enough gold to hit AA text contrast on this cream
-     background (~faf6ee) reads as brown, not yellow - amber is the one
-     hue where "readable" and "clearly the third color, not a muddy
-     red" pull against each other, since true yellow is inherently high-
-     luminance and can't get dark enough for 4.5:1 on a near-white
-     background without desaturating into brown first. This trades a
-     little contrast (~3.4:1, still clears the 3:1 large-text AA bar,
-     comfortable for the bold score numbers this shows up in) to keep it
-     unmistakably gold next to --accent-bad instead of blurring into it. */
-  --accent-mid: #b07d0a;
-  --on-accent: #fbf8f1;
-  --link: #1a5fb4;
-  --trend-line: #1f6091;
+     background reads as brown, not yellow - amber is the one hue where
+     "readable" and "clearly the third color, not a muddy red" pull
+     against each other, since true yellow is inherently high-luminance
+     and can't get dark enough for strong contrast on a near-white
+     background without desaturating into brown first. ~2.9:1, the
+     lowest of the three, but still clearly gold next to --accent-bad
+     rather than blurring into it. */
+  --accent-mid: #be870b;
+  /* Text color for content on a solid --accent surface (.cta-btn,
+     button.predict-btn) - now that --accent itself is lighter, dark
+     text (matching --text) contrasts better here (~4.3:1) than the
+     light cream this used before did (~3.7:1); see the dark theme's
+     --on-accent above for the mirror-image reasoning. */
+  --on-accent: #211d16;
+  --link: #1e6dcf; /* ~4.7:1 */
+  --trend-line: #2471aa; /* ~4.9:1 */
   --pos-goalkeeper: var(--trend-line);
-  --pos-defender: #6f52b8;
-  --pos-midfield: #b8447a;
-  --pos-attack: #b3691f;
-  --accent-tint: rgba(28, 122, 74, 0.12);
+  --pos-defender: #8168c1; /* ~4.2:1 */
+  --pos-midfield: #c2598a; /* ~3.8:1 */
+  --pos-attack: #c97623; /* ~3.2:1 */
+  --accent-tint: rgba(34, 147, 89, 0.12);
 }
 
 * { box-sizing: border-box; }
