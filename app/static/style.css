@@ -121,12 +121,21 @@ body {
    would otherwise fall back to the browser default blue. */
 a { color: var(--link); }
 
+/* Matches main's own default max-width (960px, see below) rather than
+   an independent fixed value - header and main are siblings, each
+   centered on its own via margin: 0 auto, so if they capped at
+   different widths their content would drift out of alignment with
+   each other at any viewport wider than the narrower of the two (the
+   title flush left while the content below sat visibly indented).
+   header.wide mirrors main.wide for the handful of pages that use it. */
 header {
   padding: 2rem 1.5rem 1.5rem;
   border-bottom: 1px solid var(--border);
-  max-width: 1400px;
+  max-width: 960px;
   margin: 0 auto;
 }
+
+header.wide { max-width: 1400px; }
 
 /* The masthead's top row - wordmark/kicker on the left, nav on the right,
    the way a magazine or data-journalism site (not a centered, symmetric
