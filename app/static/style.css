@@ -1,19 +1,30 @@
+/* Fraunces (headlines/wordmark) + Inter (body/UI/data) - a deliberate
+   editorial pairing (serif display type over a clean grotesque, the way a
+   sports paper or data-journalism outlet like The Athletic or FT sets a
+   masthead over dense stat tables), loaded once here rather than per-page
+   so every one of the site's static HTML files gets it for free. */
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500;1,9..144,600&family=Inter:wght@400;500;600;700&display=swap');
+
 :root {
-  --bg: #0f1420;
-  --panel: #171d2e;
-  --panel-2: #1e2537;
-  --border: #2a3350;
-  --text: #e7ebf5;
-  --muted: #93a0bd;
-  --accent: #4ade80;
-  --accent-bad: #f87171;
-  --accent-mid: #fbbf24;
+  /* Warm paper/ink palette (a deep warm charcoal, not the blue-slate
+     "dashboard" default) paired with a muted pitch green rather than a
+     bright/saturated one - restrained enough to read as a considered
+     editorial choice rather than a default accent color. */
+  --bg: #14120f;
+  --panel: #1c1a17;
+  --panel-2: #24211d;
+  --border: #3a352d;
+  --text: #f1ece2;
+  --muted: #a89c88;
+  --accent: #3c8a5c;
+  --accent-bad: #c1604e;
+  --accent-mid: #c3963c;
   /* The Analytics page's binned-average trend line overlaid on a scatter
      chart - a light, saturated blue so it reads as one clear reference
      series threading through the red/amber/green dots underneath, not
      (as var(--text) previously was) a flat black/white slash competing
      with them for attention. */
-  --trend-line: #7dd3fc;
+  --trend-line: #6ba3d6;
   /* The Height vs. Score chart's four per-position trend lines (see
      buildHeightScoreChart in analytics.js) - deliberately not reusing
      --accent/--accent-mid/--accent-bad, which the scatter dots underneath
@@ -22,28 +33,30 @@
      label. --pos-goalkeeper reuses --trend-line's blue (no score meaning
      of its own to clash with); the other three are new hues. */
   --pos-goalkeeper: var(--trend-line);
-  --pos-defender: #a78bfa;
-  --pos-midfield: #f472b6;
-  --pos-attack: #fb923c;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --pos-defender: #8d7bc2;
+  --pos-midfield: #c06e92;
+  --pos-attack: #c17c43;
+  --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-body);
 }
 
 /* Applied to <html> by settings.js per the user's Theme setting (default: dark, matching the original design). */
 [data-theme="light"] {
-  --bg: #f5f7fb;
+  --bg: #faf6ee;
   --panel: #ffffff;
-  --panel-2: #eef1f8;
-  --border: #d7dceb;
-  --text: #1a2233;
-  --muted: #5b6580;
-  --accent: #16a34a;
-  --accent-bad: #dc2626;
-  --accent-mid: #d97706;
-  --trend-line: #0369a1;
+  --panel-2: #f2ebdc;
+  --border: #ddd1b8;
+  --text: #211d16;
+  --muted: #6c6252;
+  --accent: #276a46;
+  --accent-bad: #a2493a;
+  --accent-mid: #966a1e;
+  --trend-line: #2c5c85;
   --pos-goalkeeper: var(--trend-line);
-  --pos-defender: #7c3aed;
-  --pos-midfield: #db2777;
-  --pos-attack: #ea580c;
+  --pos-defender: #6852a3;
+  --pos-midfield: #9c3f67;
+  --pos-attack: #9c5a1f;
 }
 
 * { box-sizing: border-box; }
@@ -56,13 +69,31 @@ body {
 }
 
 header {
-  padding: 2.5rem 1.5rem 1rem;
+  padding: 2.5rem 1.5rem 1.5rem;
   text-align: center;
+  border-bottom: 1px solid var(--border);
+}
+
+/* The small uppercase label above the wordmark - a masthead "section
+   eyebrow" (as a print sports section or The Athletic would run above its
+   title), in the body face so only the wordmark itself carries the serif
+   display treatment. */
+.kicker {
+  margin: 0 0 0.6rem;
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
 }
 
 header h1 {
-  margin: 0 0 0.4rem;
-  font-size: 1.9rem;
+  margin: 0 0 0.5rem;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 2.5rem;
+  letter-spacing: -0.01em;
 }
 
 header p {
@@ -79,13 +110,15 @@ header p {
   align-items: center;
   gap: 1.5rem;
   row-gap: 0.5rem;
-  margin-top: 1.1rem;
+  margin-top: 1.4rem;
 }
 
 .topnav a {
   color: var(--muted);
   text-decoration: none;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
   padding-bottom: 0.2rem;
   border-bottom: 2px solid transparent;
 }
@@ -104,7 +137,9 @@ header p {
   border: none;
   cursor: pointer;
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
   font-family: inherit;
   padding: 0 0 0.2rem;
   border-bottom: 2px solid transparent;
@@ -132,7 +167,7 @@ header p {
   transform: translateX(-50%);
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 6px;
   padding: 0.6rem 0.4rem 0.4rem;
   min-width: 200px;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
@@ -171,13 +206,16 @@ main.wide { max-width: 1400px; }
 section.card {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 6px;
   padding: 1.5rem;
 }
 
 h2 {
   margin-top: 0;
-  font-size: 1.15rem;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.3rem;
+  letter-spacing: -0.005em;
 }
 
 /** A card's <h2> as a click/tap target that collapses the sibling content below it - used for the Model vs Reality scatter, which is the one card-length chart on a page that's mostly a table, so hiding it shouldn't need a page reload. aria-expanded (toggled in JS) drives the caret's rotation; the controlled element's [hidden] attribute (not style.display, so it survives a re-render that only replaces its innerHTML) does the actual show/hide. */
@@ -247,10 +285,10 @@ h2 {
 .cta-btn {
   display: inline-block;
   background: var(--accent);
-  color: #08240f;
+  color: #fbf8f1;
   padding: 0.75rem 1.4rem;
-  border-radius: 8px;
-  font-weight: 700;
+  border-radius: 4px;
+  font-weight: 600;
   font-size: 0.95rem;
   text-decoration: none;
 }
@@ -277,7 +315,7 @@ h2 {
   display: block;
   background: var(--panel-2);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 6px;
   padding: 1rem;
   text-decoration: none;
   color: var(--text);
@@ -289,13 +327,13 @@ h2 {
 .example-card {
   background: var(--panel-2);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 6px;
   padding: 0.9rem;
 }
 
 .example-card .name { font-weight: 600; }
 .example-card .route { color: var(--muted); font-size: 0.85rem; margin: 0.2rem 0 0.5rem; }
-.example-card .score { font-size: 1.6rem; font-weight: 700; }
+.example-card .score { font-family: var(--font-display); font-size: 1.7rem; font-weight: 600; font-variant-numeric: tabular-nums; }
 .example-card .tenure-note { color: var(--muted); font-size: 0.72rem; margin: 0.2rem 0 0.6rem; }
 
 .surprises-intro { color: var(--muted); font-size: 0.88rem; margin: 0; }
@@ -604,8 +642,10 @@ button.predict-btn:disabled {
 }
 
 .score-display .big {
-  font-size: 3rem;
-  font-weight: 800;
+  font-family: var(--font-display);
+  font-size: 3.2rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .score-label {
