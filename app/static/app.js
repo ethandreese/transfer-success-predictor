@@ -327,6 +327,8 @@ async function renderTrendMarkers(score, age, feeEur) {
 /** Render a /api/predict response into the #result panel. Factored out from the click handler so a settings change (currency) can re-render the last result without re-predicting. */
 function renderPredictResult(data) {
   document.getElementById("result").classList.add("open");
+  const placeholder = document.getElementById("result-placeholder");
+  if (placeholder) placeholder.hidden = true;
   const scoreEl = document.getElementById("score-value");
   scoreEl.textContent = data.success_score;
   scoreEl.style.color = scoreColor(data.success_score);
