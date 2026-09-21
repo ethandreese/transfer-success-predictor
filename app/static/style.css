@@ -290,7 +290,7 @@ section.card {
 
 h2 {
   margin-top: 0;
-  font-family: var(--font-display);
+  font-family: var(--font-body);
   font-weight: 600;
   font-size: 1.3rem;
   letter-spacing: -0.005em;
@@ -411,7 +411,7 @@ h2 {
 
 .example-card .name { font-weight: 600; }
 .example-card .route { color: var(--muted); font-size: 0.85rem; margin: 0.2rem 0 0.5rem; }
-.example-card .score { font-family: var(--font-display); font-size: 1.7rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.example-card .score { font-size: 1.7rem; font-weight: 600; font-variant-numeric: tabular-nums; }
 .example-card .tenure-note { color: var(--muted); font-size: 0.72rem; margin: 0.2rem 0 0.6rem; }
 
 .surprises-intro { color: var(--muted); font-size: 0.88rem; margin: 0; }
@@ -744,7 +744,7 @@ button.predict-btn:disabled {
   color: var(--muted);
 }
 .result-placeholder p { margin: 0; }
-.result-placeholder p:first-child { font-family: var(--font-display); font-size: 1.15rem; color: var(--text); }
+.result-placeholder p:first-child { font-size: 1.15rem; color: var(--text); }
 /* Higher specificity than the flex rule above, so setting the hidden
    attribute (see renderPredictResult in app.js) actually hides this once
    a real result exists, instead of the [hidden] UA rule losing out to
@@ -767,7 +767,6 @@ button.predict-btn:disabled {
 }
 
 .score-display .big {
-  font-family: var(--font-display);
   font-size: 3.2rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
