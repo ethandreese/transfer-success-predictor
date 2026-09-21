@@ -4,20 +4,20 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Compare Transfers - Transfer Success Predictor</title>
-  <meta name="description" content="Compare up to four hypothetical football transfers side by side and see how they rank." />
+  <meta name="description" content="Compare up to six hypothetical football transfers side by side and see how they rank." />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Compare Transfers - Transfer Success Predictor" />
-  <meta property="og:description" content="Compare up to four hypothetical football transfers side by side and see how they rank." />
+  <meta property="og:description" content="Compare up to six hypothetical football transfers side by side and see how they rank." />
   <meta property="og:url" content="https://transfer-success-predictor.onrender.com/compare.html" />
   <meta property="og:image" content="https://transfer-success-predictor.onrender.com/og-image.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Compare Transfers - Transfer Success Predictor" />
-  <meta name="twitter:description" content="Compare up to four hypothetical football transfers side by side." />
+  <meta name="twitter:description" content="Compare up to six hypothetical football transfers side by side." />
   <meta name="twitter:image" content="https://transfer-success-predictor.onrender.com/og-image.png" />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="stylesheet" href="/style.css?v=71" />
+  <link rel="stylesheet" href="/style.css?v=72" />
 </head>
 <body>
   <header>
@@ -55,7 +55,7 @@
         <a href="/about.html">About</a>
       </nav>
     </div>
-    <p class="header-sub">Compare up to four hypothetical transfers side by side: same player to different clubs, or entirely different players.</p>
+    <p class="header-sub">Compare up to six hypothetical transfers side by side: same player to different clubs, or entirely different players.</p>
   </header>
 
   <main>
@@ -162,6 +162,60 @@
             <input id="age-input-d" class="age-input" type="number" min="15" max="42" step="0.1" />
           </div>
         </div>
+
+        <div class="compare-col" data-scenario="e" hidden>
+          <div class="compare-col-header">
+            <h2>Option E</h2>
+            <button type="button" class="remove-option-btn" data-scenario="e" aria-label="Remove Option E">&times;</button>
+          </div>
+          <div class="field">
+            <label for="player-search-e">Player</label>
+            <input id="player-search-e" class="player-search" type="text" placeholder="Search a player" autocomplete="off" />
+            <div class="autocomplete-list player-list" id="player-list-e"></div>
+            <div class="player-chip"></div>
+          </div>
+          <div class="field">
+            <label for="club-search-e">Destination club</label>
+            <input id="club-search-e" class="club-search" type="text" placeholder="Search a club" autocomplete="off" />
+            <div class="autocomplete-list club-list" id="club-list-e"></div>
+            <div class="club-chip"></div>
+          </div>
+          <div class="field">
+            <label for="fee-input-e">Transfer fee (&euro;m)</label>
+            <input id="fee-input-e" class="fee-input" type="number" min="0" step="0.5" value="50" />
+          </div>
+          <div class="field">
+            <label for="age-input-e">Age at transfer</label>
+            <input id="age-input-e" class="age-input" type="number" min="15" max="42" step="0.1" />
+          </div>
+        </div>
+
+        <div class="compare-col" data-scenario="f" hidden>
+          <div class="compare-col-header">
+            <h2>Option F</h2>
+            <button type="button" class="remove-option-btn" data-scenario="f" aria-label="Remove Option F">&times;</button>
+          </div>
+          <div class="field">
+            <label for="player-search-f">Player</label>
+            <input id="player-search-f" class="player-search" type="text" placeholder="Search a player" autocomplete="off" />
+            <div class="autocomplete-list player-list" id="player-list-f"></div>
+            <div class="player-chip"></div>
+          </div>
+          <div class="field">
+            <label for="club-search-f">Destination club</label>
+            <input id="club-search-f" class="club-search" type="text" placeholder="Search a club" autocomplete="off" />
+            <div class="autocomplete-list club-list" id="club-list-f"></div>
+            <div class="club-chip"></div>
+          </div>
+          <div class="field">
+            <label for="fee-input-f">Transfer fee (&euro;m)</label>
+            <input id="fee-input-f" class="fee-input" type="number" min="0" step="0.5" value="50" />
+          </div>
+          <div class="field">
+            <label for="age-input-f">Age at transfer</label>
+            <input id="age-input-f" class="age-input" type="number" min="15" max="42" step="0.1" />
+          </div>
+        </div>
       </div>
 
       <button type="button" class="add-option-btn" id="add-option-btn">+ Add another option</button>
@@ -184,7 +238,7 @@
     </section>
   </main>
 
-  <script src="/settings.js?v=71"></script>
-  <script src="/compare.js?v=71"></script>
+  <script src="/settings.js?v=72"></script>
+  <script src="/compare.js?v=72"></script>
 </body>
 </html>

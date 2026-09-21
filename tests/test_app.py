@@ -389,9 +389,9 @@ def test_compare_returns_one_result_per_scenario_in_order(sample_predict_payload
     assert all("success_score" in r for r in results)
 
 
-def test_compare_supports_three_and_four_scenarios(sample_predict_payload):
-    """/api/compare's whole point past the original two-scenario version is supporting more than a pair - both 3-way and 4-way must work."""
-    for n in (3, 4):
+def test_compare_supports_three_through_six_scenarios(sample_predict_payload):
+    """/api/compare's whole point past the original two-scenario version is supporting more than a pair - 3-way through 6-way (the compare form's max) must all work."""
+    for n in (3, 4, 5, 6):
         scenarios = [
             {"request": dict(sample_predict_payload, transfer_fee=float(i) * 1_000_000), "label": f"Option {i}"}
             for i in range(n)
@@ -401,15 +401,15 @@ def test_compare_supports_three_and_four_scenarios(sample_predict_payload):
         assert len(res.json()["results"]) == n
 
 
-def test_compare_rejects_fewer_than_two_or_more_than_four_scenarios(sample_predict_payload):
-    """A single scenario isn't a comparison, and the compare form only ever shows up to 4 columns - both ends should 422, not silently truncate or score just one side."""
+def test_compare_rejects_fewer_than_two_or_more_than_six_scenarios(sample_predict_payload):
+    """A single scenario isn't a comparison, and the compare form only ever shows up to 6 columns - both ends should 422, not silently truncate or score just one side."""
     one = {"scenarios": [{"request": sample_predict_payload, "label": "Solo"}]}
     assert client.post("/api/compare", json=one).status_code == 422
 
-    five = {"scenarios": [
-        {"request": sample_predict_payload, "label": f"Option {i}"} for i in range(5)
+    seven = {"scenarios": [
+        {"request": sample_predict_payload, "label": f"Option {i}"} for i in range(7)
     ]}
-    assert client.post("/api/compare", json=five).status_code == 422
+    assert client.post("/api/compare", json=seven).status_code == 422
 
 
 def test_compare_explanations_cover_the_full_factor_set_for_every_scenario(sample_predict_payload):

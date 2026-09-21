@@ -2653,8 +2653,8 @@ class CompareScenario(BaseModel):
 
 
 class CompareRequest(BaseModel):
-    """2-4 hypothetical transfers to score side by side, for the compare page. No single "delta" field here (unlike the old two-scenario-only shape) - it doesn't generalize past a pair, so the frontend ranks `results` itself instead."""
-    scenarios: list[CompareScenario] = Field(min_length=2, max_length=4)
+    """2-6 hypothetical transfers to score side by side, for the compare page. No single "delta" field here (unlike the old two-scenario-only shape) - it doesn't generalize past a pair, so the frontend ranks `results` itself instead."""
+    scenarios: list[CompareScenario] = Field(min_length=2, max_length=6)
 
 
 @app.post("/api/compare")

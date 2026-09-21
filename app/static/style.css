@@ -1124,13 +1124,14 @@ button.predict-btn:disabled {
 }
 
 /*
- * Up to 4 scenario columns (see compare.html's data-scenario="a".."d" -
- * "a"/"b" always present, "c"/"d" revealed by "+ Add another option").
- * auto-fit + minmax scales the column count to whatever's both visible
- * (a hidden column takes no grid track at all) and fits the viewport,
- * rather than a fixed 2-column layout that would either waste half the
- * row with only 2 active or force a 4th column into an already-cramped
- * width - the same reasoning applies to .compare-results-grid below.
+ * Up to 6 scenario columns (see compare.html's data-scenario="a".."f" -
+ * "a"/"b" always present, "c".."f" revealed one at a time by "+ Add
+ * another option"). auto-fit + minmax scales the column count to
+ * whatever's both visible (a hidden column takes no grid track at all)
+ * and fits the viewport, rather than a fixed 2-column layout that would
+ * either waste half the row with only 2 active or force a 6th column
+ * into an already-cramped width - the same reasoning applies to
+ * .compare-results-grid below.
  */
 .compare-grid {
   display: grid;

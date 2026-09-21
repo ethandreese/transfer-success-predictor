@@ -30,12 +30,17 @@ function pretransferFotmobFeatures(player) {
   };
 }
 
-// Up to 4 scenario columns - "a"/"b" are always present, "c"/"d" start
-// hidden and are revealed by "+ Add another option" (see wireAddRemove()
-// near the end of this file).
-const SCENARIO_KEYS = ["a", "b", "c", "d"];
+// Up to 6 scenario columns - "a"/"b" are always present, "c" through "f"
+// start hidden and are revealed one at a time by "+ Add another option"
+// (see wireAddRemove() near the end of this file).
+const SCENARIO_KEYS = ["a", "b", "c", "d", "e", "f"];
+// The keys that start hidden (everything past the always-present a/b) -
+// the single list wireAddRemove() and restoreFromURL() both loop over
+// for "reveal on add" / "hide on remove" wiring, rather than each
+// hardcoding its own copy of "c" through "f".
+const OPTIONAL_SCENARIO_KEYS = SCENARIO_KEYS.slice(2);
 
-/** The scenario keys whose column is currently visible, in a-b-c-d order - the single source of truth for "how many-way is this comparison right now" (no separate count/list kept in state to drift out of sync with the DOM). */
+/** The scenario keys whose column is currently visible, in a-b-c-d-e-f order - the single source of truth for "how many-way is this comparison right now" (no separate count/list kept in state to drift out of sync with the DOM). */
 function activeScenarioKeys() {
   return SCENARIO_KEYS.filter(k => !document.querySelector(`.compare-col[data-scenario="${k}"]`).hidden);
 }
@@ -318,7 +323,7 @@ function renderExplanation(explanation) {
 }
 
 /**
- * A plain-English verdict for a finished comparison's `results` (2-4 of
+ * A plain-English verdict for a finished comparison's `results` (2-6 of
  * them, in scenario order - not necessarily score order). Names the top
  * scorer and, if it's not basically tied with the runner-up, how far
  * ahead it is - the same "toss-up" framing the original two-scenario-only
@@ -473,13 +478,13 @@ document.addEventListener("settingschange", () => {
 const scenarioControllers = Object.fromEntries(SCENARIO_KEYS.map(k => [k, setupScenario(k)]));
 
 /**
- * Wire the "+ Add another option"/"×" controls that reveal/hide the c/d
- * columns. A revealed column starts completely blank (setupScenario's
- * initial state, never touched) - nothing to restore, since c/d are only
- * ever reached by a deliberate click here, never pre-filled. Removing a
- * column resets its scenario state and every visible field/chip too, so
- * a later "+ Add" doesn't resurrect stale data in a column that looks
- * freshly added.
+ * Wire the "+ Add another option"/"×" controls that reveal/hide the c
+ * through f columns. A revealed column starts completely blank
+ * (setupScenario's initial state, never touched) - nothing to restore,
+ * since these are only ever reached by a deliberate click here, never
+ * pre-filled. Removing a column resets its scenario state and every
+ * visible field/chip too, so a later "+ Add" doesn't resurrect stale
+ * data in a column that looks freshly added.
  */
 function wireAddRemove() {
   const addBtn = document.getElementById("add-option-btn");
@@ -496,7 +501,7 @@ function wireAddRemove() {
     document.getElementById("compare-btn").disabled = true; // the new column has no player/club yet
   });
 
-  ["c", "d"].forEach(key => {
+  OPTIONAL_SCENARIO_KEYS.forEach(key => {
     document.querySelector(`.remove-option-btn[data-scenario="${key}"]`).addEventListener("click", () => {
       const col = document.querySelector(`.compare-col[data-scenario="${key}"]`);
       col.hidden = true;
@@ -518,19 +523,20 @@ wireAddRemove();
 
 /**
  * Restore every scenario a shared/bookmarked comparison URL specifies
- * (2-4 of them - player_a/club_a/fee_a/age_a required, player_c.../
- * player_d... each optional) and, once all resolve, run the comparison
+ * (2-6 of them - player_a/club_a/fee_a/age_a required, player_c.../
+ * player_f... each optional) and, once all resolve, run the comparison
  * automatically - a shared link's whole point is showing the comparison
  * immediately, not making the recipient re-pick every player/club and
- * click Compare themselves. A c/d column the URL specifies is revealed
- * before it's used, same as a manual "+ Add another option" click would.
+ * click Compare themselves. An optional column the URL specifies is
+ * revealed before it's used, same as a manual "+ Add another option"
+ * click would.
  *
  * Resolves every column's player+club lookup first (fetchScenario, no DOM
  * writes) before applying any of them (applyScenario) - a stale/mistyped
  * link where even one id no longer resolves (e.g. after a data refresh)
  * must leave *every* column untouched, not populate the ones that
  * happened to succeed while another sits blank with no visible reason
- * Compare never ran. Reveals the needed c/d columns up front (so a
+ * Compare never ran. Reveals the needed optional columns up front (so a
  * failed restore's rollback has something concrete to hide again) but
  * only actually shows player/club data in them once every lookup across
  * the whole comparison has succeeded.
@@ -540,7 +546,7 @@ async function restoreFromURL() {
   const keys = SCENARIO_KEYS.filter(k => params[`player_${k}`] && params[`club_${k}`] && params[`fee_${k}`] && params[`age_${k}`]);
   if (keys.length < 2) return;
 
-  const revealedNow = keys.filter(k => (k === "c" || k === "d") && document.querySelector(`.compare-col[data-scenario="${k}"]`).hidden);
+  const revealedNow = keys.filter(k => OPTIONAL_SCENARIO_KEYS.includes(k) && document.querySelector(`.compare-col[data-scenario="${k}"]`).hidden);
   revealedNow.forEach(k => { document.querySelector(`.compare-col[data-scenario="${k}"]`).hidden = false; });
 
   const fetched = await Promise.all(keys.map(k => scenarioControllers[k].fetchScenario(params[`player_${k}`], params[`club_${k}`])));
