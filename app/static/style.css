@@ -416,6 +416,11 @@ h2 {
 
 .surprises-intro { color: var(--muted); font-size: 0.88rem; margin: 0; }
 
+/* The homepage's "Start here" card copy - the same muted warm brown/tan
+   used for every other card's intro text (.surprises-intro etc.), rather
+   than the default --text color a plain <p> falls back to. */
+.intro-text { color: var(--muted); }
+
 .surprise-banner {
   background: var(--panel-2);
   border: 1px solid var(--border);
