@@ -215,9 +215,10 @@ header p.header-sub {
   border: none;
   cursor: pointer;
   color: var(--muted);
-  font-size: 0.85rem;
-  font-weight: 500;
-  letter-spacing: 0.01em;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   font-family: inherit;
   padding: 0 0 0.2rem;
   border-bottom: 2px solid transparent;
@@ -260,7 +261,10 @@ header p.header-sub {
   border-radius: 6px;
   color: var(--text);
   text-decoration: none;
-  font-size: 0.85rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   border-bottom: none;
   white-space: nowrap;
 }
@@ -367,7 +371,9 @@ h2 {
   padding: 0.75rem 1.4rem;
   border-radius: 4px;
   font-weight: 600;
-  font-size: 0.95rem;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   text-decoration: none;
 }
 .cta-btn:hover { opacity: 0.9; }
