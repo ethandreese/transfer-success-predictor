@@ -72,7 +72,16 @@
   --muted: #6c6252;
   --accent: #1c7a4a;
   --accent-bad: #c73e2c;
-  --accent-mid: #986707;
+  /* A genuinely dark-enough gold to hit AA text contrast on this cream
+     background (~faf6ee) reads as brown, not yellow - amber is the one
+     hue where "readable" and "clearly the third color, not a muddy
+     red" pull against each other, since true yellow is inherently high-
+     luminance and can't get dark enough for 4.5:1 on a near-white
+     background without desaturating into brown first. This trades a
+     little contrast (~3.4:1, still clears the 3:1 large-text AA bar,
+     comfortable for the bold score numbers this shows up in) to keep it
+     unmistakably gold next to --accent-bad instead of blurring into it. */
+  --accent-mid: #b07d0a;
   --on-accent: #fbf8f1;
   --link: #1a5fb4;
   --trend-line: #1f6091;
