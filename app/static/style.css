@@ -121,21 +121,12 @@ body {
    would otherwise fall back to the browser default blue. */
 a { color: var(--link); }
 
-/* Matches main's own default max-width (960px, see below) rather than
-   an independent fixed value - header and main are siblings, each
-   centered on its own via margin: 0 auto, so if they capped at
-   different widths their content would drift out of alignment with
-   each other at any viewport wider than the narrower of the two (the
-   title flush left while the content below sat visibly indented).
-   header.wide mirrors main.wide for the handful of pages that use it. */
 header {
   padding: 2rem 1.5rem 1.5rem;
   border-bottom: 1px solid var(--border);
-  max-width: 960px;
+  max-width: 1400px;
   margin: 0 auto;
 }
-
-header.wide { max-width: 1400px; }
 
 /* The masthead's top row - wordmark/kicker on the left, nav on the right,
    the way a magazine or data-journalism site (not a centered, symmetric
@@ -217,8 +208,18 @@ header p.header-sub {
 /* A grouped nav item (e.g. "Predict" opening onto "Predict a transfer" /
    "Compare two transfers") - a <button> rather than an <a> since it has
    no page of its own, just a menu. See settings.js:initNavDropdowns for
-   the click-to-open/close behavior. */
-.nav-dropdown { position: relative; }
+   the click-to-open/close behavior.
+
+   display: flex here (not just the toggle button's own inline-flex)
+   matters for vertical alignment: without it, this wrapper is a plain
+   block box sized by a "normal" line-height at the *inherited* 16px
+   body font-size, not the toggle's own smaller 0.78rem - a couple of
+   px taller than the toggle itself. .topnav's align-items: center then
+   centers that oversized box, leaving the toggle sitting visibly lower
+   than the plain <a> siblings (Home/About) next to it, which have no
+   such wrapper and get centered by their own true size. Making this a
+   flex container sizes it tightly to the toggle's real height instead. */
+.nav-dropdown { position: relative; display: flex; align-items: center; }
 
 .nav-dropdown-toggle {
   background: none;
