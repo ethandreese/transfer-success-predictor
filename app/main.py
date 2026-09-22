@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 BASE_DIR = os.path.dirname(__file__)
@@ -479,30 +479,15 @@ def build_club_report_cards(df):
     Precomputed once at startup into club_report_cards_df below; the
     /api/clubs/leaderboard endpoint only filters/sorts/paginates it.
     """
-    def transfer_highlight(g, best):
-        """
-        The best (best=True) or worst transfer in this group, by
-        success_score. Carries player_id alongside transfer_date so the
-        frontend can open this exact transfer's full breakdown card via
-        /api/transfers/detail, the same (player_id, transfer_date) key
-        every other click-to-view-card page already uses.
-        """
-        r = g.loc[g["success_score"].idxmax() if best else g["success_score"].idxmin()]
+    def transfer_highlight_row(r):
+        """Format one already-located best/worst-transfer row (see best_signing_idx etc. below) into the click-to-view-card dict - the row itself now comes from a groupby.idxmax()/idxmin() lookup computed once for every club, rather than this function re-finding it per club. Carries player_id alongside transfer_date so the frontend can open this exact transfer's full breakdown card via /api/transfers/detail, the same (player_id, transfer_date) key every other click-to-view-card page already uses."""
         return {
             "player_id": int(r["player_id"]), "name": r["name"],
             "success_score": float(r["success_score"]), "transfer_date": str(r["transfer_date"])[:10],
         }
 
-    def flip_highlight(resold, profit, best):
-        """
-        The most (best=True) or least profitable buy-then-resell in this
-        already-resold-only group. `profit` is precomputed once by the
-        caller and shared across both calls, rather than each call redoing
-        the same subtraction. Carries player_id for the same click-to-view
-        reason as transfer_highlight above - a flip is still just a row of
-        transfers_df, the same table /api/transfers/detail looks up.
-        """
-        r = resold.loc[profit.idxmax() if best else profit.idxmin()]
+    def flip_highlight_row(r):
+        """Format one already-located best/worst-flip row (see best_flip_idx etc. below) the same way transfer_highlight_row does for a signing/departure. Carries player_id for the same click-to-view reason - a flip is still just a row of transfers_df, the same table /api/transfers/detail looks up."""
         return {
             "player_id": int(r["player_id"]), "name": r["name"], "bought_from": r["from_club_name"],
             "fee_paid": float(r["transfer_fee"]) if pd.notna(r["transfer_fee"]) else 0.0,
@@ -521,38 +506,84 @@ def build_club_report_cards(df):
         individual clubs don't - splitting by count instead means every
         club with enough transfers to clear MIN_CLUB_TRANSFERS gets a
         real, evenly-sized two-period comparison regardless of how many
-        years its history happens to span.
+        years its history happens to span. The one computation left as a
+        per-club loop below (see the eligible-clubs loop) - it needs each
+        club's own sorted, positionally-split sub-frame, not just an
+        aggregate, so it doesn't reduce to a single groupby.agg() call the
+        way the rest of this function's per-club numbers do.
         """
         g = g.sort_values("transfer_date")
         mid = len(g) // 2
         first_half, second_half = g.iloc[:mid], g.iloc[mid:]
         return float(second_half["success_score"].mean() - first_half["success_score"].mean())
 
+    def modal_league(club_col, league_col):
+        """Each club's most common league (ties broken ascending, same as Series.mode()'s own sorted-ties behavior - verified directly) - a lookup table built with one groupby instead of calling .mode() separately for every club."""
+        counts = df.groupby([club_col, league_col]).size().rename("n").reset_index()
+        counts = counts.sort_values(["n", league_col], ascending=[False, True])
+        return counts.groupby(club_col, sort=False).first()[league_col]
+
+    # Everything below that used to run inside a per-club Python loop
+    # (idxmax/idxmin to find a best/worst row, .mode() for the modal
+    # league, filtering to resold rows and summing profit) is instead
+    # computed once, vectorized, across every club at once - the loop
+    # further down only does O(1) lookups into these precomputed
+    # tables/Series rather than re-running ~10-15 pandas calls per club.
+    fee_filled = df["transfer_fee"].fillna(0)
+    to_agg = df.assign(_fee_filled=fee_filled).groupby("to_club_name").agg(
+        transfers_in=("success_score", "size"),
+        avg_incoming_score=("success_score", "mean"),
+        total_spent=("_fee_filled", "sum"),
+    )
+    to_league = modal_league("to_club_name", "to_domestic_competition_id")
+    best_signing_idx = df.groupby("to_club_name")["success_score"].idxmax()
+    worst_signing_idx = df.groupby("to_club_name")["success_score"].idxmin()
+
+    resold_df = df[df["has_resale_data"]].copy()
+    resold_df["_profit"] = resold_df["next_transfer_fee"] - resold_df["transfer_fee"].fillna(0)
+    resale_agg = resold_df.groupby("to_club_name").agg(
+        resales_count=("_profit", "size"),
+        avg_resale_profit_pct=("resale_profit_pct", "mean"),
+        total_resale_profit=("_profit", "sum"),
+    )
+    best_flip_idx = resold_df.groupby("to_club_name")["_profit"].idxmax()
+    worst_flip_idx = resold_df.groupby("to_club_name")["_profit"].idxmin()
+
+    from_agg = df.groupby("from_club_name").agg(
+        transfers_out=("success_score", "size"),
+        avg_departure_score=("success_score", "mean"),
+    )
+    from_league = modal_league("from_club_name", "from_domestic_competition_id")
+    best_departure_idx = df.groupby("from_club_name")["success_score"].idxmax()
+    worst_departure_idx = df.groupby("from_club_name")["success_score"].idxmin()
+
     rows = {}
-    for club, g in df.groupby("to_club_name"):
-        mode = g["to_domestic_competition_id"].mode()
-        resold = g[g["has_resale_data"]]
-        profit = resold["next_transfer_fee"] - resold["transfer_fee"].fillna(0)
+    for club in to_agg.index:
         rows[club] = {
             "club_name": club,
-            "league_id": mode.iat[0] if not mode.empty else None,
-            "transfers_in": len(g),
-            "avg_incoming_score": float(g["success_score"].mean()),
-            "total_spent": float(g["transfer_fee"].fillna(0).sum()),
-            "best_signing": transfer_highlight(g, best=True),
-            "worst_signing": transfer_highlight(g, best=False),
-            "resales_count": len(resold),
-            "avg_resale_profit_pct": float(resold["resale_profit_pct"].mean()) if len(resold) else None,
-            "total_resale_profit": float(profit.sum()),
-            "best_flip": flip_highlight(resold, profit, best=True) if len(resold) else None,
-            "worst_flip": flip_highlight(resold, profit, best=False) if len(resold) else None,
-            "score_improvement": improvement_score(g) if len(g) >= MIN_CLUB_TRANSFERS else None,
+            "league_id": to_league.get(club),
+            "transfers_in": int(to_agg.at[club, "transfers_in"]),
+            "avg_incoming_score": float(to_agg.at[club, "avg_incoming_score"]),
+            "total_spent": float(to_agg.at[club, "total_spent"]),
+            "best_signing": transfer_highlight_row(df.loc[best_signing_idx[club]]),
+            "worst_signing": transfer_highlight_row(df.loc[worst_signing_idx[club]]),
+            "resales_count": int(resale_agg.at[club, "resales_count"]) if club in resale_agg.index else 0,
+            "avg_resale_profit_pct": float(resale_agg.at[club, "avg_resale_profit_pct"]) if club in resale_agg.index else None,
+            "total_resale_profit": float(resale_agg.at[club, "total_resale_profit"]) if club in resale_agg.index else 0.0,
+            "best_flip": flip_highlight_row(resold_df.loc[best_flip_idx[club]]) if club in best_flip_idx.index else None,
+            "worst_flip": flip_highlight_row(resold_df.loc[worst_flip_idx[club]]) if club in worst_flip_idx.index else None,
+            "score_improvement": None,
         }
 
-    for club, g in df.groupby("from_club_name"):
+    eligible = to_agg.index[to_agg["transfers_in"] >= MIN_CLUB_TRANSFERS]
+    if len(eligible):
+        for club, g in df[df["to_club_name"].isin(eligible)].groupby("to_club_name"):
+            rows[club]["score_improvement"] = improvement_score(g)
+
+    for club in from_agg.index:
         # A club that's only ever bought, never sold (or vice versa) still
         # needs a row with the other side's fields defaulted - setdefault
-        # rather than assuming every club showed up in the loop above.
+        # rather than assuming every club showed up in the to_agg loop above.
         row = rows.setdefault(club, {
             "club_name": club, "league_id": None, "transfers_in": 0,
             "avg_incoming_score": None, "total_spent": 0.0,
@@ -562,12 +593,11 @@ def build_club_report_cards(df):
             "score_improvement": None,
         })
         if row["league_id"] is None:
-            mode = g["from_domestic_competition_id"].mode()
-            row["league_id"] = mode.iat[0] if not mode.empty else None
-        row["transfers_out"] = len(g)
-        row["avg_departure_score"] = float(g["success_score"].mean())
-        row["best_departure"] = transfer_highlight(g, best=True)
-        row["worst_departure"] = transfer_highlight(g, best=False)
+            row["league_id"] = from_league.get(club)
+        row["transfers_out"] = int(from_agg.at[club, "transfers_out"])
+        row["avg_departure_score"] = float(from_agg.at[club, "avg_departure_score"])
+        row["best_departure"] = transfer_highlight_row(df.loc[best_departure_idx[club]])
+        row["worst_departure"] = transfer_highlight_row(df.loc[worst_departure_idx[club]])
 
     for row in rows.values():
         row.setdefault("transfers_out", 0)
@@ -757,21 +787,25 @@ def build_player_shape_vectors():
     combined["transfer_date"] = pd.to_datetime(combined["transfer_date"])
     combined = combined.sort_values("transfer_date")
 
-    rows = []
-    for player_id, g in combined.groupby("player_id"):
-        scores = g["score"].tolist()
-        dates = g["transfer_date"].tolist()
-        rows.append({
-            "player_id": player_id,
-            "n_stops": len(g),
-            "first_score": scores[0],
-            "last_score": scores[-1],
-            "avg_score": sum(scores) / len(scores),
-            "score_range": max(scores) - min(scores),
-            "score_trend": scores[-1] - scores[0],
-            "span_years": (dates[-1] - dates[0]).days / 365.25,
-        })
-    return pd.DataFrame(rows).set_index("player_id")
+    # Vectorized groupby.agg instead of a per-player Python loop - first/last
+    # rely on combined already being sorted by transfer_date above (same
+    # ordering a plain per-group iteration would see), so they still mean
+    # "this player's earliest/latest scored stop" despite skipping straight
+    # to the aggregate rather than materializing each group's row list.
+    grouped = combined.groupby("player_id").agg(
+        n_stops=("score", "size"),
+        first_score=("score", "first"),
+        last_score=("score", "last"),
+        avg_score=("score", "mean"),
+        _score_max=("score", "max"),
+        _score_min=("score", "min"),
+        _date_first=("transfer_date", "first"),
+        _date_last=("transfer_date", "last"),
+    )
+    grouped["score_range"] = grouped["_score_max"] - grouped["_score_min"]
+    grouped["score_trend"] = grouped["last_score"] - grouped["first_score"]
+    grouped["span_years"] = (grouped["_date_last"] - grouped["_date_first"]).dt.days / 365.25
+    return grouped[PLAYER_SHAPE_FEATURES]
 
 
 PLAYER_SHAPE_DF = build_player_shape_vectors()
@@ -945,6 +979,37 @@ def describe_fotmob_component(component, r, position_plural, is_loan=False):
     }
 
 
+def fotmob_component_rows(r, position_plural, is_loan=False):
+    """The up to 4 FotMob-derived breakdown rows (attacking/possession/defensive/rating, "Goalkeeping" relabeling "Defending" for a goalkeeper - see describe_fotmob_component) - shared verbatim by describe_components() and describe_loan_components(), is_loan only threading through to describe_fotmob_component()'s own cosmetic wording switch."""
+    is_goalkeeper = r["position"] == "Goalkeeper"
+    fotmob_components = ("possession", "defensive", "rating") if is_goalkeeper else ("attacking", "possession", "defensive", "rating")
+    return [
+        {
+            "label": "Goalkeeping" if (component == "defensive" and is_goalkeeper) else FOTMOB_COMPONENT_LABELS[component],
+            "value": round(float(r[f"{component}_pct"]), 1),
+            **describe_fotmob_component(component, r, position_plural, is_loan=is_loan),
+        }
+        for component in fotmob_components
+        if bool(r[f"has_{component}_data"])
+    ]
+
+
+def ga_change_description(r, is_loan=False):
+    """The "G/A change" row's description (started-at vs. now-at vs. expected, phrased as beating or falling short of the expected pullback from a peak) - shared verbatim by describe_components() and describe_loan_components() aside from is_loan's "on loan" qualifier."""
+    on_loan_note = " on loan" if is_loan else ""
+    if r["post_ga_p90_vs_league"] >= r["expected_post_ga_p90_vs_league"]:
+        return (
+            f"Started at {r['pre_ga_p90_vs_league']:.1f}x league average, now at "
+            f"{r['post_ga_p90_vs_league']:.1f}x{on_loan_note}, beating the ~{r['expected_post_ga_p90_vs_league']:.1f}x "
+            f"expected for a player starting that high (some pullback from a peak is normal)"
+        )
+    return (
+        f"Started at {r['pre_ga_p90_vs_league']:.1f}x league average, now at "
+        f"{r['post_ga_p90_vs_league']:.1f}x{on_loan_note}, below the ~{r['expected_post_ga_p90_vs_league']:.1f}x "
+        f"expected for a player starting that high"
+    )
+
+
 def ordinal(n):
     """1 -> "1st", 2 -> "2nd", 3 -> "3rd", 4 -> "4th", ..., 11/12/13 -> "11th"/"12th"/"13th" (the 11-13 exception to the usual 1/2/3 pattern)."""
     n = int(round(n))
@@ -1001,7 +1066,6 @@ def describe_components(r):
     # already swaps in shot-stopping stats (saves, save %, goals conceded)
     # for that bucket rather than tackles/interceptions.
     is_goalkeeper = r["position"] == "Goalkeeper"
-    fotmob_components = ("possession", "defensive", "rating") if is_goalkeeper else ("attacking", "possession", "defensive", "rating")
     return [
         {
             "label": "Transfer fee",
@@ -1040,25 +1104,9 @@ def describe_components(r):
         {
             "label": "G/A change",
             "value": round(float(r["perf_delta_pct"]), 1),
-            "description": (
-                f"Started at {r['pre_ga_p90_vs_league']:.1f}x league average, now at "
-                f"{r['post_ga_p90_vs_league']:.1f}x, beating the ~{r['expected_post_ga_p90_vs_league']:.1f}x "
-                f"expected for a player starting that high (some pullback from a peak is normal)"
-                if r["post_ga_p90_vs_league"] >= r["expected_post_ga_p90_vs_league"] else
-                f"Started at {r['pre_ga_p90_vs_league']:.1f}x league average, now at "
-                f"{r['post_ga_p90_vs_league']:.1f}x, below the ~{r['expected_post_ga_p90_vs_league']:.1f}x "
-                f"expected for a player starting that high"
-            ),
+            "description": ga_change_description(r),
         },
-    ]) + [
-        {
-            "label": "Goalkeeping" if (component == "defensive" and is_goalkeeper) else FOTMOB_COMPONENT_LABELS[component],
-            "value": round(float(r[f"{component}_pct"]), 1),
-            **describe_fotmob_component(component, r, position_plural),
-        }
-        for component in fotmob_components
-        if bool(r[f"has_{component}_data"])
-    ] + [
+    ]) + fotmob_component_rows(r, position_plural) + [
         {
             "label": "Playing time",
             "value": round(float(r["playing_time_pct"]), 1),
@@ -1388,6 +1436,28 @@ class PredictRequest(BaseModel):
     pre_fotmob__save_percentage: float | None = None
     pre_fotmob_goals_conceded: float | None = None
 
+    @model_validator(mode="after")
+    def recent_performance_all_or_nothing(self):
+        """
+        pre_apps/pre_minutes/pre_goals_p90/pre_ga_p90/pre_mins_per_app come
+        from one appearances rollup, not five independent stats (see the
+        fields' own comment above and build_lookups.py) - a real request
+        only ever has all 5 or none. impute_recent_performance treats "not
+        all 5" as "none" and replaces every one of them with a reference
+        value, so a partial submission would silently discard whichever of
+        the 5 were genuinely provided rather than actually using them -
+        rejected here instead, at the API boundary, rather than letting it
+        happen silently.
+        """
+        provided = [f for f in RECENT_PERFORMANCE_FEATURES if getattr(self, f) is not None]
+        if provided and len(provided) < len(RECENT_PERFORMANCE_FEATURES):
+            missing = [f for f in RECENT_PERFORMANCE_FEATURES if f not in provided]
+            raise ValueError(
+                f"recent-performance fields must be provided all together or not at all "
+                f"(got {provided}, missing {missing})"
+            )
+        return self
+
 
 def pretransfer_percentile(value, stat, position):
     """
@@ -1547,17 +1617,23 @@ def predict_marginalized_recent_performance(feature_row: pd.DataFrame, position:
     recreate the exact "impossible combination" bug already fixed for the
     leave-one-out explanation.
 
-    One batched pipeline.predict() call over all samples at once (~35ms for
-    2,585 rows, tested directly) rather than one call per sample - cheap
-    enough to run on every request that needs it. Falls back to
-    feature_row's own (median-imputed) prediction if this position somehow
-    has no stored samples at all (defensive - every position has hundreds
-    in practice).
+    One batched pipeline.predict() call over all samples at once rather than
+    one call per sample - cheap enough to run on every request that needs
+    it. Falls back to feature_row's own (median-imputed) prediction if this
+    position somehow has no stored samples at all (defensive - every
+    position has hundreds in practice).
+
+    The row-repeat itself is `.loc[index.repeat(n)]`, not
+    `pd.concat([feature_row] * n)` - concatenating ~2,400-2,600 separate
+    single-row DataFrames (one real position's sample count) pays pandas'
+    per-object concat overhead that many times over and measured at
+    ~300ms+, while repeating the same row via a single vectorized take
+    does the identical duplication in a few ms.
     """
     samples = metadata["recent_performance_samples"].get(position)
     if not samples:
         return float(pipeline.predict(feature_row)[0])
-    batch = pd.concat([feature_row] * len(samples), ignore_index=True)
+    batch = feature_row.loc[feature_row.index.repeat(len(samples))].reset_index(drop=True)
     for feat in RECENT_PERFORMANCE_FEATURES:
         batch[feat] = [s[feat] for s in samples]
     return float(pipeline.predict(batch).mean())
@@ -1647,19 +1723,20 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_data_f
             return paid_reference[feat], "a typical paid transfer's"
         return reference[feat], "a typical transfer's"
 
-    def swap_and_score(feats_to_values):
-        """Predict with the given {feature: reference_value} substitutions applied all at once; returns the contribution (base_score - modified_score)."""
+    batch_keys = []
+    batch_rows = []
+
+    def queue_swap(key, feats_to_values):
+        """Queue a leave-one-out swap (feats_to_values applied all at once, e.g. the joint playing-time swap or a single {feature: reference_value}) for the one batched pipeline.predict() call below, instead of scoring it immediately - see contribution_by_key. Contribution is base_score - modified_score, same as the swap_and_score this replaces."""
         modified = feature_row.copy()
         for feat, value in feats_to_values.items():
             modified[feat] = value
-        modified_score = float(pipeline.predict(modified)[0])
-        return round(base_score - modified_score, 1)
+        batch_keys.append(key)
+        batch_rows.append(modified)
 
     is_goalkeeper = position == "Goalkeeper"
     has_data_flag_names = set(PRETRANSFER_FOTMOB_HAS_DATA_FLAGS.values())
     typical_pos_label = f"a typical {POSITION_PLURAL.get(position, position).rstrip('s')}'s"
-
-    contributions = []
 
     # pre_apps/pre_minutes/pre_mins_per_app are structurally dependent
     # (minutes roughly equals apps times mins_per_app) - swapping just one
@@ -1678,7 +1755,38 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_data_f
     # numbers - the model itself is untouched, and was never shown an
     # inconsistent combination like this in training, only real ones.
     playing_time_refs = {f: resolve_reference(f)[0] for f in PLAYING_TIME_FEATURES}
-    playing_time_contribution = swap_and_score(playing_time_refs)
+    queue_swap("pre_playing_time", playing_time_refs)
+
+    # First pass: everything each feature's formatting needs except the
+    # contribution itself (which needs a model prediction) - queues one
+    # swap per feature for the single batched predict below instead of
+    # scoring it in place, then a second pass (after that predict) builds
+    # each contribution entry exactly as before, reading `contribution`
+    # from contribution_by_key instead of calling swap_and_score inline.
+    feat_meta = []
+    for feat in NUMERIC_FEATURES + CATEGORICAL_FEATURES:
+        if feat in has_data_flag_names:
+            continue  # a data-quality flag, not a football signal - the composite feature's own detail (below) already says when it has no real data
+        if feat in PLAYING_TIME_FEATURES:
+            continue  # already handled together above - see playing_time_contribution
+        reference_value, typical_label = resolve_reference(feat)
+        actual_value = feature_row[feat].iloc[0]
+        feat_meta.append((feat, reference_value, typical_label, actual_value))
+        queue_swap(feat, {feat: reference_value})
+
+    # The one batched pipeline.predict() call behind every contribution in
+    # this function - previously one call per queued swap (up to ~18 for a
+    # typical transfer).
+    batch = pd.concat(batch_rows, ignore_index=True)
+    batch_scores = pipeline.predict(batch)
+    contribution_by_key = {
+        key: round(base_score - float(score), 1)
+        for key, score in zip(batch_keys, batch_scores)
+    }
+
+    contributions = []
+
+    playing_time_contribution = contribution_by_key["pre_playing_time"]
     playing_time_direction = "raising" if playing_time_contribution >= 0 else "lowering"
     if not real_data_flags.get("pre_apps", True):
         # Not "raising/lowering the score by 0.0 pts" here, unlike every
@@ -1713,14 +1821,8 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_data_f
         "detail": playing_time_detail,
     })
 
-    for feat in NUMERIC_FEATURES + CATEGORICAL_FEATURES:
-        if feat in has_data_flag_names:
-            continue  # a data-quality flag, not a football signal - the composite feature's own detail (below) already says when it has no real data
-        if feat in PLAYING_TIME_FEATURES:
-            continue  # already handled together above - see playing_time_contribution
-        reference_value, typical_label = resolve_reference(feat)
-        actual_value = feature_row[feat].iloc[0]
-        contribution = swap_and_score({feat: reference_value})
+    for feat, reference_value, typical_label, actual_value in feat_meta:
+        contribution = contribution_by_key[feat]
         direction = "raising" if contribution >= 0 else "lowering"
 
         if feat in PRETRANSFER_FOTMOB_COMPOSITE_RAW_FEATURES:
@@ -1880,33 +1982,43 @@ def sensitivity_analysis(feature_row: pd.DataFrame, base_score: float, real_data
     genuinely possible outcome for a nonlinear... well, linear-in-its-
     own-inputs-but-position-interacted model - not every "better" number
     helps every player's specific prediction).
-    """
-    def swap_and_score(feat, value):
-        modified = feature_row.copy()
-        modified[feat] = value
-        modified_score = float(pipeline.predict(modified)[0])
-        return round(modified_score - base_score, 1)
 
-    results = []
+    Every candidate swap is scored in one batched pipeline.predict() call
+    (built from the candidates that pass the pre-checks below) instead of
+    one call per feature - up to 6x fewer model calls per request. The two
+    skip conditions that only need the *actual* value (real_data_flags,
+    the ceiling/positivity checks) still run first, before scoring, so a
+    feature that wouldn't be shown at all never costs a model call.
+    """
+    candidates = []  # (feat, actual, target, is_composite) for every swap worth scoring
     for feat in SENSITIVITY_FEATURES:
         if not real_data_flags.get(feat, True):
             continue
         actual = feature_row[feat].iloc[0]
-        if feat in PRETRANSFER_FOTMOB_COMPOSITE_RAW_FEATURES:
+        is_composite = feat in PRETRANSFER_FOTMOB_COMPOSITE_RAW_FEATURES
+        if is_composite:
             target = min(actual + 15, 95)
             if target <= actual:
                 continue
-            gain = swap_and_score(feat, target)
-            detail = f"a {ordinal(target)}-percentile level (up from {ordinal(actual)}) would raise the score by {gain} pts"
         else:
             if actual <= 0:
                 continue
             target = actual * 1.25
-            gain = swap_and_score(feat, target)
-            detail = f"a 25% higher rate ({actual:.2f} → {target:.2f}) would raise the score by {gain} pts"
-        if gain <= 0:
-            continue
-        results.append({"feature": feat, "label": FEATURE_LABELS[feat], "gain": gain, "detail": detail})
+        candidates.append((feat, actual, target, is_composite))
+
+    results = []
+    if candidates:
+        batch = pd.concat([feature_row.assign(**{feat: target}) for feat, _, target, _ in candidates], ignore_index=True)
+        scores = pipeline.predict(batch)
+        for (feat, actual, target, is_composite), score in zip(candidates, scores):
+            gain = round(float(score) - base_score, 1)
+            if gain <= 0:
+                continue
+            if is_composite:
+                detail = f"a {ordinal(target)}-percentile level (up from {ordinal(actual)}) would raise the score by {gain} pts"
+            else:
+                detail = f"a 25% higher rate ({actual:.2f} → {target:.2f}) would raise the score by {gain} pts"
+            results.append({"feature": feat, "label": FEATURE_LABELS[feat], "gain": gain, "detail": detail})
 
     results.sort(key=lambda r: r["gain"], reverse=True)
     return results[:top_k]
@@ -1977,7 +2089,6 @@ def describe_loan_components(r):
     # See describe_components() for why these three drop out, and
     # "Defending" relabels to "Goalkeeping", for a goalkeeper.
     is_goalkeeper = r["position"] == "Goalkeeper"
-    fotmob_components = ("possession", "defensive", "rating") if is_goalkeeper else ("attacking", "possession", "defensive", "rating")
     return [
         {
             "label": "Value change",
@@ -2002,25 +2113,9 @@ def describe_loan_components(r):
         {
             "label": "G/A change",
             "value": round(float(r["perf_delta_pct"]), 1),
-            "description": (
-                f"Started at {r['pre_ga_p90_vs_league']:.1f}x league average, now at "
-                f"{r['post_ga_p90_vs_league']:.1f}x on loan, beating the ~{r['expected_post_ga_p90_vs_league']:.1f}x "
-                f"expected for a player starting that high (some pullback from a peak is normal)"
-                if r["post_ga_p90_vs_league"] >= r["expected_post_ga_p90_vs_league"] else
-                f"Started at {r['pre_ga_p90_vs_league']:.1f}x league average, now at "
-                f"{r['post_ga_p90_vs_league']:.1f}x on loan, below the ~{r['expected_post_ga_p90_vs_league']:.1f}x "
-                f"expected for a player starting that high"
-            ),
+            "description": ga_change_description(r, is_loan=True),
         },
-    ]) + [
-        {
-            "label": "Goalkeeping" if (component == "defensive" and is_goalkeeper) else FOTMOB_COMPONENT_LABELS[component],
-            "value": round(float(r[f"{component}_pct"]), 1),
-            **describe_fotmob_component(component, r, position_plural, is_loan=True),
-        }
-        for component in fotmob_components
-        if bool(r[f"has_{component}_data"])
-    ] + [
+    ]) + fotmob_component_rows(r, position_plural, is_loan=True) + [
         {
             "label": "Playing time",
             "value": round(float(r["playing_time_pct"]), 1),
@@ -2152,8 +2247,12 @@ def _build_hypothetical_prediction(name, to_club):
         pre_mins_per_app=_nn(p["recent_mins_per_app"]),
         transfer_fee=fee,
         value_before=float(p["market_value_in_eur"]) if pd.notna(p["market_value_in_eur"]) else 1.0,
-        from_domestic_competition_id=(from_["domestic_competition_id"] if from_ is not None and pd.notna(from_["domestic_competition_id"]) else p["current_club_domestic_competition_id"]) or "unknown",
-        to_domestic_competition_id=to["domestic_competition_id"] or "unknown",
+        from_domestic_competition_id=(
+            from_["domestic_competition_id"] if from_ is not None and pd.notna(from_["domestic_competition_id"])
+            else p["current_club_domestic_competition_id"] if pd.notna(p["current_club_domestic_competition_id"])
+            else "unknown"
+        ),
+        to_domestic_competition_id=to["domestic_competition_id"] if pd.notna(to["domestic_competition_id"]) else "unknown",
         from_total_market_value=float(from_["club_value_proxy"]) if from_ is not None and pd.notna(from_["club_value_proxy"]) else 1.0,
         to_total_market_value=float(to["club_value_proxy"]),
         pre_fotmob_rating=_nn(p["recent_fotmob_rating"]),
@@ -2201,19 +2300,22 @@ RECENT_PERFORMANCE_COLUMNS = [
 def serialize_player_rows(rows):
     """
     players_lookup.csv rows -> JSON-safe records for the Predict/Compare
-    forms: recent_fotmob_* columns and RECENT_PERFORMANCE_COLUMNS are
-    genuinely numeric (unlike the other columns here, which are safely
-    blanket-filled with "" for a missing string field) and feed straight
-    into PredictRequest's Optional[float] pre_fotmob_*/pre_apps/pre_minutes/
-    etc. fields - filling a missing one with "" would send the frontend a
-    string that's neither a valid float nor JSON null, breaking the
-    request. Left as real NaN, then swapped to None (valid JSON null)
-    below instead - a fabricated "" or 0 would misrepresent "no data" as a
-    real value. RECENT_PERFORMANCE_COLUMNS is genuinely NaN for a player at
-    a club outside LEAGUE_MAP (e.g. Messi at Inter Miami, Son at LAFC -
-    both MLS) - see build_lookups.py - rather than always having a real
-    number the way it used to before that was fixed, which is exactly why
-    this needs the same numeric-safe handling recent_fotmob_* already had.
+    forms: recent_fotmob_* columns, RECENT_PERFORMANCE_COLUMNS, and
+    height_in_cm/age_now are genuinely numeric (unlike the other columns
+    here, which are safely blanket-filled with "" for a missing string
+    field) and feed straight into PredictRequest's float fields
+    (height_in_cm, age_at_transfer) or pre_fotmob_*/pre_apps/pre_minutes/
+    etc. - filling a missing one with "" would send the frontend a string
+    that's neither a valid float nor JSON null, breaking the request (a
+    real gap: 59 players are missing height_in_cm, 2 are missing age_now
+    in today's data). Left as real NaN, then swapped to None (valid JSON
+    null) below instead - a fabricated "" or 0 would misrepresent "no
+    data" as a real value. RECENT_PERFORMANCE_COLUMNS is genuinely NaN for
+    a player at a club outside LEAGUE_MAP (e.g. Messi at Inter Miami, Son
+    at LAFC - both MLS) - see build_lookups.py - rather than always having
+    a real number the way it used to before that was fixed, which is
+    exactly why this needs the same numeric-safe handling recent_fotmob_*
+    already had.
 
     Shared by /api/players/search (many rows at once) and
     /api/players/{player_id} (exactly one) below, so both return byte-for-
@@ -2221,7 +2323,7 @@ def serialize_player_rows(rows):
     by id) has to reconstruct exactly what the search-driven selection flow
     would have given buildPayload().
     """
-    numeric_cols = [c for c in rows.columns if c.startswith("recent_fotmob")] + RECENT_PERFORMANCE_COLUMNS
+    numeric_cols = [c for c in rows.columns if c.startswith("recent_fotmob")] + RECENT_PERFORMANCE_COLUMNS + ["height_in_cm", "age_now"]
     records = rows.drop(columns=numeric_cols).fillna("").to_dict(orient="records")
     numeric_records = rows[numeric_cols].astype(object).where(rows[numeric_cols].notna(), None).to_dict(orient="records")
     for record, numeric_record in zip(records, numeric_records):
@@ -2363,6 +2465,18 @@ def search_clubs(q: str, limit: int = 10):
     return rows.fillna("").to_dict(orient="records")
 
 
+def resolve_sort_field(sort, allowed_fields, default):
+    """`sort` if it's one of allowed_fields, else default - shared by every listing/export endpoint's sort-field validation, so an unsupported/garbage ?sort= value falls back safely instead of raising or reaching sort_values with an invalid column name."""
+    return sort if sort in allowed_fields else default
+
+
+def paginate(df, limit, offset):
+    """Clamp limit to [1, 100] and offset to >= 0, then slice df to that page - shared by every paginated listing endpoint (clubs_leaderboard, list_transfers, list_surprises, list_loans) so the offset/limit clamping lives in one place rather than 4 copies that could individually drift (an unclamped negative offset used to do exactly that - iloc[-5:20] silently returning 0 rows instead of page 1). Returns (page_df, clamped_limit, clamped_offset) - the clamped values are echoed back in each endpoint's response envelope."""
+    limit = max(1, min(limit, 100))
+    offset = max(0, offset)
+    return df.iloc[offset:offset + limit], limit, offset
+
+
 # Each sort field's own (minimum-sample column, threshold) - an average
 # (avg_incoming_score, avg_resale_profit_pct) is misleading from a handful
 # of transfers, so ranking by one of those two filters out clubs below the
@@ -2430,7 +2544,7 @@ def clubs_leaderboard(
     if q:
         df = df[df["_name_fold"].str.contains(fold_accents(q), na=False, regex=False)]
 
-    sort_field = sort if sort in CLUB_SORT_FIELDS else "avg_incoming_score"
+    sort_field = resolve_sort_field(sort, CLUB_SORT_FIELDS, "avg_incoming_score")
     min_field, min_count = CLUB_SORT_FIELDS[sort_field]
     if min_field:
         df = df[df[min_field] >= min_count]
@@ -2438,8 +2552,7 @@ def clubs_leaderboard(
     df = df.sort_values(sort_field, ascending=(order == "asc"))
 
     total = len(df)
-    limit = max(1, min(limit, 100))
-    page = df.iloc[offset:offset + limit]
+    page, limit, offset = paginate(df, limit, offset)
     return {"total": total, "limit": limit, "offset": offset, "results": [club_row_dict(r) for _, r in page.iterrows()]}
 
 
@@ -2566,7 +2679,7 @@ def leagues_trends(sort: str = "transfers", order: str = "desc"):
     at an arbitrary position.
     """
     df = league_trends_df
-    sort_field = sort if sort in LEAGUE_TREND_SORT_FIELDS else "transfers"
+    sort_field = resolve_sort_field(sort, LEAGUE_TREND_SORT_FIELDS, "transfers")
     df = df.dropna(subset=[sort_field]).sort_values(sort_field, ascending=(order == "asc"))
 
     results = []
@@ -2637,6 +2750,7 @@ def predict(req: PredictRequest, top_k: int = 5):
     just widens the existing one slightly for this one case. sensitivity_analysis
     is likewise built from median_point_score for the same reason.
     """
+    top_k = max(1, top_k)
     try:
         feature_row, real_data_flags = build_feature_row(req)
         position = feature_row["position"].iloc[0]
@@ -2818,7 +2932,7 @@ def list_transfers(
     """
     df = filter_transfers(position, league, q, min_fee, max_fee, min_age, max_age)
 
-    sort_field = sort if sort in TRANSFER_SORT_FIELDS else "success_score"
+    sort_field = resolve_sort_field(sort, TRANSFER_SORT_FIELDS, "success_score")
     df = df.sort_values(sort_field, ascending=(order == "asc"))
 
     total = len(df)
@@ -2826,8 +2940,7 @@ def list_transfers(
         "avg_score": round(float(df["success_score"].mean()), 1) if total else None,
         "total_spent": float(df["transfer_fee"].fillna(0).sum()),
     }
-    limit = max(1, min(limit, 100))
-    page = df.iloc[offset:offset + limit]
+    page, limit, offset = paginate(df, limit, offset)
 
     results = [transfer_row_dict(r) for r in page.itertuples()]
     return {"total": total, "limit": limit, "offset": offset, "summary": summary, "results": results}
@@ -2847,7 +2960,7 @@ def export_transfers(
 ):
     """Every transfer matching the current filters (no /api/transfers-style pagination cap) as a downloadable CSV - "export what you're looking at" for Browse, reusing filter_transfers() so the file can never silently diverge from what the table shows."""
     df = filter_transfers(position, league, q, min_fee, max_fee, min_age, max_age)
-    sort_field = sort if sort in TRANSFER_SORT_FIELDS else "success_score"
+    sort_field = resolve_sort_field(sort, TRANSFER_SORT_FIELDS, "success_score")
     df = df.sort_values(sort_field, ascending=(order == "asc"))
     csv_text = rows_to_csv([transfer_row_dict(r) for r in df.itertuples()])
     return Response(
@@ -2896,12 +3009,11 @@ def list_surprises(
         )
         df = df[mask]
 
-    sort_field = sort if sort in SURPRISE_SORT_FIELDS else "surprise_delta"
+    sort_field = resolve_sort_field(sort, SURPRISE_SORT_FIELDS, "surprise_delta")
     df = df.sort_values(sort_field, ascending=(order == "asc"))
 
     total = len(df)
-    limit = max(1, min(limit, 100))
-    page = df.iloc[offset:offset + limit]
+    page, limit, offset = paginate(df, limit, offset)
 
     results = []
     for _, r in page.iterrows():
@@ -3097,7 +3209,7 @@ def list_loans(
     """
     df = filter_loans(position, league, q, min_age, max_age, min_duration, max_duration)
 
-    sort_field = sort if sort in LOAN_SORT_FIELDS else "loan_success_score"
+    sort_field = resolve_sort_field(sort, LOAN_SORT_FIELDS, "loan_success_score")
     df = df.sort_values(sort_field, ascending=(order == "asc"))
 
     total = len(df)
@@ -3105,8 +3217,7 @@ def list_loans(
         "avg_score": round(float(df["loan_success_score"].mean()), 1) if total else None,
         "avg_duration_days": round(float(df["tenure_days"].mean())) if total else None,
     }
-    limit = max(1, min(limit, 100))
-    page = df.iloc[offset:offset + limit]
+    page, limit, offset = paginate(df, limit, offset)
 
     results = [loan_row_dict(r) for r in page.itertuples()]
     return {"total": total, "limit": limit, "offset": offset, "summary": summary, "results": results}
@@ -3126,7 +3237,7 @@ def export_loans(
 ):
     """Every loan matching the current filters (no /api/loans-style pagination cap) as a downloadable CSV - "export what you're looking at" for Loans, reusing filter_loans() so the file can never silently diverge from what the table shows."""
     df = filter_loans(position, league, q, min_age, max_age, min_duration, max_duration)
-    sort_field = sort if sort in LOAN_SORT_FIELDS else "loan_success_score"
+    sort_field = resolve_sort_field(sort, LOAN_SORT_FIELDS, "loan_success_score")
     df = df.sort_values(sort_field, ascending=(order == "asc"))
     csv_text = rows_to_csv([loan_row_dict(r) for r in df.itertuples()])
     return Response(
@@ -3170,9 +3281,6 @@ def binned_trend(df, col, q):
         {"x": float(r["x"]), "avg_score": round(float(r["avg_score"]), 1), "n": int(r["n"])}
         for _, r in grouped.iterrows()
     ]
-
-
-POSITION_ORDER = ["Goalkeeper", "Defender", "Midfield", "Attack"]
 
 
 def height_trend_by_position(df, q=6):

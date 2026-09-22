@@ -188,7 +188,9 @@ function setupScenario(key) {
       state.player = p;
       col.querySelector(".player-chip").innerHTML =
         `<span class="selected-chip">${p.name} &middot; age ${Number(p.age_now).toFixed(1)} &middot; ${p.current_club_name}</span>`;
-      col.querySelector(".age-input").value = Number(p.age_now).toFixed(1);
+      // Clamped to the backend's accepted range (age_at_transfer: ge=15,
+      // le=42 in PredictRequest) - see app.js's identical clamp for why.
+      col.querySelector(".age-input").value = Math.min(42, Math.max(15, Number(p.age_now))).toFixed(1);
       if (p.current_club_id) {
         const res = await fetch(`/api/clubs/${p.current_club_id}`);
         state.playerClub = res.ok ? await res.json() : null;
@@ -263,7 +265,10 @@ function setupScenario(key) {
 
     state.feeEurMillions = feeEurMillions;
     updateFeeCurrencyDisplay();
-    col.querySelector(".age-input").value = age.toFixed(1);
+    // Clamped like the autocomplete's own age-input fill above - `age` here
+    // comes from a shared link's URL param, just as editable/out-of-range
+    // as a raw autofill.
+    col.querySelector(".age-input").value = Math.min(42, Math.max(15, age)).toFixed(1);
     updateCompareButton();
   }
 
@@ -455,7 +460,7 @@ async function runCompare() {
     });
     if (!res.ok) {
       const err = await res.json();
-      throw new Error(err.detail || "Comparison failed");
+      throw new Error(formatApiError(err.detail) || "Comparison failed");
     }
     lastCompareData = await res.json();
     lastCompareKeys = keys;

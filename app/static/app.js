@@ -243,7 +243,12 @@ setupAutocomplete({
     state.player = p;
     document.getElementById("player-chip").innerHTML =
       `<span class="selected-chip">${p.name} &middot; age ${Number(p.age_now).toFixed(1)} &middot; ${p.current_club_name}</span>`;
-    document.getElementById("age-override").value = Number(p.age_now).toFixed(1);
+    // Clamped to the backend's accepted range (age_at_transfer: ge=15, le=42
+    // in PredictRequest) - the field's own min/max attributes don't help
+    // here since it isn't inside a <form>, so an out-of-range autofilled
+    // age (e.g. a 42+ year-old player) would otherwise 422 the moment
+    // Predict is clicked without editing it first.
+    document.getElementById("age-override").value = Math.min(42, Math.max(15, Number(p.age_now))).toFixed(1);
     if (p.current_club_id) {
       const res = await fetch(`/api/clubs/${p.current_club_id}`);
       state.playerClub = res.ok ? await res.json() : null;
@@ -471,7 +476,7 @@ async function runPrediction() {
     });
     if (!res.ok) {
       const err = await res.json();
-      throw new Error(err.detail || "Prediction failed");
+      throw new Error(formatApiError(err.detail) || "Prediction failed");
     }
     state.lastPredictData = await res.json();
     renderPredictResult(state.lastPredictData);

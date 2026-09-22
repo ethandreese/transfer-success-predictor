@@ -123,6 +123,24 @@ function convertMoneyInText(text) {
 }
 
 /**
+ * A FastAPI error response's `detail` field as a readable string, for
+ * /api/predict's and /api/compare's catch blocks (see app.js/compare.js).
+ * A 400 from predict()'s own `except Exception` sends a plain string, but
+ * a 422 from pydantic request validation (e.g. an out-of-range age, or the
+ * all-or-nothing recent-performance check) sends an *array* of {msg, ...}
+ * objects instead - passed straight into `new Error(...)` without this,
+ * that array stringifies to the unreadable literal text "[object Object]".
+ */
+function formatApiError(detail) {
+  if (!detail) return null;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail.map(d => (d && typeof d === "object" && d.msg) ? d.msg : String(d)).join("; ");
+  }
+  return String(detail);
+}
+
+/**
  * Wire a modal backdrop for keyboard/screen-reader use: Tab/Shift+Tab cycle
  * only through the modal's own focusable elements (without this, the page
  * behind a "modal" dialog - nav links, table rows - is still reachable by
