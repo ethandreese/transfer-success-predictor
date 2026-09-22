@@ -4,6 +4,7 @@ import json
 import os
 import re
 import unicodedata
+from collections import defaultdict
 
 import joblib
 import numpy as np
@@ -377,6 +378,21 @@ loans_df["from_club_name"] = loans_df["from_club_name"].map(lambda n: CLUB_NAME_
 # site still showing the old, split spellings.
 comparables["meta"]["to_club_name"] = comparables["meta"]["to_club_name"].map(lambda n: CLUB_NAME_ALIASES.get(n, n))
 comparables["meta"]["from_club_name"] = comparables["meta"]["from_club_name"].map(lambda n: CLUB_NAME_ALIASES.get(n, n))
+
+# (player_id, from_club_name, to_club_name) -> that route's transfers, sorted
+# by date - lets find_loan_conversion() do an O(1) dict lookup + short scan
+# instead of re-filtering all of transfers_df on every loan row it's asked
+# about. Built once here (after the alias rewrite above, so it keys on the
+# same canonical club names every endpoint sees) rather than left as a
+# per-request scan - the Loans page renders up to 100 rows a request, each
+# of which used to cost its own full boolean-mask pass over transfers_df.
+LOAN_CONVERSION_INDEX = defaultdict(list)
+for player_id, from_club, to_club, transfer_date, success_score in transfers_df[
+    ["player_id", "from_club_name", "to_club_name", "transfer_date", "success_score"]
+].itertuples(index=False, name=None):
+    LOAN_CONVERSION_INDEX[(player_id, from_club, to_club)].append((transfer_date, float(success_score)))
+for _key, _candidates in LOAN_CONVERSION_INDEX.items():
+    _candidates.sort(key=lambda c: c[0])
 
 players_df["_name_fold"] = players_df["name"].map(fold_accents)
 clubs_df["_name_fold"] = clubs_df["name"].map(fold_accents)
@@ -2988,17 +3004,21 @@ def find_loan_conversion(loan_row):
     conversion as one continuous loan record, never a distinct permanent
     transfer) is invisible to this - it only catches a conversion that
     actually shows up as its own row in transfers_processed.csv.
+
+    Looks up LOAN_CONVERSION_INDEX (built once at startup) rather than
+    filtering transfers_df here, so this is a dict lookup plus a scan of
+    just that route's transfers (almost always one or two) instead of a
+    fresh full-table scan per loan row.
     """
-    candidates = transfers_df[
-        (transfers_df["player_id"] == loan_row["player_id"])
-        & (transfers_df["from_club_name"] == loan_row["from_club_name"])
-        & (transfers_df["to_club_name"] == loan_row["to_club_name"])
-        & (transfers_df["transfer_date"] > loan_row["transfer_date"])
-    ]
-    if candidates.empty:
+    candidates = LOAN_CONVERSION_INDEX.get(
+        (loan_row["player_id"], loan_row["from_club_name"], loan_row["to_club_name"])
+    )
+    if not candidates:
         return None
-    nearest = candidates.sort_values("transfer_date").iloc[0]
-    return {"transfer_date": str(nearest["transfer_date"])[:10], "success_score": float(nearest["success_score"])}
+    for transfer_date, success_score in candidates:
+        if transfer_date > loan_row["transfer_date"]:
+            return {"transfer_date": str(transfer_date)[:10], "success_score": success_score}
+    return None
 
 
 def filter_loans(position=None, league=None, q=None, min_age=None, max_age=None, min_duration=None, max_duration=None):
@@ -3028,7 +3048,7 @@ def filter_loans(position=None, league=None, q=None, min_age=None, max_age=None,
 
 
 def loan_row_dict(r):
-    """One loans_processed.csv row as a plain dict - shared by /api/loans' JSON list and /api/loans/export's CSV (via rows_to_csv). converted_to_permanent is looked up per row (see find_loan_conversion) - cheap enough at list-page size (one filtered scan of transfers_df per loan row, ~25-100 of them per request) that it doesn't need precomputing at startup the way league_trends_df does."""
+    """One loans_processed.csv row as a plain dict - shared by /api/loans' JSON list and /api/loans/export's CSV (via rows_to_csv). converted_to_permanent is looked up per row via find_loan_conversion, which itself is just a LOAN_CONVERSION_INDEX dict lookup - cheap even across export's uncapped row count, unlike the full transfers_df scan it used to do per row."""
     conversion = find_loan_conversion(r)
     return {
         "player_id": int(r["player_id"]),
