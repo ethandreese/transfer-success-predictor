@@ -3203,17 +3203,20 @@ def numeric_column(series, ndigits=None):
     reachable with today's data (the smallest real fee is €20k) but nothing
     else guards against it, so a future lower-fee row would corrupt the
     chart silently rather than just losing precision.
+
+    Vectorized rather than a plain Python `for v in series: pd.isna(v)...`
+    loop - this runs on every /api/analytics and /api/surprises/scatter
+    request over the full ~8,300-row transfers_df (up to 5-8 columns per
+    request), and a per-element pd.isna() call was the single biggest
+    contributor to both endpoints' response time.
     """
-    result = []
-    for v in series:
-        if pd.isna(v):
-            result.append(None)
-            continue
-        rounded = round(v, ndigits) if ndigits is not None else v
-        if v > 0 and rounded <= 0:
-            rounded = 10 ** -ndigits
-        result.append(float(rounded))
-    return result
+    values = series.astype(float)
+    rounded = values.round(ndigits) if ndigits is not None else values
+    if ndigits is not None:
+        floor = 10.0 ** -ndigits
+        underflow = (values > 0) & (rounded <= 0)
+        rounded = rounded.where(~underflow, floor)
+    return rounded.astype(object).mask(values.isna(), None).tolist()
 
 
 @app.get("/api/analytics/trends")
