@@ -2765,21 +2765,21 @@ def filter_transfers(position=None, league=None, q=None, min_fee=None, max_fee=N
 
 
 def transfer_row_dict(r):
-    """One transfers_processed.csv row as a plain dict - shared by /api/transfers' JSON list and /api/transfers/export's CSV (via rows_to_csv), so both always describe a transfer identically."""
-    fee = r["transfer_fee"]
+    """One transfers_processed.csv row (an itertuples() namedtuple, not a Series - see its call sites) as a plain dict - shared by /api/transfers' JSON list and /api/transfers/export's CSV (via rows_to_csv), so both always describe a transfer identically."""
+    fee = r.transfer_fee
     return {
-        "player_id": int(r["player_id"]),
-        "name": r["name"],
-        "position": r["position"],
-        "from_club": r["from_club_name"],
-        "to_club": r["to_club_name"],
-        "to_league": league_display_name(r["to_domestic_competition_id"]),
-        "transfer_date": str(r["transfer_date"])[:10],
-        "age_at_transfer": round(float(r["age_at_transfer"]), 1),
+        "player_id": int(r.player_id),
+        "name": r.name,
+        "position": r.position,
+        "from_club": r.from_club_name,
+        "to_club": r.to_club_name,
+        "to_league": league_display_name(r.to_domestic_competition_id),
+        "transfer_date": str(r.transfer_date)[:10],
+        "age_at_transfer": round(float(r.age_at_transfer), 1),
         "transfer_fee": None if pd.isna(fee) else float(fee),
-        "tenure_days": int(r["tenure_days"]),
-        "still_at_club": bool(r["still_at_club"]),
-        "success_score": float(r["success_score"]),
+        "tenure_days": int(r.tenure_days),
+        "still_at_club": bool(r.still_at_club),
+        "success_score": float(r.success_score),
     }
 
 
@@ -2829,7 +2829,7 @@ def list_transfers(
     limit = max(1, min(limit, 100))
     page = df.iloc[offset:offset + limit]
 
-    results = [transfer_row_dict(r) for _, r in page.iterrows()]
+    results = [transfer_row_dict(r) for r in page.itertuples()]
     return {"total": total, "limit": limit, "offset": offset, "summary": summary, "results": results}
 
 
@@ -2849,7 +2849,7 @@ def export_transfers(
     df = filter_transfers(position, league, q, min_fee, max_fee, min_age, max_age)
     sort_field = sort if sort in TRANSFER_SORT_FIELDS else "success_score"
     df = df.sort_values(sort_field, ascending=(order == "asc"))
-    csv_text = rows_to_csv([transfer_row_dict(r) for _, r in df.iterrows()])
+    csv_text = rows_to_csv([transfer_row_dict(r) for r in df.itertuples()])
     return Response(
         content=csv_text,
         media_type="text/csv",
@@ -3009,14 +3009,19 @@ def find_loan_conversion(loan_row):
     filtering transfers_df here, so this is a dict lookup plus a scan of
     just that route's transfers (almost always one or two) instead of a
     fresh full-table scan per loan row.
+
+    Attribute access (loan_row.player_id, not loan_row["player_id"]) so
+    this works whether loan_row is a single-row Series (build_loan_card's
+    /api/loans/detail) or an itertuples() namedtuple (loan_row_dict's
+    list/export loop) - both support it, only the former supports [].
     """
     candidates = LOAN_CONVERSION_INDEX.get(
-        (loan_row["player_id"], loan_row["from_club_name"], loan_row["to_club_name"])
+        (loan_row.player_id, loan_row.from_club_name, loan_row.to_club_name)
     )
     if not candidates:
         return None
     for transfer_date, success_score in candidates:
-        if transfer_date > loan_row["transfer_date"]:
+        if transfer_date > loan_row.transfer_date:
             return {"transfer_date": str(transfer_date)[:10], "success_score": success_score}
     return None
 
@@ -3048,20 +3053,20 @@ def filter_loans(position=None, league=None, q=None, min_age=None, max_age=None,
 
 
 def loan_row_dict(r):
-    """One loans_processed.csv row as a plain dict - shared by /api/loans' JSON list and /api/loans/export's CSV (via rows_to_csv). converted_to_permanent is looked up per row via find_loan_conversion, which itself is just a LOAN_CONVERSION_INDEX dict lookup - cheap even across export's uncapped row count, unlike the full transfers_df scan it used to do per row."""
+    """One loans_processed.csv row (an itertuples() namedtuple, not a Series - see its call sites) as a plain dict - shared by /api/loans' JSON list and /api/loans/export's CSV (via rows_to_csv). converted_to_permanent is looked up per row via find_loan_conversion, which itself is just a LOAN_CONVERSION_INDEX dict lookup - cheap even across export's uncapped row count, unlike the full transfers_df scan it used to do per row."""
     conversion = find_loan_conversion(r)
     return {
-        "player_id": int(r["player_id"]),
-        "name": r["name"],
-        "position": r["position"],
-        "from_club": r["from_club_name"],
-        "to_club": r["to_club_name"],
-        "to_league": league_display_name(r["to_domestic_competition_id"]),
-        "transfer_date": str(r["transfer_date"])[:10],
-        "age_at_transfer": round(float(r["age_at_transfer"]), 1),
-        "tenure_days": int(r["tenure_days"]),
-        "still_on_loan": bool(r["still_on_loan"]),
-        "loan_success_score": float(r["loan_success_score"]),
+        "player_id": int(r.player_id),
+        "name": r.name,
+        "position": r.position,
+        "from_club": r.from_club_name,
+        "to_club": r.to_club_name,
+        "to_league": league_display_name(r.to_domestic_competition_id),
+        "transfer_date": str(r.transfer_date)[:10],
+        "age_at_transfer": round(float(r.age_at_transfer), 1),
+        "tenure_days": int(r.tenure_days),
+        "still_on_loan": bool(r.still_on_loan),
+        "loan_success_score": float(r.loan_success_score),
         "converted_to_permanent": conversion is not None,
         "conversion_transfer_date": conversion["transfer_date"] if conversion else None,
         "conversion_success_score": conversion["success_score"] if conversion else None,
@@ -3103,7 +3108,7 @@ def list_loans(
     limit = max(1, min(limit, 100))
     page = df.iloc[offset:offset + limit]
 
-    results = [loan_row_dict(r) for _, r in page.iterrows()]
+    results = [loan_row_dict(r) for r in page.itertuples()]
     return {"total": total, "limit": limit, "offset": offset, "summary": summary, "results": results}
 
 
@@ -3123,7 +3128,7 @@ def export_loans(
     df = filter_loans(position, league, q, min_age, max_age, min_duration, max_duration)
     sort_field = sort if sort in LOAN_SORT_FIELDS else "loan_success_score"
     df = df.sort_values(sort_field, ascending=(order == "asc"))
-    csv_text = rows_to_csv([loan_row_dict(r) for _, r in df.iterrows()])
+    csv_text = rows_to_csv([loan_row_dict(r) for r in df.itertuples()])
     return Response(
         content=csv_text,
         media_type="text/csv",
