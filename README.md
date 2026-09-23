@@ -428,10 +428,11 @@ rather than doubling as the predict form (see Project history).
   show a swing (e.g. +7.6 for a Laliga-vs-Premier-League swap on one
   real prediction) much larger than the ~0.1-point gap between those
   leagues' historical average success_score. Checked directly whether
-  this traces to `fee_to_value_ratio` (the theory `league_context_note`'s
-  own explanatory text offers) by swapping it jointly with league
-  instead of independently - the swing barely moved (7.6 -> 7.8), ruling
-  that out as the driver. This is a known, inherent limitation of a
+  this traces to `fee_to_value_ratio` (a theory `league_context_note`'s
+  own explanatory text used to offer, since removed - see Project
+  history) by swapping it jointly with league instead of independently -
+  the swing barely moved (7.6 -> 7.8), ruling that out as the driver.
+  This is a known, inherent limitation of a
   single-feature leave-one-out swap against a linear model with
   correlated inputs (a real SHAP-style explanation would marginalize
   more carefully) rather than a specific bug with an identified fix -
@@ -499,6 +500,49 @@ within each group. Full reasoning and numbers for anything here are in
 the git history.
 
 **Predict model & backend**
+- Audited every user-facing description on the site for correctness
+  after the position/sub_position and fee-slider fixes below turned up
+  two real issues in one sitting. Found one more of the same shape:
+  `league_context_note`'s "why this score" text claimed a destination
+  league's swing was "largely reflecting fee premiums paid there,"
+  borrowing that theory from an earlier, unrelated observation. Checked
+  directly and it doesn't hold up two ways - across the 14 leagues with
+  a trustworthy sample, a league's average fee premium and its average
+  success_score barely correlate (r=+0.21, p=0.47, not significant),
+  and forcing a real prediction's `fee_to_value_ratio` to match the
+  destination league's own average barely changed that prediction's
+  league-driven swing (7.6 -> 7.8 pts - see Known limitations, which
+  this doesn't resolve, just stops mis-explaining). Removed the claim;
+  `league_context_note` now states the real historical gap plainly, the
+  same honest-baseline pattern already used for position/sub_position/
+  foot, instead of inventing a cause. Also removed the now-dead
+  `league_fee_ratio_baseline_to` metadata field that only fed the
+  removed claim. Checked the rest of the site the same way (every other
+  claim-bearing description, not just navigational text) and found the
+  rest solid: `club_value_rating_note` is built from its own directly-
+  checked correlation (r=0.29) with a dedicated regression, not a
+  borrowed theory; the Analytics age-trend claim holds up against the
+  real data (a clean, monotonic 11-point decline across 12 buckets of
+  ~700 transfers each).
+- Added a caveat that a higher fee doesn't mean a better score (Predict
+  page's fee slider and `app/main.py`'s "Fee relative to market value"
+  factor). Investigated a user report that dragging the fee slider up
+  increases the predicted score. Confirmed the mechanism
+  (`fee_to_value_ratio`'s Ridge coefficient is positive with no cap,
+  unlike the historical score's own ~1.3x-premium-is-free rule) and,
+  more importantly, that the underlying pattern in real training data is
+  concentrated almost entirely in high-value transfers: a per-value-tier
+  regression shows the effect growing from statistically
+  indistinguishable from zero for the cheapest fifth of players (95% CI
+  crosses zero) up to a strong, significant effect for the priciest
+  fifth. Tested adding an explicit interaction term to the model to
+  correct this directly - it made holdout accuracy slightly worse on
+  every one of 5 temporal splits, so not worth shipping as a model
+  change. Added a caveat instead: a note under the fee slider, and
+  reworded the fee-ratio factor's own explanation text, which previously
+  (incorrectly) implied the historical score's own overpay-penalty
+  threshold applied here too - it doesn't, this feature has no cap at
+  all.
 - Fixed `sub_position` and `position` comparing every hypothetical
   prediction against the wrong reference group entirely in "why this
   score" (`explain_prediction`'s leave-one-out swap, `app/main.py`).

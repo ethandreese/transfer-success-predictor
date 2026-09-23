@@ -1265,17 +1265,27 @@ def format_feature_value(feat, value, context=None):
 
 def league_context_note(feat, actual_league, reference_league):
     """
-    Explain WHY one league scores differently than another in a prediction
-    explanation, instead of a bare "vs. a typical transfer's Premier
-    League" swing that reads as "moving to Spain is inherently better".
-    The real driver is almost entirely value_for_money, not on-pitch
-    difficulty: Premier League clubs have historically paid a much larger
-    premium over market value than clubs in every other major league (mean
-    fee/value 1.55x vs. La Liga's 1.01x - see league_fee_ratio_baseline_to
-    in train_model.py). Returns "" (falls back to the plain swing-only
-    explanation) when either league is too thin a sample to trust - such
-    leagues are simply absent from the baseline dicts (see
-    MIN_LEAGUE_SAMPLE in train_model.py).
+    Add the real historical average success_score for a destination/origin
+    league's actual vs. reference value, instead of a bare "vs. a typical
+    transfer's Premier League" swing with nothing to back it up (which
+    reads as "moving to Spain is inherently better"). Same honest-baseline
+    pattern category_baseline_note already uses for position/sub_position/
+    foot: state the real gap as a fact, without inventing a cause.
+
+    This used to also cite each league's average fee-to-value premium as
+    "the real driver" of the gap - removed after checking directly (see
+    README Known limitations): across the 14 leagues with a trustworthy
+    sample, a league's average fee premium and its average success_score
+    barely correlate (r=+0.21, p=0.47, not significant), and forcing a
+    real prediction's fee_to_value_ratio to match the destination league's
+    own average barely changed that prediction's league-driven swing
+    either (7.6 -> 7.8 pts on a real example). Whatever actually drives
+    the per-league gap isn't established, so it's no longer claimed.
+
+    Returns "" (falls back to the plain swing-only explanation) when
+    either league is too thin a sample to trust - such leagues are simply
+    absent from the baseline dict (see MIN_LEAGUE_SAMPLE in
+    train_model.py).
     """
     baseline = metadata[
         "league_success_baseline_to" if feat == "to_domestic_competition_id" else "league_success_baseline_from"
@@ -1283,18 +1293,11 @@ def league_context_note(feat, actual_league, reference_league):
     if actual_league not in baseline or reference_league not in baseline:
         return ""
     verb = "to" if feat == "to_domestic_competition_id" else "leaving"
-    note = (
+    return (
         f": transfers {verb} {league_display_name(actual_league)} have historically averaged "
-        f"{baseline[actual_league]} vs. {baseline[reference_league]} for {league_display_name(reference_league)}"
+        f"{baseline[actual_league]} vs. {baseline[reference_league]} for {league_display_name(reference_league)}, "
+        f"a real gap in this dataset, not a claim that one league is inherently a better destination"
     )
-    if feat == "to_domestic_competition_id":
-        fee_baseline = metadata["league_fee_ratio_baseline_to"]
-        if actual_league in fee_baseline and reference_league in fee_baseline:
-            note += (
-                f", largely reflecting fee premiums paid there "
-                f"({fee_baseline[actual_league]:.2f}x market value on average vs. {fee_baseline[reference_league]:.2f}x)"
-            )
-    return note
 
 
 CATEGORY_BASELINE_NOTE_TAIL = {

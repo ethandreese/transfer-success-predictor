@@ -560,19 +560,19 @@ def main():
     }
 
     # Historical context for the "destination/origin league" explanation
-    # (see app/main.py:explain_prediction) - a bare "vs. a typical
-    # transfer's Premier League" swing with no explanation reads as "moving
-    # to Spain is inherently better", when the real driver is almost
-    # entirely value_for_money: Premier League clubs have historically paid
-    # a much larger premium over market value than clubs in every other
-    # major league (mean fee/value 1.55x vs. La Liga's 1.01x, 47% of PL
-    # paid deals exceeding the formula's 1.3x overpay line vs. 21% for La
-    # Liga - on-pitch components are comparable across leagues, this isn't
-    # about football quality). Surfacing both the average success_score
-    # and the average fee premium per league lets the explanation say why,
-    # not just that. A league with too few transfers to trust a stable
-    # average (MIN_LEAGUE_SAMPLE) is left out entirely rather than shown a
-    # noisy number - falls back to the plain swing-only explanation.
+    # (see app/main.py:explain_prediction/league_context_note) - a bare
+    # "vs. a typical transfer's Premier League" swing with no explanation
+    # reads as "moving to Spain is inherently better". This used to also
+    # compute a per-league average fee-to-value premium and cite it as the
+    # driver of the gap - removed (see league_context_note's docstring)
+    # after checking directly that a league's fee premium barely
+    # correlates with its average success_score across the 14 leagues with
+    # a trustworthy sample (r=+0.21, p=0.47). So this just states the real
+    # baseline gap as a fact without inventing a cause, same pattern
+    # position_success_baseline below already used. A league with too few
+    # transfers to trust a stable average (MIN_LEAGUE_SAMPLE) is left out
+    # entirely rather than shown a noisy number - falls back to the plain
+    # swing-only explanation.
     MIN_LEAGUE_SAMPLE = 15
     to_counts = df["to_domestic_competition_id"].value_counts()
     league_success_baseline_to = {
@@ -586,12 +586,6 @@ def main():
         for lg, v in df.groupby("from_domestic_competition_id")[TARGET].mean().items()
         if from_counts.get(lg, 0) >= MIN_LEAGUE_SAMPLE
     }
-    paid_to_counts = paid["to_domestic_competition_id"].value_counts()
-    league_fee_ratio_baseline_to = {
-        lg: round(float(v), 2)
-        for lg, v in paid.groupby("to_domestic_competition_id")["fee_to_value_ratio"].mean().items()
-        if paid_to_counts.get(lg, 0) >= MIN_LEAGUE_SAMPLE
-    }
 
     # Historical context for the "position"/"sub-position" explanation (see
     # app/main.py:explain_prediction) - swapping a transfer's actual
@@ -604,10 +598,10 @@ def main():
     # second strikers) - but nothing here isolates *why* (could be the
     # scoring formula's own per-position weighting, could be market-
     # evaluation differences, could be both), so the note states the
-    # baseline gap as a fact without inventing a mechanism, unlike
-    # league_context_note's fee-premium explanation above. Same
-    # MIN_LEAGUE_SAMPLE gate as the league baselines - several sub-positions
-    # (e.g. "Attack", 2 rows) are too thin to trust.
+    # baseline gap as a fact without inventing a mechanism, same pattern
+    # league_context_note above now uses too. Same MIN_LEAGUE_SAMPLE gate
+    # as the league baselines - several sub-positions (e.g. "Attack", 2
+    # rows) are too thin to trust.
     position_counts = df["position"].value_counts()
     position_success_baseline = {
         p: round(float(v), 1)
@@ -665,7 +659,6 @@ def main():
             "position_height_means": position_height_means_full,
             "league_success_baseline_to": league_success_baseline_to,
             "league_success_baseline_from": league_success_baseline_from,
-            "league_fee_ratio_baseline_to": league_fee_ratio_baseline_to,
             "position_success_baseline": position_success_baseline,
             "sub_position_success_baseline": sub_position_success_baseline,
             "foot_success_baseline": foot_success_baseline,

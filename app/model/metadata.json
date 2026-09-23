@@ -54855,22 +54855,6 @@
     "TR1": 47.4,
     "UKR1": 48.1
   },
-  "league_fee_ratio_baseline_to": {
-    "BE1": 0.89,
-    "DK1": 1.02,
-    "ES1": 0.98,
-    "FR1": 1.32,
-    "GB1": 1.5,
-    "GR1": 0.65,
-    "IT1": 1.22,
-    "L1": 1.07,
-    "NL1": 0.93,
-    "PO1": 1.25,
-    "RU1": 0.99,
-    "SC1": 1.24,
-    "TR1": 0.7,
-    "UKR1": 0.89
-  },
   "position_success_baseline": {
     "Attack": 50.0,
     "Defender": 47.9,
