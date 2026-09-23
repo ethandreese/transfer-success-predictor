@@ -2008,9 +2008,24 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_data_f
             note = club_value_rating_note(club_side, actual_value, reference_value, typical_display)
             vs_clause = f"vs. {typical_label} {typical_display}{note}"
         elif feat == "fee_to_value_ratio":
+            # NOT the historical score's own ~1.3x-premium-is-free rule
+            # (compute_fee_penalty_pct in build_dataset.py) - this is a
+            # different formula (a single linear Ridge coefficient on this
+            # feature, no cap or threshold), so that rule doesn't describe
+            # what's actually happening here. Checked directly: this
+            # coefficient is positive with no falloff even at extreme
+            # ratios (>4x), and a per-value-tier regression on the real
+            # training data shows why - the positive fee-premium/success
+            # link is real but concentrated almost entirely in high-value
+            # transfers (95% CI for the cheapest fifth of players crosses
+            # zero); a flat linear term can't express that, so it's worth
+            # saying so here rather than implying "pay more, score more"
+            # in general.
             vs_clause = (
-                f"vs. {typical_label} {typical_display}: paying up to ~1.3x market value counts as a "
-                f"normal premium in the historical scoring; only fees further above that actually count against a transfer"
+                f"vs. {typical_label} {typical_display}: a higher ratio has historically leaned toward "
+                f"slightly better outcomes, but that pattern is really only well-established for expensive, "
+                f"high-profile signings - for a typical-value transfer it's not a reliable effect, so treat "
+                f"this as a historical correlation, not a reason to pay more"
             )
         elif feat == "club_quality_ratio":
             vs_clause = f"vs. {typical_label} {typical_display} (destination squad value ÷ origin squad value)"

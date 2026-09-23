@@ -717,6 +717,11 @@ h2 {
 }
 .field input[type="range"]:focus { outline: none; }
 
+/* A small caveat under a field whose value has a real but easily
+   misread effect on the prediction (see the fee slider in predict.html) -
+   muted and small so it reads as context, not another label. */
+.field-note { font-size: 0.78rem; color: var(--muted); margin: 0.5rem 0 0; }
+
 .autocomplete-list {
   position: absolute;
   top: 100%;
