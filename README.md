@@ -225,16 +225,18 @@ real coverage ceilings.
 only features (age, position, physical attributes, fee, market value,
 prior-year performance including FotMob rating/xG/xA/passing/defensive
 output, and origin/destination club & league strength), with nothing
-about what happened after the move. Evaluated on a temporal holdout
-(trained on transfers before mid-2023, tested on transfers since): **MAE
-≈ 12.26 points** on the 0–100 scale, **R² ≈ 0.211**, vs. ≈14.37 MAE for
-always predicting the average. That's a modest but real signal:
-predicting a player's *entire future tenure* from pre-transfer stats
-alone is genuinely hard, since multi-year outcomes depend heavily on
-injuries, tactics, and squad fit no pre-transfer number can see. (The
-model was originally a tuned `GradientBoostingRegressor`; a later
-investigation found a plain `Ridge` beat it and every other alternative
-tried. See [Project history](#project-history).)
+about what happened after the move, and training rows weighted by
+recency (an exponential decay, 3-year half-life, favoring newer transfers
+- see `RECENCY_HALF_LIFE_YEARS` in `scripts/train_model.py`). Evaluated on
+a temporal holdout (trained on transfers before mid-2023, tested on
+transfers since): **MAE ≈ 12.16 points** on the 0–100 scale, **R² ≈
+0.217**, vs. ≈14.37 MAE for always predicting the average. That's a
+modest but real signal: predicting a player's *entire future tenure* from
+pre-transfer stats alone is genuinely hard, since multi-year outcomes
+depend heavily on injuries, tactics, and squad fit no pre-transfer number
+can see. (The model was originally a tuned `GradientBoostingRegressor`; a
+later investigation found a plain `Ridge` beat it and every other
+alternative tried. See [Project history](#project-history).)
 
 **Explainability.** For a known historical transfer, the app shows the
 real 5-10 component breakdown with concrete numbers behind each one
@@ -480,6 +482,23 @@ within each group. Full reasoning and numbers for anything here are in
 the git history.
 
 **Predict model & backend**
+- Weighted training rows by recency (`compute_recency_weight` /
+  `RECENCY_HALF_LIFE_YEARS` in `scripts/train_model.py`, an exponential
+  decay with a 3-year half-life, applied to both the deployed model's fit
+  and `compute_prediction_surprises.py`'s 5-fold CV), after a position-
+  bias investigation into the historical score's own formula prompted a
+  broader look at the predict model for other checkable improvements.
+  Tested three ideas empirically rather than by inspection alone:
+  imputing (instead of dropping) the ~550 training rows missing
+  `fee_to_value_ratio`/`height_in_cm`/club-value data made no real
+  difference (MAE +0.016, R² -0.002) despite recovering ~480 rows, so was
+  not kept; ElasticNet/Lasso lost to plain Ridge on every one of 25
+  alpha/l1_ratio combinations tried, confirming the feature set's signal
+  really is close to linear; recency weighting won, checked across the
+  same 5 temporal splits the original Ridge-vs-GBR decision used - MAE
+  improved ~0.1 and R² ~0.005-0.011 on 4 of 5 splits, and was never worse
+  (an ~0.001 R² wash on the 5th). Moved the temporal holdout from MAE
+  12.26/R² 0.211 to MAE 12.16/R² 0.217.
 - Fixed `/api/predict` (and everything built on it, including Compare
   and the examples cards) 400ing whenever a composite FotMob feature
   (e.g. "defensive") had real data overall but one specific raw sub-stat

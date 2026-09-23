@@ -20,6 +20,35 @@ DATA_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "transfers_pro
 MODEL_DIR = os.path.join(os.path.dirname(__file__), "..", "app", "model")
 SPLIT_DATE = "2023-06-01"
 
+# How much more a recent transfer counts than an old one when fitting the
+# model - football's finances and tactics genuinely shift over a decade
+# (fee inflation, FFP-style rules, more data-driven recruitment), and the
+# model's actual job is predicting *future* transfers, so a training row
+# from 2023 plausibly generalizes to that better than one from 2013. Ridge
+# fits every row unweighted otherwise. Checked directly across the same 5
+# temporal splits used for the Ridge-vs-GBR comparison above: exponential
+# recency weighting with a 3-year half-life improved MAE by ~0.1 and R^2 by
+# ~0.005-0.011 on 4 of 5 splits, and was never worse (a ~0.001 R^2 wash on
+# the 5th, the most recent/smallest-test-set split) - a small but
+# consistent, low-risk win, not a knife-edge tuning result. Half-lives from
+# 1-8 years were tried; 3 and 5 were both consistently good, 1 was clearly
+# too aggressive (discards too much of the training set's effective size).
+RECENCY_HALF_LIFE_YEARS = 3.0
+
+
+def compute_recency_weight(transfer_date, reference_date, half_life_years=RECENCY_HALF_LIFE_YEARS):
+    """
+    Exponential decay sample weight: 1.0 for a transfer on `reference_date`
+    itself, halving every `half_life_years` years further back. `reference_
+    date` is the fitting population's own most recent transfer_date (not
+    today's date), so the weighting is relative to "how old is this row
+    compared to the newest thing the model is being fit on" - the same
+    fit-on-train discipline every other fitted reference in this file
+    follows (e.g. position_height_means).
+    """
+    age_years = (reference_date - transfer_date).dt.days / 365.25
+    return 0.5 ** (age_years / half_life_years)
+
 # Raw pre-transfer FotMob per-90 stats (see
 # scripts/fetch_pretransfer_fotmob_stats.py) - the same rating/attacking/
 # possession/defensive signal the historical score's post-transfer
@@ -369,7 +398,12 @@ def main():
     model = Ridge(alpha=1.0)
 
     pipeline = Pipeline([("preprocess", preprocessor), ("model", model)])
-    pipeline.fit(X_train, y_train)
+    # See RECENCY_HALF_LIFE_YEARS above for why training rows are weighted
+    # by recency - reference_date is train's own max date, not test's,
+    # since test rows (and how "recent" they are relative to serving a live
+    # prediction) must never influence how the model is fit.
+    train_weight = compute_recency_weight(train["transfer_date"], train["transfer_date"].max())
+    pipeline.fit(X_train, y_train, model__sample_weight=train_weight)
 
     preds = pipeline.predict(X_test)
     mae = mean_absolute_error(y_test, preds)
@@ -390,7 +424,8 @@ def main():
     pretransfer_composite_medians_full = {feat: float(df[feat].median()) for feat in PRETRANSFER_FOTMOB_COMPOSITES}
     df = impute_pretransfer_fotmob_composites(df, pretransfer_composite_medians_full)
     X_all, y_all = df[NUMERIC_FEATURES + CATEGORICAL_FEATURES], df[TARGET]
-    pipeline.fit(X_all, y_all)
+    full_weight = compute_recency_weight(df["transfer_date"], df["transfer_date"].max())
+    pipeline.fit(X_all, y_all, model__sample_weight=full_weight)
 
     print("Building comparable-transfers index...")
     comp_scaler = StandardScaler()

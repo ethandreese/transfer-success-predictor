@@ -33,7 +33,7 @@ from scripts.train_model import (
     PRETRANSFER_FOTMOB_COMPOSITES, PRETRANSFER_FOTMOB_HAS_DATA_FLAGS,
     TARGET, add_derived_features, add_height_vs_position,
     build_pretransfer_percentile_tables, compute_pretransfer_fotmob_composites,
-    impute_pretransfer_fotmob_composites,
+    compute_recency_weight, impute_pretransfer_fotmob_composites,
 )
 
 OUT_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "prediction_surprises.csv")
@@ -64,6 +64,21 @@ def main():
     df = df.dropna(subset=required + CATEGORICAL_FEATURES + [TARGET]).reset_index(drop=True)
     print(f"Scoring {len(df):,} transfers across {N_FOLDS} folds")
 
+    # Parsed separately from the kept string transfer_date column (needed
+    # by compute_recency_weight's .dt accessor) rather than parsing df's
+    # own column - app/main.py merges prediction_surprises.csv onto
+    # transfers_processed.csv on the literal (player_id, transfer_date)
+    # string pair, so the CSV written at the end must keep transfer_date
+    # as the original plain date string, not a parsed-then-reserialized
+    # timestamp. One fixed reference date (the whole dataset's most recent
+    # transfer, not each fold's own) so every fold weights recency on the
+    # same scale - unlike train_model.py's temporal split, a fold's train
+    # rows are a random ~80% sample of the same date range, not a
+    # chronological prefix, so there's no natural per-fold "most recent" to
+    # anchor to instead.
+    transfer_date_parsed = pd.to_datetime(df["transfer_date"])
+    reference_date = transfer_date_parsed.max()
+
     predicted = np.full(len(df), np.nan)
     kfold = KFold(n_splits=N_FOLDS, shuffle=True, random_state=RANDOM_STATE)
     for fold, (train_idx, test_idx) in enumerate(kfold.split(df), start=1):
@@ -86,7 +101,8 @@ def main():
         test = impute_pretransfer_fotmob_composites(test, composite_medians)
 
         pipeline = build_pipeline()
-        pipeline.fit(train[NUMERIC_FEATURES + CATEGORICAL_FEATURES], train[TARGET])
+        train_weight = compute_recency_weight(transfer_date_parsed.iloc[train_idx], reference_date)
+        pipeline.fit(train[NUMERIC_FEATURES + CATEGORICAL_FEATURES], train[TARGET], model__sample_weight=train_weight.values)
         preds = pipeline.predict(test[NUMERIC_FEATURES + CATEGORICAL_FEATURES])
         predicted[test_idx] = np.clip(preds, 0.0, 100.0)
         print(f"  fold {fold}/{N_FOLDS}: {len(test_idx):,} transfers predicted")
