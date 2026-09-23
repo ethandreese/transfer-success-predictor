@@ -465,6 +465,7 @@ async function loadPlayerA(playerId) {
   if (!res.ok) return;
   state.careerA = await res.json();
   state.careerB = null;
+  document.getElementById("player-search").value = state.careerA.name;
   document.getElementById("player-b-search").value = "";
   document.getElementById("player-b-chip").innerHTML = "";
   document.getElementById("player-b-field").hidden = false;
@@ -514,3 +515,10 @@ setupAutocomplete({
 document.addEventListener("settingschange", () => {
   if (state.openStop) showCard(state.openStop.stop, state.openStop.playerId);
 });
+
+// Deep-link support: the homepage's historical example cards (see
+// home.js) link here as /player.html?player_id=X so clicking one lands
+// straight on that player's real career instead of making a visitor
+// search for a name they were just shown a moment ago.
+const initialPlayerId = new URLSearchParams(location.search).get("player_id");
+if (initialPlayerId) loadPlayerA(Number(initialPlayerId));

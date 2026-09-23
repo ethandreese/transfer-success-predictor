@@ -36,7 +36,7 @@ async function loadExamples() {
     }
     const years = (days) => (days / 365.25).toFixed(1);
     el.innerHTML = data.map(ex => `
-      <div class="example-card">
+      <a class="example-card" href="/player.html?player_id=${ex.player_id}">
         <div class="name">${ex.name}</div>
         <div class="route">${ex.from_club} &rarr; ${ex.to_club} (${ex.transfer_date.slice(0, 7)})</div>
         <div class="score" style="color:${scoreColor(ex.success_score)}">${ex.success_score}</div>
@@ -44,7 +44,7 @@ async function loadExamples() {
           Scored over ${years(ex.tenure_days)} years at the club${ex.still_at_club ? " (still there)" : " (before leaving)"}
         </div>
         <div class="breakdown">${renderBreakdown(ex.breakdown)}</div>
-      </div>
+      </a>
     `).join("");
   } catch (e) {
     el.textContent = "Failed to load examples.";
@@ -62,12 +62,12 @@ async function loadHypotheticalExamples() {
       return;
     }
     el.innerHTML = data.map(ex => `
-      <div class="example-card">
+      <a class="example-card" href="/predict.html?player_id=${ex.player_id}&club_id=${ex.to_club_id}&fee=${ex.transfer_fee}">
         <div class="name">${ex.name}</div>
         <div class="route">${ex.from_club} &rarr; ${ex.to_club}</div>
         <div class="score" style="color:${scoreColor(ex.success_score)}">${ex.success_score}</div>
         <div class="tenure-note">Predicted for a hypothetical ${formatMoney(ex.transfer_fee)} move</div>
-      </div>
+      </a>
     `).join("");
   } catch (e) {
     el.textContent = "Failed to load predictions.";

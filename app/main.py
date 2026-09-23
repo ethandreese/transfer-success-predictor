@@ -2387,6 +2387,8 @@ def _build_hypothetical_prediction(name, to_club):
     )
     result = predict(req, top_k=1)
     return {
+        "player_id": int(p["player_id"]),
+        "to_club_id": int(to["club_id"]),
         "name": name,
         "position": p["position"],
         "from_club": p["current_club_name"],

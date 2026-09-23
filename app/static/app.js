@@ -219,49 +219,64 @@ function updatePredictButton() {
   document.getElementById("predict-btn").disabled = !(state.player && state.club);
 }
 
-// Player autocomplete: selecting a player fills in their current age/club
-// and fetches their current club's details (for the "origin" side of the
-// prediction payload).
+const PLAYER_LABEL = (p) => `${p.name} (${p.position}, ${p.current_club_name})`;
+
+/**
+ * Select a player: fills in their current age/club and fetches their
+ * current club's details (for the "origin" side of the prediction
+ * payload). Shared by the player autocomplete's onSelect and
+ * restoreFromURL() below (a homepage example card's deep link), so a
+ * player picked either way ends up in exactly the same state - split out
+ * the same way player.js's loadPlayerA/compare.js's applyScenario are,
+ * for the same reason.
+ */
+async function selectPlayer(p) {
+  state.player = p;
+  document.getElementById("player-search").value = PLAYER_LABEL(p);
+  document.getElementById("player-chip").innerHTML =
+    `<span class="selected-chip">${p.name} &middot; age ${Number(p.age_now).toFixed(1)} &middot; ${p.current_club_name}</span>`;
+  // Clamped to the backend's accepted range (age_at_transfer: ge=15, le=42
+  // in PredictRequest) - the field's own min/max attributes don't help
+  // here since it isn't inside a <form>, so an out-of-range autofilled
+  // age (e.g. a 42+ year-old player) would otherwise 422 the moment
+  // Predict is clicked without editing it first.
+  document.getElementById("age-override").value = Math.min(42, Math.max(15, Number(p.age_now))).toFixed(1);
+  if (p.current_club_id) {
+    const res = await fetch(`/api/clubs/${p.current_club_id}`);
+    state.playerClub = res.ok ? await res.json() : null;
+  }
+  updatePredictButton();
+}
+
+/** Select a destination club - just records the selection, since the club's value proxy/league already come back in the search result. Shared by the club autocomplete's onSelect and restoreFromURL() below, same reasoning as selectPlayer. */
+function selectClub(c) {
+  state.club = c;
+  document.getElementById("club-search").value = c.name;
+  document.getElementById("club-chip").innerHTML =
+    `<span class="selected-chip">${c.name}</span>`;
+  updatePredictButton();
+}
+
+// Player autocomplete.
 setupAutocomplete({
   inputId: "player-search",
   listId: "player-list",
   endpoint: "/api/players/search",
-  renderLabel: (p) => `${p.name} (${p.position}, ${p.current_club_name})`,
-  onSelect: async (p) => {
-    state.player = p;
-    document.getElementById("player-chip").innerHTML =
-      `<span class="selected-chip">${p.name} &middot; age ${Number(p.age_now).toFixed(1)} &middot; ${p.current_club_name}</span>`;
-    // Clamped to the backend's accepted range (age_at_transfer: ge=15, le=42
-    // in PredictRequest) - the field's own min/max attributes don't help
-    // here since it isn't inside a <form>, so an out-of-range autofilled
-    // age (e.g. a 42+ year-old player) would otherwise 422 the moment
-    // Predict is clicked without editing it first.
-    document.getElementById("age-override").value = Math.min(42, Math.max(15, Number(p.age_now))).toFixed(1);
-    if (p.current_club_id) {
-      const res = await fetch(`/api/clubs/${p.current_club_id}`);
-      state.playerClub = res.ok ? await res.json() : null;
-    }
-    updatePredictButton();
-  },
+  renderLabel: PLAYER_LABEL,
+  onSelect: selectPlayer,
 });
 
-// Destination-club autocomplete: just records the selection, since the
-// club's value proxy/league already come back in the search result.
-// Excludes the selected player's own current club - a "transfer" to the
-// club a player is already at isn't a real scenario, and the model has no
-// way to flag that for you (it'll just score it like any other move).
+// Destination-club autocomplete. Excludes the selected player's own
+// current club - a "transfer" to the club a player is already at isn't a
+// real scenario, and the model has no way to flag that for you (it'll
+// just score it like any other move).
 setupAutocomplete({
   inputId: "club-search",
   listId: "club-list",
   endpoint: "/api/clubs/search",
   renderLabel: (c) => `${c.name}`,
   filterResults: (clubs) => state.player ? clubs.filter(c => c.club_id !== state.player.current_club_id) : clubs,
-  onSelect: (c) => {
-    state.club = c;
-    document.getElementById("club-chip").innerHTML =
-      `<span class="selected-chip">${c.name}</span>`;
-    updatePredictButton();
-  },
+  onSelect: selectClub,
 });
 
 let trendsPromise = null;
@@ -495,3 +510,34 @@ document.addEventListener("settingschange", () => {
   updateFeeCurrencyDisplay(feeLabel, feeInput);
   if (state.lastPredictData) renderPredictResult(state.lastPredictData);
 });
+
+/**
+ * Deep-link support: the homepage's hypothetical example cards (see
+ * home.js) link here as /predict.html?player_id=X&club_id=Y&fee=Z so
+ * clicking one lands on a live, editable version of that exact
+ * hypothetical instead of an empty form - same idea as Compare's own
+ * URL-restore, just triggered by an external link instead of a synced
+ * "share this comparison" URL. Silently does nothing if either id is
+ * missing or fails to resolve (a stale/malformed link just leaves the
+ * form empty, same as a fresh visit).
+ */
+async function restoreFromURL() {
+  const params = new URLSearchParams(location.search);
+  const playerId = params.get("player_id");
+  const clubId = params.get("club_id");
+  if (!playerId || !clubId) return;
+  const [playerRes, clubRes] = await Promise.all([
+    fetch(`/api/players/${playerId}`),
+    fetch(`/api/clubs/${clubId}`),
+  ]);
+  if (!playerRes.ok || !clubRes.ok) return;
+  await selectPlayer(await playerRes.json());
+  selectClub(await clubRes.json());
+  const fee = parseFloat(params.get("fee"));
+  if (!Number.isNaN(fee)) {
+    state.feeEurMillions = fee / 1_000_000;
+    updateFeeCurrencyDisplay(feeLabel, feeInput);
+  }
+  runPrediction();
+}
+restoreFromURL();

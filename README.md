@@ -252,7 +252,12 @@ pages was too many flat links, so `/` itself became a real landing page
 rather than doubling as the predict form (see Project history).
 
 - **`/`**: the home page, with a short pitch, the curated showcase cards,
-  and links to every other page grouped the same way as the nav.
+  and links to every other page grouped the same way as the nav. Each
+  historical showcase card links to that player's Player Timeline (their
+  whole scored career, not just this one move); each hypothetical card
+  links to Predict, pre-filled with that exact player/club/fee so it
+  lands on a live, editable version of the same prediction instead of a
+  blank form.
 - **`/predict.html`**: predict a hypothetical transfer. Search a real
   player, pick a destination club, and get a predicted score, a likely
   range (from the 5 most similar real transfers, since a single point
@@ -570,6 +575,15 @@ the git history.
   that doesn't apply to loans).
 
 **Frontend**
+- Made the homepage's showcase cards clickable: historical cards link to
+  that player's Player Timeline, hypothetical cards link to Predict
+  pre-filled with the same player/club/fee. Needed new URL-restore
+  support on both pages (`?player_id=X` on Player Timeline,
+  `?player_id=X&club_id=Y&fee=Z` on Predict, auto-running the
+  prediction), the same idea Compare's shareable-link restore already
+  used; refactored Predict's inline player/club select handlers into
+  named functions so both the autocomplete and the URL-restore path
+  share one code path instead of duplicating it.
 - Abbreviated a few long league names in League Trends' cross-league
   flow list (full name still available on hover).
 - Added eight features, one per page, from a second brainstorm pass:
