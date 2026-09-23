@@ -356,7 +356,7 @@ function renderPredictResult(data) {
   // prediction for a completely typical transfer, not a flat 50 - see
   // explain_prediction in app/main.py).
   document.getElementById("explanation-baseline-note").textContent =
-    `A transfer with entirely average inputs (age, fee, recent form, ...) would score ${data.explanation_baseline}. Each factor below shows how this transfer's real numbers move the score up or down from there - added together, they reach the score shown above.`;
+    `A transfer with entirely average inputs (age, fee, recent form, etc.) would score ${data.explanation_baseline}. Each factor below moves the score up or down from there. Together, they add up to the score shown above.`;
   document.getElementById("explanation-list").innerHTML = data.explanation.map(e => {
     const positive = e.contribution >= 0;
     const width = Math.min(Math.abs(e.contribution) * 4, 100);
