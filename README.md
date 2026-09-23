@@ -261,12 +261,10 @@ rather than doubling as the predict form (see Project history).
   "Where this lands" chart plots the prediction against the sitewide
   fee-vs-score and age-vs-score trend lines, so the number isn't shown
   in isolation from how similar real transfers actually went. The fee
-  field has a slider that live-updates the prediction as you drag it, so
-  trying a range of fees doesn't need a re-click each time (with a
-  caveat that a higher fee nudging the score up reflects a real but
-  weak pattern, concentrated in high-value signings, not a reason to
-  overpay); age has no slider, since exploring a range of ages isn't as
-  natural a question. A "What would move this most" section shows which
+  field live-re-predicts as you type a new value, so trying a different
+  fee doesn't need a re-click each time (see Known limitations for a
+  real but easily misread pattern in how fee affects the score). A
+  "What would move this most" section shows which
   player-improvable stats (recent scoring rate, the four FotMob
   composites) would raise the score most, and by how much, offering a
   scouting-style answer to what the player should get better at
@@ -413,6 +411,18 @@ rather than doubling as the predict form (see Project history).
 - **Predicting a new hypothetical transfer is meaningfully less
   reliable** than the historical scores shown for known transfers, since
   the model only ever sees pre-transfer information by construction.
+- **A higher fee nudges the predicted score up slightly**, which can
+  read as "the model rewards overpaying" - it doesn't, straightforwardly.
+  The pattern comes from `fee_to_value_ratio` (fee relative to the
+  player's own market value), and a per-value-tier regression on the
+  real training data shows it's only genuinely established for
+  expensive, high-profile signings: for a typical-value transfer, the
+  95% confidence interval on the effect crosses zero. An explicit
+  interaction term to correct this directly was tested and made holdout
+  accuracy slightly worse on every one of 5 temporal splits, so it
+  wasn't shipped. Previously called out on the Predict page itself with
+  a caveat under the fee field; removed in favor of documenting it here
+  instead (see Project history).
 - **"Why this score"'s leave-one-out swap (`explain_prediction`) can
   still show a contribution size that doesn't match a feature's raw
   historical average gap, for reasons that aren't a simple reference-
@@ -495,11 +505,14 @@ the git history.
 - Audited every user-facing description on the site for correctness;
   fixed `league_context_note`'s unsupported fee-premium claim (r=+0.21,
   p=0.47 across leagues, not significant) - rest checked out clean.
-- Added a caveat that overpaying doesn't mean a better score: the
-  fee-to-value effect is real but concentrated in high-value transfers
-  (95% CI crosses zero for the cheapest fifth of players); an explicit
-  interaction term tested worse on every holdout split, so fixed via a
-  UI/text caveat instead of a model change.
+- Investigated a user report that a higher fee nudges the predicted
+  score up: real, but the effect is concentrated in high-value transfers
+  (95% CI crosses zero for the cheapest fifth of players) and an
+  explicit interaction term to fix it tested worse on every holdout
+  split. Added a caveat under the Predict page's fee slider, then
+  reconsidered and removed the slider and caveat entirely (see Known
+  limitations for where the explanation lives now) - simpler than
+  maintaining an on-page disclaimer for a second-order effect.
 - Fixed `position`/`sub_position` comparing every prediction against the
   wrong reference group in "why this score" (e.g. -13.7 for a real
   Left-Back vs. an actual ~1-point gap) - now swapped jointly against a

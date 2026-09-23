@@ -698,30 +698,6 @@ h2 {
 
 .field input:focus { outline: 2px solid var(--accent); }
 
-/*
- * The Predict page's fee sensitivity slider - resets the generic boxed
- * .field-input styling above (padding/background/border-radius) since a
- * native range input needs a plain, unboxed track, not a padded text-box.
- * accent-color alone (broadly supported - Chrome 93+/Firefox 92+/Safari
- * 15.4+) recolors the native track/thumb to match the theme without the
- * usual pile of -webkit-slider-thumb/-moz-range-thumb vendor-prefixed
- * overrides a fully custom look would need.
- */
-.field input[type="range"] {
-  width: 100%;
-  padding: 0;
-  background: transparent;
-  border: none;
-  margin-top: 0.6rem;
-  accent-color: var(--accent);
-}
-.field input[type="range"]:focus { outline: none; }
-
-/* A small caveat under a field whose value has a real but easily
-   misread effect on the prediction (see the fee slider in predict.html) -
-   muted and small so it reads as context, not another label. */
-.field-note { font-size: 0.78rem; color: var(--muted); margin: 0.5rem 0 0; }
-
 .autocomplete-list {
   position: absolute;
   top: 100%;

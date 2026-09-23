@@ -16,24 +16,12 @@ const state = {
   feeEurMillions: 50,
 };
 
-// The fee slider's range, in EUR millions - rescaled to the selected
-// currency in updateFeeCurrencyDisplay below, same as the number input's
-// displayed value, so the two controls' numbers always agree.
-const FEE_SLIDER_MAX_EUR_M = 200;
-
-/** Sync the fee field's label (currency symbol) and displayed value - both the number input and the slider - from `state.feeEurMillions` to the currently-selected currency. Call after a currency change, or once at load if a non-EUR currency was already saved. */
-function updateFeeCurrencyDisplay(labelEl, inputEl, sliderEl) {
+/** Sync the fee field's label (currency symbol) and displayed value from `state.feeEurMillions` to the currently-selected currency. Call after a currency change, or once at load if a non-EUR currency was already saved. */
+function updateFeeCurrencyDisplay(labelEl, inputEl) {
   const symbol = CURRENCY_SYMBOLS[settings.currency];
   const rate = EXCHANGE_RATES[settings.currency];
   labelEl.textContent = `Transfer fee (${symbol}m)`;
-  const displayValue = Math.round(state.feeEurMillions * rate * 10) / 10;
-  inputEl.value = displayValue;
-  sliderEl.max = Math.round(FEE_SLIDER_MAX_EUR_M * rate);
-  // A fee above the slider's max (a real Mbappé/Neymar-tier transfer) still
-  // types fine into the number input - the slider itself just pins to its
-  // own max rather than under/overflowing, same as a native range input
-  // already does for a value outside [min, max].
-  sliderEl.value = Math.min(displayValue, Number(sliderEl.max));
+  inputEl.value = Math.round(state.feeEurMillions * rate * 10) / 10;
 }
 
 /**
@@ -416,19 +404,17 @@ function renderSensitivity(sensitivity) {
 
 const feeLabel = document.querySelector('label[for="fee"]');
 const feeInput = document.getElementById("fee");
-const feeSlider = document.getElementById("fee-slider");
-updateFeeCurrencyDisplay(feeLabel, feeInput, feeSlider);
+updateFeeCurrencyDisplay(feeLabel, feeInput);
 
 /**
- * Debounced live re-predict, fired whenever the fee changes (typed or
- * dragged) after a first real prediction already exists - lets dragging
- * the fee slider show the score update as you drag, instead of requiring
- * another click on "Predict success" for every fee tried. Never fires
- * before that first click: nothing meaningful to show yet, and silently
- * calling /api/predict for an unselected player/club would just error.
- * Age has no equivalent live control - the age field can still be edited
- * by hand, but a player's age at a hypothetical transfer isn't really
- * something to "explore a range of" the way a fee is.
+ * Debounced live re-predict, fired whenever the fee changes after a first
+ * real prediction already exists - lets trying a different fee show the
+ * updated score without another click on "Predict success" each time.
+ * Never fires before that first click: nothing meaningful to show yet,
+ * and silently calling /api/predict for an unselected player/club would
+ * just error. Age has no equivalent live control - the age field can
+ * still be edited by hand, but a player's age at a hypothetical transfer
+ * isn't really something to "explore a range of" the way a fee is.
  */
 let liveRepredictTimer = null;
 function scheduleLiveRepredict() {
@@ -438,21 +424,11 @@ function scheduleLiveRepredict() {
 }
 
 // Keep state.feeEurMillions (the real, currency-independent value) in
-// sync with whatever the user types or drags, converting from whichever
-// currency is currently displayed - see updateFeeCurrencyDisplay for the
-// other direction (a currency change redisplaying the same real fee).
-// The number input and the slider mirror each other's value on every
-// change, so typing an exact figure moves the slider's thumb too and
-// vice versa.
+// sync with whatever the user types, converting from whichever currency
+// is currently displayed - see updateFeeCurrencyDisplay for the other
+// direction (a currency change redisplaying the same real fee).
 feeInput.addEventListener("input", () => {
   const typed = parseFloat(feeInput.value);
-  state.feeEurMillions = Number.isNaN(typed) ? 0 : typed / EXCHANGE_RATES[settings.currency];
-  feeSlider.value = Math.min(typed || 0, Number(feeSlider.max));
-  scheduleLiveRepredict();
-});
-feeSlider.addEventListener("input", () => {
-  feeInput.value = feeSlider.value;
-  const typed = parseFloat(feeSlider.value);
   state.feeEurMillions = Number.isNaN(typed) ? 0 : typed / EXCHANGE_RATES[settings.currency];
   scheduleLiveRepredict();
 });
@@ -516,6 +492,6 @@ document.getElementById("predict-btn").addEventListener("click", runPrediction);
 // and, if a prediction is already showing, re-render it from the cached
 // response rather than re-predicting.
 document.addEventListener("settingschange", () => {
-  updateFeeCurrencyDisplay(feeLabel, feeInput, feeSlider);
+  updateFeeCurrencyDisplay(feeLabel, feeInput);
   if (state.lastPredictData) renderPredictResult(state.lastPredictData);
 });
