@@ -1777,6 +1777,39 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_data_f
     playing_time_refs = {f: resolve_reference(f)[0] for f in PLAYING_TIME_FEATURES}
     queue_swap("pre_playing_time", playing_time_refs)
 
+    # position/sub_position are the same kind of structurally-dependent
+    # pair as PLAYING_TIME_FEATURES above, just categorical instead of
+    # numeric: sub_position is always nested inside a broad position (a
+    # Centre-Back IS a Defender), so swapping position alone to its flat
+    # reference ("Defender") while sub_position stays at the transfer's
+    # real value produces a row that contradicts itself (e.g. "position:
+    # Defender, sub_position: Goalkeeper" for a real goalkeeper) - the
+    # model still scores it, but the number doesn't represent "a typical
+    # Defender", just this player's own real profile wearing a
+    # contradictory position label. Checked directly on a real goalkeeper
+    # transfer: swapping position alone showed -6.5 pts (vs. the real
+    # Goalkeeper/Defender historical average gap of only 1.2 pts);
+    # swapping position AND sub_position together, consistently, to the
+    # reference position's own typical sub-position (sub_position_
+    # reference_by_position - the same metadata sub_position's own swap
+    # above already uses) showed -0.6 pts, in line with the real gap.
+    reference_position, _ = resolve_reference("position")
+    real_sub_position = feature_row["sub_position"].iloc[0]
+    # When the reference position happens to equal the player's own real
+    # position (the common case - "Defender" is the flat mode, and most
+    # explained transfers ARE Defenders), position isn't actually changing
+    # at all - sub_position must stay at its real value too, or this swap
+    # would silently re-do the *separate* sub_position swap above (e.g.
+    # a real Right-Back's sub_position quietly moving to "Centre-Back"
+    # even though "Defender" itself never changed), double-counting with
+    # that row's own "Specific role" contribution instead of measuring
+    # position's own effect in isolation.
+    reference_sub_position_for_position = (
+        real_sub_position if reference_position == position
+        else metadata["sub_position_reference_by_position"].get(reference_position)
+    )
+    queue_swap("position", {"position": reference_position, "sub_position": reference_sub_position_for_position})
+
     # First pass: everything each feature's formatting needs except the
     # contribution itself (which needs a model prediction) - queues one
     # swap per feature for the single batched predict below instead of
@@ -1789,6 +1822,8 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_data_f
             continue  # a data-quality flag, not a football signal - the composite feature's own detail (below) already says when it has no real data
         if feat in PLAYING_TIME_FEATURES:
             continue  # already handled together above - see playing_time_contribution
+        if feat == "position":
+            continue  # already handled together with sub_position above - see the position_contribution block below
         reference_value, typical_label = resolve_reference(feat)
         actual_value = feature_row[feat].iloc[0]
         feat_meta.append((feat, reference_value, typical_label, actual_value))
@@ -1839,6 +1874,33 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_data_f
         "typical_value": None,
         "stats": playing_time_stats,
         "detail": playing_time_detail,
+    })
+
+    position_contribution = contribution_by_key["position"]
+    position_direction = "raising" if position_contribution >= 0 else "lowering"
+    position_note = category_baseline_note("position", position, reference_position)
+    if reference_position == position:
+        # A no-op swap (this transfer's own position already IS the flat
+        # reference, e.g. most Defenders) - sub_position was deliberately
+        # left untouched too (see the guard above), so no sub-role caveat
+        # applies here; "Specific role" above already covers that ground.
+        sub_role_note = ""
+    else:
+        sub_role_note = (
+            f" - compared against a typical {reference_position}'s own sub-role "
+            f"({reference_sub_position_for_position}), not your real {real_sub_position} under a {reference_position} label"
+        )
+    contributions.append({
+        "feature": "position",
+        "label": FEATURE_LABELS["position"],
+        "contribution": position_contribution,
+        "actual_value": format_feature_value("position", position, context),
+        "typical_value": format_feature_value("position", reference_position, context),
+        "stats": None,
+        "detail": (
+            f"{position} vs. a typical transfer's {reference_position}{position_note}{sub_role_note}, "
+            f"{position_direction} the score by {abs(position_contribution)} pts"
+        ),
     })
 
     for feat, reference_value, typical_label, actual_value in feat_meta:
