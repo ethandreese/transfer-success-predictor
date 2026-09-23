@@ -420,6 +420,23 @@ rather than doubling as the predict form (see Project history).
 - **Predicting a new hypothetical transfer is meaningfully less
   reliable** than the historical scores shown for known transfers, since
   the model only ever sees pre-transfer information by construction.
+- **"Why this score"'s leave-one-out swap (`explain_prediction`) can
+  still show a contribution size that doesn't match a feature's raw
+  historical average gap, for reasons that aren't a simple reference-
+  mismatch bug.** After fixing `position`/`sub_position`'s reference
+  (see Project history), destination league in particular can still
+  show a swing (e.g. +7.6 for a Laliga-vs-Premier-League swap on one
+  real prediction) much larger than the ~0.1-point gap between those
+  leagues' historical average success_score. Checked directly whether
+  this traces to `fee_to_value_ratio` (the theory `league_context_note`'s
+  own explanatory text offers) by swapping it jointly with league
+  instead of independently - the swing barely moved (7.6 -> 7.8), ruling
+  that out as the driver. This is a known, inherent limitation of a
+  single-feature leave-one-out swap against a linear model with
+  correlated inputs (a real SHAP-style explanation would marginalize
+  more carefully) rather than a specific bug with an identified fix -
+  unlike position/sub_position, no equally clean joint-swap correction
+  was found for this one.
 - **The Model vs Reality page's `predicted_score` isn't the deployed
   model.** It comes from 5-fold cross-validation (see
   `compute_prediction_surprises.py`), so every transfer's number is
@@ -482,6 +499,53 @@ within each group. Full reasoning and numbers for anything here are in
 the git history.
 
 **Predict model & backend**
+- Fixed `sub_position` and `position` comparing every hypothetical
+  prediction against the wrong reference group entirely in "why this
+  score" (`explain_prediction`'s leave-one-out swap, `app/main.py`).
+  `sub_position`'s reference was the dataset-wide modal sub-position
+  across ALL positions (`Centre-Forward`), regardless of the player's
+  own broad position; `position`'s own swap changed only `position`
+  while leaving `sub_position` at its real value. Both produced
+  internally-contradictory synthetic rows the model still happily
+  scored - e.g. a real Left-Back's stats compared under a
+  `Centre-Forward` role label, or a real Goalkeeper's stats compared
+  under a `Defender` position with `sub_position` still `Goalkeeper`.
+  Caught from a real user report (Lewis Hall, a Left-Back, showing -13.7
+  for "Specific role" on a hypothetical Manchester City move) and
+  confirmed on a second real example (a real Goalkeeper showing -6.5 for
+  "Position" alone) - both swings were an order of magnitude larger than
+  the real historical average gap between the two groups being compared
+  (13.7 vs. an actual 1.1-point Left-Back/Centre-Forward gap; 6.5 vs. an
+  actual 1.2-point Goalkeeper/Defender gap), which is what flagged them
+  as wrong rather than merely surprising. Fixed by giving `sub_position`
+  a position-conditional reference (`sub_position_reference_by_position`
+  in `train_model.py`, the modal sub-position *within* the player's own
+  broad position) and swapping `position`+`sub_position` jointly and
+  consistently - the same joint-swap pattern `PLAYING_TIME_FEATURES`
+  already used for exactly this "structurally-dependent features can't
+  be swapped independently" reason. Both examples above dropped to -0.2
+  and -0.6 respectively, in line with the real historical gaps. Had to
+  guard one edge case: when the reference position already equals a
+  player's own real position (true for most Defenders, the flat modal
+  position), `sub_position` must stay untouched too, or the fix would
+  silently double-count with `sub_position`'s own separate swap. Audited
+  every other candidate correlated-feature pair the same way
+  (independent swap vs. joint swap, compare the delta): destination
+  league/fee-to-value ratio, club-quality ratio/club values, and
+  goals/goal-contributions per 90 all showed no comparable issue (see
+  Known limitations for one residual, unresolved observation from that
+  audit) - position/sub_position was uniquely bad because it's a true
+  nested categorical hierarchy (a sub-position cannot exist under a
+  different broad position at all), not just a soft numeric correlation.
+- Added a visible "starting point" (baseline score - the model's own
+  prediction for an entirely typical transfer, not a flat 50) and an "N
+  other factors combined" total to `explain_prediction`'s response and
+  the Predict page. Previously only the top 5 of ~20 computed factors
+  were ever shown, with no way to see the other 15 or the implicit
+  non-50 starting point, so the displayed numbers could never be summed
+  to reconcile to the shown score - caught from the same user report
+  above (Lewis Hall's score of 64 didn't match 50 plus the 5 shown
+  factors).
 - Weighted training rows by recency (`compute_recency_weight` /
   `RECENCY_HALF_LIFE_YEARS` in `scripts/train_model.py`, an exponential
   decay with a 3-year half-life, applied to both the deployed model's fit
