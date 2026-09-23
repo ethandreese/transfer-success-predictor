@@ -69,46 +69,33 @@ the app:
 ./.venv/bin/python scripts/compute_prediction_surprises.py
 ```
 
-`fetch_transfer_types.py` re-fetches every candidate player's real transfer
-history from transfermarkt's live API to tell loans apart from free
-transfers (one request per player, ~23k, politely rate-limited). It takes
-a few hours and is safe to interrupt and re-run, resuming from
-`data/raw/transfer_types_cache.csv` rather than starting over. It's
-optional: skip it and `build_dataset.py` still runs, just without loan
-detection, so every zero-fee transfer (including loans) is treated as a
-permanent transfer, and `data/loans_processed.csv` comes out empty.
+`fetch_transfer_types.py`, `fetch_fotmob_stats.py`,
+`fetch_pretransfer_fotmob_stats.py`, and `fetch_current_fotmob_stats.py`
+are all optional and all resumable (each caches to its own
+`data/raw/*.csv` or `data/raw/fotmob_season_cache/`, safe to interrupt
+and rerun). Skipping any of them just degrades gracefully:
+`build_dataset.py` still runs without loan detection
+(`fetch_transfer_types.py`, ~23k requests - every zero-fee transfer,
+including real loans, is then scored as a permanent transfer) or the
+four FotMob score components (`fetch_fotmob_stats.py`, ~14 seasons × 23
+leagues - each missing component's weight is dropped and renormalized
+per transfer); `train_model.py`/`build_lookups.py` still run without the
+pre-transfer FotMob composites or live-search autofill
+(`fetch_pretransfer_fotmob_stats.py`/`fetch_current_fotmob_stats.py`,
+falling back to the population median/`None`). Both pretransfer scripts
+reuse `fetch_fotmob_stats.py`'s cache/matching directly, so they run in
+seconds once that cache is warm.
 
-`fetch_fotmob_stats.py` pulls FotMob's season stat leaderboards for the 23
-leagues in `LEAGUE_MAP` and stitches each tenure (both permanent transfers
-and loan spells) into `data/raw/fotmob_stats_cache.csv` in one pass. A few
-thousand requests across ~14 seasons x 23 leagues, politely rate-limited,
-resumable from `data/raw/fotmob_season_cache/` (gitignored) rather than
-refetching every league-season from scratch. Also optional: skip it and
-`build_dataset.py` still runs, just without the four FotMob components.
-Each one's weight is then dropped and the other weights renormalized for
-every transfer, the same as when resale data is unknown.
-
-`fetch_pretransfer_fotmob_stats.py` and `fetch_current_fotmob_stats.py`
-feed the *predict model* (not the historical score). Both reuse
-`fetch_fotmob_stats.py`'s season-fetch/cache and matching functions
-directly (imported, not duplicated), so if that cache is already warm
-these run in seconds, not hours. Both are optional the same way: skip
-either and `train_model.py`/`build_lookups.py` still run, just with every
-`pre_fotmob_*` feature (or every searched player's `recent_fotmob_*`
-autofill) falling back to the median/`None` a missing match already
-degrades to.
-
-`compute_prediction_surprises.py` is **not** optional like the four above:
-`app/main.py` loads `data/prediction_surprises.csv` unconditionally at
-startup as the Model vs Reality page's data source. It reuses
-`train_model.py`'s exact feature-engineering functions and feature lists,
-swapping 5-fold cross-validation in for that script's one temporal split,
-so every transfer gets a `predicted_score` from a model that never saw
-that transfer's own outcome during fitting. That's unlike `model.joblib`
-itself, which is refit on the full dataset for serving accurate live
-predictions, at the cost of its own predictions on historical transfers
-being partly circular (it saw the answer). Runs in seconds; doesn't touch
-`model.joblib`.
+`compute_prediction_surprises.py` is the one exception - **not
+optional**, since `app/main.py` loads its output
+(`data/prediction_surprises.csv`) unconditionally at startup for the
+Model vs Reality page. It reuses `train_model.py`'s exact feature
+engineering with 5-fold cross-validation instead of one temporal split,
+so every transfer's prediction comes from a fit that never saw its own
+outcome - unlike `model.joblib` itself, which is refit on the *full*
+dataset for accurate live serving (and is therefore partly circular on
+historical transfers, since it saw the answer). Runs in seconds; doesn't
+touch `model.joblib`.
 
 ## Testing
 
@@ -244,14 +231,18 @@ real 5-10 component breakdown with concrete numbers behind each one
 For a hypothetical prediction, it shows each feature's contribution via a
 leave-one-out swap against a "typical transfer" reference. That
 reference itself is contextual, not one flat number for the whole
-dataset: position-conditional medians for stats that vary by role, a
+dataset: position-conditional medians for stats that vary by role
+(position/sub-position are swapped together, never independently, since
+a sub-position can't exist under a different broad position), a
 paid-vs-free-specific fee reference (over half of all transfers are
 free, which would otherwise drag the "typical fee" to €0), a fee
 expectation regression against the player's own market value, and short
 explanatory notes wherever a bare "X vs. typical Y" swap would otherwise
-read as a claim the data doesn't actually support (e.g. the Premier
-League's lower average score is almost entirely a fee-premium effect,
-not an on-pitch one, and the note says so explicitly).
+read as an unsupported claim - e.g. a bigger destination club's swing
+cites its own directly-checked link to post-move rating rather than
+asserting "bigger is just better," and a position/league/foot gap states
+the real historical difference without inventing a cause that isn't
+actually confirmed.
 
 ## Pages
 
@@ -271,13 +262,15 @@ rather than doubling as the predict form (see Project history).
   fee-vs-score and age-vs-score trend lines, so the number isn't shown
   in isolation from how similar real transfers actually went. The fee
   field has a slider that live-updates the prediction as you drag it, so
-  trying a range of fees doesn't need a re-click each time; age has no
-  slider, since exploring a range of ages isn't as natural a question. A
-  "What would move this most" section shows which player-improvable
-  stats (recent scoring rate, the four FotMob composites) would raise
-  the score most, and by how much, offering a scouting-style answer to
-  what the player should get better at (distinct from the
-  fee/club-value framing "why this score" uses).
+  trying a range of fees doesn't need a re-click each time (with a
+  caveat that a higher fee nudging the score up reflects a real but
+  weak pattern, concentrated in high-value signings, not a reason to
+  overpay); age has no slider, since exploring a range of ages isn't as
+  natural a question. A "What would move this most" section shows which
+  player-improvable stats (recent scoring rate, the four FotMob
+  composites) would raise the score most, and by how much, offering a
+  scouting-style answer to what the player should get better at
+  (distinct from the fee/club-value framing "why this score" uses).
 - **`/compare.html`**: set up 2-4 hypothetical transfers side by side
   (same player to different clubs, or entirely different players) and
   see every prediction, range, and top factors together, with the
@@ -432,12 +425,11 @@ rather than doubling as the predict form (see Project history).
   own explanatory text used to offer, since removed - see Project
   history) by swapping it jointly with league instead of independently -
   the swing barely moved (7.6 -> 7.8), ruling that out as the driver.
-  This is a known, inherent limitation of a
-  single-feature leave-one-out swap against a linear model with
-  correlated inputs (a real SHAP-style explanation would marginalize
-  more carefully) rather than a specific bug with an identified fix -
-  unlike position/sub_position, no equally clean joint-swap correction
-  was found for this one.
+  This is a known, inherent limitation of a single-feature leave-one-out
+  swap against a linear model with correlated inputs (a real SHAP-style
+  explanation would marginalize more carefully) rather than a specific
+  bug with an identified fix - unlike position/sub_position, no equally
+  clean joint-swap correction was found for this one.
 - **The Model vs Reality page's `predicted_score` isn't the deployed
   model.** It comes from 5-fold cross-validation (see
   `compute_prediction_surprises.py`), so every transfer's number is
@@ -500,565 +492,141 @@ within each group. Full reasoning and numbers for anything here are in
 the git history.
 
 **Predict model & backend**
-- Audited every user-facing description on the site for correctness
-  after the position/sub_position and fee-slider fixes below turned up
-  two real issues in one sitting. Found one more of the same shape:
-  `league_context_note`'s "why this score" text claimed a destination
-  league's swing was "largely reflecting fee premiums paid there,"
-  borrowing that theory from an earlier, unrelated observation. Checked
-  directly and it doesn't hold up two ways - across the 14 leagues with
-  a trustworthy sample, a league's average fee premium and its average
-  success_score barely correlate (r=+0.21, p=0.47, not significant),
-  and forcing a real prediction's `fee_to_value_ratio` to match the
-  destination league's own average barely changed that prediction's
-  league-driven swing (7.6 -> 7.8 pts - see Known limitations, which
-  this doesn't resolve, just stops mis-explaining). Removed the claim;
-  `league_context_note` now states the real historical gap plainly, the
-  same honest-baseline pattern already used for position/sub_position/
-  foot, instead of inventing a cause. Also removed the now-dead
-  `league_fee_ratio_baseline_to` metadata field that only fed the
-  removed claim. Checked the rest of the site the same way (every other
-  claim-bearing description, not just navigational text) and found the
-  rest solid: `club_value_rating_note` is built from its own directly-
-  checked correlation (r=0.29) with a dedicated regression, not a
-  borrowed theory; the Analytics age-trend claim holds up against the
-  real data (a clean, monotonic 11-point decline across 12 buckets of
-  ~700 transfers each).
-- Added a caveat that a higher fee doesn't mean a better score (Predict
-  page's fee slider and `app/main.py`'s "Fee relative to market value"
-  factor). Investigated a user report that dragging the fee slider up
-  increases the predicted score. Confirmed the mechanism
-  (`fee_to_value_ratio`'s Ridge coefficient is positive with no cap,
-  unlike the historical score's own ~1.3x-premium-is-free rule) and,
-  more importantly, that the underlying pattern in real training data is
-  concentrated almost entirely in high-value transfers: a per-value-tier
-  regression shows the effect growing from statistically
-  indistinguishable from zero for the cheapest fifth of players (95% CI
-  crosses zero) up to a strong, significant effect for the priciest
-  fifth. Tested adding an explicit interaction term to the model to
-  correct this directly - it made holdout accuracy slightly worse on
-  every one of 5 temporal splits, so not worth shipping as a model
-  change. Added a caveat instead: a note under the fee slider, and
-  reworded the fee-ratio factor's own explanation text, which previously
-  (incorrectly) implied the historical score's own overpay-penalty
-  threshold applied here too - it doesn't, this feature has no cap at
-  all.
-- Fixed `sub_position` and `position` comparing every hypothetical
-  prediction against the wrong reference group entirely in "why this
-  score" (`explain_prediction`'s leave-one-out swap, `app/main.py`).
-  `sub_position`'s reference was the dataset-wide modal sub-position
-  across ALL positions (`Centre-Forward`), regardless of the player's
-  own broad position; `position`'s own swap changed only `position`
-  while leaving `sub_position` at its real value. Both produced
-  internally-contradictory synthetic rows the model still happily
-  scored - e.g. a real Left-Back's stats compared under a
-  `Centre-Forward` role label, or a real Goalkeeper's stats compared
-  under a `Defender` position with `sub_position` still `Goalkeeper`.
-  Caught from a real user report (Lewis Hall, a Left-Back, showing -13.7
-  for "Specific role" on a hypothetical Manchester City move) and
-  confirmed on a second real example (a real Goalkeeper showing -6.5 for
-  "Position" alone) - both swings were an order of magnitude larger than
-  the real historical average gap between the two groups being compared
-  (13.7 vs. an actual 1.1-point Left-Back/Centre-Forward gap; 6.5 vs. an
-  actual 1.2-point Goalkeeper/Defender gap), which is what flagged them
-  as wrong rather than merely surprising. Fixed by giving `sub_position`
-  a position-conditional reference (`sub_position_reference_by_position`
-  in `train_model.py`, the modal sub-position *within* the player's own
-  broad position) and swapping `position`+`sub_position` jointly and
-  consistently - the same joint-swap pattern `PLAYING_TIME_FEATURES`
-  already used for exactly this "structurally-dependent features can't
-  be swapped independently" reason. Both examples above dropped to -0.2
-  and -0.6 respectively, in line with the real historical gaps. Had to
-  guard one edge case: when the reference position already equals a
-  player's own real position (true for most Defenders, the flat modal
-  position), `sub_position` must stay untouched too, or the fix would
-  silently double-count with `sub_position`'s own separate swap. Audited
-  every other candidate correlated-feature pair the same way
-  (independent swap vs. joint swap, compare the delta): destination
-  league/fee-to-value ratio, club-quality ratio/club values, and
-  goals/goal-contributions per 90 all showed no comparable issue (see
-  Known limitations for one residual, unresolved observation from that
-  audit) - position/sub_position was uniquely bad because it's a true
-  nested categorical hierarchy (a sub-position cannot exist under a
-  different broad position at all), not just a soft numeric correlation.
-- Added a visible "starting point" (baseline score - the model's own
-  prediction for an entirely typical transfer, not a flat 50) and an "N
-  other factors combined" total to `explain_prediction`'s response and
-  the Predict page. Previously only the top 5 of ~20 computed factors
-  were ever shown, with no way to see the other 15 or the implicit
-  non-50 starting point, so the displayed numbers could never be summed
-  to reconcile to the shown score - caught from the same user report
-  above (Lewis Hall's score of 64 didn't match 50 plus the 5 shown
-  factors).
-- Weighted training rows by recency (`compute_recency_weight` /
-  `RECENCY_HALF_LIFE_YEARS` in `scripts/train_model.py`, an exponential
-  decay with a 3-year half-life, applied to both the deployed model's fit
-  and `compute_prediction_surprises.py`'s 5-fold CV), after a position-
-  bias investigation into the historical score's own formula prompted a
-  broader look at the predict model for other checkable improvements.
-  Tested three ideas empirically rather than by inspection alone:
-  imputing (instead of dropping) the ~550 training rows missing
-  `fee_to_value_ratio`/`height_in_cm`/club-value data made no real
-  difference (MAE +0.016, R² -0.002) despite recovering ~480 rows, so was
-  not kept; ElasticNet/Lasso lost to plain Ridge on every one of 25
-  alpha/l1_ratio combinations tried, confirming the feature set's signal
-  really is close to linear; recency weighting won, checked across the
-  same 5 temporal splits the original Ridge-vs-GBR decision used - MAE
-  improved ~0.1 and R² ~0.005-0.011 on 4 of 5 splits, and was never worse
-  (an ~0.001 R² wash on the 5th). Moved the temporal holdout from MAE
-  12.26/R² 0.211 to MAE 12.16/R² 0.217.
-- Fixed `/api/predict` (and everything built on it, including Compare
-  and the examples cards) 400ing whenever a composite FotMob feature
-  (e.g. "defensive") had real data overall but one specific raw sub-stat
-  was individually missing (e.g. an attacker with real
-  tackle/interception/recovery numbers but no recorded clearances at
-  all, since attackers rarely attempt any). `explain_prediction`'s
-  bulleted-breakdown builder tried to number-format that one `None`
-  straight into the string and crashed; `describe_fotmob_component()`
-  (the historical-score version of the same breakdown) already handled
-  this correctly by only listing sub-stats that are actually present, so
-  the pre-transfer version now does the same. Not a rare edge case:
-  partial FotMob bucket coverage (~54-67%, per Known limitations) is the
-  common case, not the exception. Caught testing 3-way Compare by hand.
-- Switched the predict model from `GradientBoostingRegressor` to a plain
-  `Ridge` regression after benchmarking it against every tree-based
-  alternative tried (HistGradientBoosting, RandomForest, ExtraTrees, and
-  GBR variants). Ridge won on every one of 5 different temporal splits:
-  MAE 12.40→12.26, R² 0.185→0.211. Fixed an overfit-coefficient issue for
-  thin-data leagues along the way (`OneHotEncoder(min_frequency=30)`).
+- Audited every user-facing description on the site for correctness;
+  fixed `league_context_note`'s unsupported fee-premium claim (r=+0.21,
+  p=0.47 across leagues, not significant) - rest checked out clean.
+- Added a caveat that overpaying doesn't mean a better score: the
+  fee-to-value effect is real but concentrated in high-value transfers
+  (95% CI crosses zero for the cheapest fifth of players); an explicit
+  interaction term tested worse on every holdout split, so fixed via a
+  UI/text caveat instead of a model change.
+- Fixed `position`/`sub_position` comparing every prediction against the
+  wrong reference group in "why this score" (e.g. -13.7 for a real
+  Left-Back vs. an actual ~1-point gap) - now swapped jointly against a
+  position-conditional reference, matching the real gap (-0.2/-0.6).
+- Added a visible baseline score and "N other factors combined" total to
+  "why this score," since only the top 5 of ~20 factors were shown with
+  no way to see them add up to the displayed score.
+- Weighted predict-model training rows by recency (3-year half-life) -
+  MAE 12.26→12.16, R² 0.211→0.217 across 5 temporal splits; also tested
+  (and rejected) imputing missing fee-ratio rows and ElasticNet/Lasso.
+- Fixed `/api/predict` 400ing whenever a composite FotMob feature had
+  partial sub-stat data - the common case (~54-67% coverage), not an
+  edge case.
+- Switched the predict model from `GradientBoostingRegressor` to
+  `Ridge`, which won on every one of 5 temporal splits (MAE
+  12.40→12.26, R² 0.185→0.211); fixed thin-league overfitting via
+  `OneHotEncoder(min_frequency=30)`.
 - Investigated feature interactions, a quadratic age term, polynomial
   features, robust-loss regression, and nonlinear alternatives
-  (KernelRidge, SVR) as follow-ups to the Ridge switch; none justified
-  their added complexity over the plain model.
-- Investigated several new feature ideas (destination-club league
-  form/position, manager tenure at signing, reconstructed squad
-  age/nationality mix, player/destination nationality fit) and two
-  new-data-acquisition angles (a newer Kaggle dataset version, external
-  sources like Wikipedia pageviews and Transfermarkt injury history);
-  none produced a gain worth shipping.
-- Found `fee_to_value_ratio` was computed from a column missing for
-  38.7% of transfers, silently excluding them from model training.
-  Fixing it recovered 41% of usable training data (MAE 12.65→12.40, R²
-  0.159→0.185).
-- Investigated a more historically-accurate, per-transfer-date club-value
-  feature (reconstructed from contemporaneous roster valuations); it
-  measurably hurt the model despite being more accurate, so the simpler
-  flat proxy was kept.
+  (KernelRidge, SVR) - none beat the plain model.
+- Investigated several new feature/data ideas (manager tenure, squad
+  age/nationality mix, a newer Kaggle dataset version, Wikipedia
+  pageviews, injury history) - none produced a gain worth shipping.
+- Found `fee_to_value_ratio` was silently computed from a column missing
+  for 38.7% of transfers; fixing it recovered 41% of training data (MAE
+  12.65→12.40, R² 0.159→0.185).
+- Investigated a more historically-accurate per-transfer-date club-value
+  feature - it measurably hurt the model despite being more accurate, so
+  the simpler flat proxy was kept.
 - Fixed the loan pipeline's early filter referencing the wrong
-  (permanent-transfer) position-weight keys. Harmless today only by
-  coincidence, fixed for future-proofing.
-- Fixed an unbounded `limit` query param on the player/club search
-  endpoints, and deduplicated a club-value-proxy computation that had
-  drifted into two independently-maintained copies.
+  (permanent-transfer) position-weight keys.
+- Fixed an unbounded `limit` query param on player/club search, and
+  deduplicated a club-value-proxy computation that had drifted into two
+  copies.
 
 **Data pipeline & scoring formula**
-- Backfilled thousands of missing transfers into
-  `data/manual_transfers.csv` via Transfermarkt's live transfer-history
-  API, after discovering real gaps in the packaged `transfers.csv`
-  (starting from Eden Hazard's entirely-missing 2019 Real Madrid move).
-  Fixed several related bugs along the way (loan/permanent
-  misclassification, `tenure_end` defaulting to "today" for players
-  whose next real move wasn't recorded). Current scored counts: 8,358
-  permanent transfers, 4,306 loans.
+- Backfilled thousands of missing transfers (`data/manual_transfers.csv`)
+  after discovering real gaps in the packaged `transfers.csv` (starting
+  from Eden Hazard's missing 2019 Real Madrid move). Current counts:
+  8,358 permanent transfers, 4,306 loans.
 - Found and fixed several FotMob player/club identity-matching bugs
   (fuzzy-match collisions, ambiguous shared club-name words, an
-  asymmetric similarity-ratio bug) that were silently attributing a
-  tenure to a different real player's or club's stats.
-- Fixed FotMob season-stitching contamination at both ends of a tenure:
-  a mid-season arrival or departure could leak a different club's season
-  into the aggregate (confirmed on Memphis Depay, Danny Ings, Alexander
-  Isak, among others).
-- Fixed Norway/Sweden silently returning the wrong (always-current)
-  FotMob season due to a single-year vs. split-year season-label
-  mismatch.
-- Fixed a home/away misattribution bug in `appearances.csv` affecting a
-  handful of players' pre-transfer appearance counts.
-- Fixed mangled league display names (title-cased URL slugs like "Pko Bp
-  Ekstraklasa") across 18 competitions.
+  asymmetric similarity-ratio bug).
+- Fixed FotMob season-stitching contamination at tenure boundaries (a
+  mid-season arrival/departure could leak a different club's season
+  into the aggregate).
+- Fixed Norway/Sweden silently returning the wrong FotMob season
+  (single-year vs. split-year label mismatch).
+- Fixed a home/away misattribution bug in `appearances.csv` affecting
+  some pre-transfer appearance counts.
+- Fixed mangled league display names (title-cased URL slugs) across 18
+  competitions.
 - Corrected two inaccurate claims on `about.html` (a missing
-  `resale_profit` component in its own description; an overstated
-  symmetric playing-time rule that doesn't apply to loans).
+  `resale_profit` mention; an overstated symmetric playing-time rule
+  that doesn't apply to loans).
 
 **Frontend**
-- Abbreviated a handful of long league names ("Bundesliga (Germany)" ->
-  "Bundesliga (Ger.)", "Scottish Premiership" -> "Scottish Prem.") in
-  League Trends' cross-league flow list. Checked directly that these
-  were the two actually wrapping onto a second line in the list's fixed
-  7.5rem label column (`LEAGUE_SHORT_NAMES` in `leagues.js`); the full
-  name is still available via a `title` hover tooltip on the abbreviated
-  label.
-- Added eight features from a second brainstorm pass, one per page
-  (Predict, Compare, Browse/Loans, Model vs Reality, Club Report Cards,
-  League Trends, Analytics, Player Timelines):
-  - Predict: "What would move this most" (`sensitivity_analysis` in
-    `app/main.py`): swaps a handful of genuinely player-improvable
-    stats to a better value and reports the gain, the inverse question
-    from the existing "why this score" (typical-value comparison).
-  - Compare: a "Compare by factor" table showing every scenario's full
-    factor set side by side (`/api/predict` gained an optional `top_k`
-    param, defaulting to 5 for Predict's own display; `compare()` passes
-    25 so no two scenarios' explanations can fail to cover the same
-    factors), ranked by cross-scenario spread, winning cell highlighted.
-  - Browse/Loans: a results-summary line reading `/api/transfers`'/
-    `/api/loans`' new `summary` field (avg score + total spent/avg
-    duration, computed over the full filtered set server-side before
-    pagination) and click-to-sort table headers, driving the same
-    sort-select value the dropdown already did so the two can never
-    drift apart. Added the previously-missing reverse-direction sort
-    options (`transfer_fee:asc`, `age_at_transfer:desc`, `tenure_days:*`)
-    so every sortable column has both directions available either way.
-  - Model vs Reality: a second collapsible chart, "Model accuracy over
-    time" (mean absolute surprise per year, from `/api/surprises/scatter`'s
-    new `accuracy_by_year`). Required porting the click/tap chart-
-    tooltip pattern (`showChartTooltip`/`#chart-tooltip`) into
-    `surprises.js`, which hadn't needed it before this chart.
-  - Club Report Cards: a "Most improved recruiters first" sort
-    (`score_improvement`, the second-half-vs-first-half average incoming
-    score, split by transfer count rather than a fixed year window so
-    it works regardless of how many years a club's own history spans),
-    surfaced as a "Recruiting trend" line in the club's own report card.
-  - League Trends: a position-mix breakdown of each league's incoming
-    transfers, reusing the same `.breakdown-row` bar markup as the
-    cross-league flow lists right above it.
-  - Analytics: "What actually predicts success", the *deployed model's*
-    own learned feature weights (`FEATURE_IMPORTANCE`, computed once at
-    import from `pipeline.named_steps["model"].coef_`, not a fresh
-    analysis), reusing Predict/Compare's `.explain-row` bar markup.
-  - Player Timelines: a star marking each shown career's single highest-
-    scored stop, shown for both careers at once in a comparison.
-- Added a new Analytics chart: height vs. success score, split into four
-  per-position trend lines via `height_trend_by_position`, rather than
-  one sitewide line that would hide whether the relationship actually
-  differs by role. `trendLinePath()` in `analytics.js` gained an
-  overridable `color` param so the four lines could each get their own
-  hue without duplicating the whole function; four new `--pos-*` CSS
-  variables back those colors, deliberately not reusing
-  `--accent`/`--accent-mid`/`--accent-bad` since the scatter dots
-  underneath already use that triad for score: a position line in one
-  of those same colors would read as a score claim instead of a position
-  label. A "Split by position" dropdown re-renders the chart scoped to
-  just one position's dots and trend line at a time (or all four
-  overlaid, the default), toggling the corresponding legend entries.
-  `buildHeightScoreChart()` itself doesn't know or care whether it's
-  been handed all four positions' rows/trends or one, so no separate
-  code path was needed for the filtered view. Also tried a foot vs.
-  success score chart (a plain bar breakdown, right/left/both); dropped
-  it after building it, since the real spread between the three was
-  under a point, not worth a permanent chart. Skipped the third
-  Analytics idea from the original brainstorm (a finer sub-position
-  breakdown) per explicit direction.
+- Abbreviated a few long league names in League Trends' cross-league
+  flow list (full name still available on hover).
+- Added eight features, one per page, from a second brainstorm pass:
+  Predict's "What would move this most," Compare's "Compare by factor"
+  table, Browse/Loans' results-summary line + sortable headers, Model vs
+  Reality's accuracy-over-time chart, Club Report Cards' "Most improved
+  recruiters" sort, League Trends' position-mix breakdown, Analytics'
+  "What actually predicts success" feature-weight ranking, and Player
+  Timelines' highest-scored-stop star.
+- Added an Analytics chart: height vs. success score, split into 4
+  per-position trend lines with a "Split by position" filter.
 - Added a two-player overlay comparison and "similar career shape"
-  suggestions to Player Timelines. A new career-shape feature vector
-  (n_stops, first/last/avg score, score_range, score_trend, span_years;
-  see `build_player_shape_vectors`) is precomputed once at startup for
-  every player with scored history and z-score normalized, so
-  `nearest_similar_careers` can rank all ~12,700 players by normalized
-  Euclidean distance to a query player in one vectorized pass rather
-  than per-pair dynamic time warping. It's a deliberately lightweight
-  heuristic ("did these two careers start, end, and swing a similar
-  way"), not a claimed exact trajectory match. `/api/players/{id}/career`
-  now carries its own `similar_careers` (top 5, empty for a one-stop
-  career, since there's no real "shape" to match) alongside the existing
-  timeline data, so the suggestions need no second request. On the
-  frontend, clicking a suggestion (or manually searching a second
-  player) overlays their career onto the same chart on real calendar
-  dates. Player B's stops render as squares rather than circles so the
-  two are visually distinguishable without needing a second dot color,
-  since color is already reserved sitewide for score. The stops table
-  gains a Player column and merges both careers' rows by date;
-  searching a brand-new primary player clears any active comparison,
-  since the old comparison partner is no longer relevant to a different
-  career.
-- Added a cross-league flow breakdown to League Trends: each league's
-  modal now shows its top trading partners by transfer count (incoming
-  grouped by origin league, outgoing grouped by destination league),
-  excluding any transfer that stayed within the league itself, since
-  otherwise every league's own top "buys from" entry would trivially be
-  itself. Computed for all ~20-25 qualifying leagues at startup
-  (`league_flow()`/`build_league_trends`) rather than on demand, unlike
-  the per-club detail added to Club Report Cards below: few enough
-  leagues that precomputing every one is cheap, and
-  `/api/leagues/trends` already ships every row unpaginated. Reuses the
-  same `.breakdown-row`/`.breakdown-bar-fill` bar markup as Club Report
-  Cards' position breakdown, scaled to each list's own top count rather
-  than a 0-100 score.
-- Added three Club Report Cards features together: a head-to-head club
-  comparison (two autocomplete pickers over a new lightweight
-  `/api/clubs/report-card-search`, which searches club_report_cards_df's
-  own club-name universe rather than clubs_lookup.csv's; see
-  build_club_report_cards for why those two never get joined), a
-  spend-vs-incoming-quality-by-year chart per club (indexed to that
-  club's own first year of data = 100, adapting Analytics'
-  `buildVolumeChart`/League Trends' `buildTrendSVG` pattern), and a
-  recruiting-by-position breakdown (reusing the existing
-  `.breakdown-row`/`.breakdown-bar-fill` score-breakdown markup for a
-  free, consistent-looking bar chart). Both new per-club datasets are
-  computed fresh per request via a new `/api/clubs/report-card?name=X`
-  endpoint (exact-match lookup, 404 if not found) rather than added to
-  every row of the paginated leaderboard, since only one club is ever
-  viewed in this much detail at a time. The existing single-club modal
-  now fetches this endpoint too and renders the same two sections into a
-  placeholder a moment after the rest of the card, which already renders
-  instantly from the leaderboard row in hand. The comparison table only
-  highlights a "winner" on stats with an unambiguous direction (avg
-  incoming score, avg resale profit). Total spent, transfer counts, and
-  departure score are shown neutrally, since a departing player's
-  next-club average isn't obviously good or bad for the club that let
-  them go. Comparison state (`club_a`/`club_b`) was folded into the
-  page's existing `syncURL()` alongside the table's own filters, rather
-  than each writing its own half of the query string and clobbering the
-  other's, since `writeURLParams` replaces the whole query string on
-  every call. The head-to-head section is collapsible too, same
-  `.collapse-toggle` pattern as Model vs Reality's chart below.
-- Added a predicted-vs-actual scatter chart to Model vs Reality
-  (`/api/surprises/scatter`, the full ~7,800-point set, not scoped to
-  the table's own filters, same reasoning as `/api/analytics`), reusing
-  Analytics' chart-drawing conventions (`linearScale`, `scoreGridlines`,
-  click/tap-to-open-detail-card via event delegation) but colored by
-  `deltaColor` (green above the y=x line, red below) instead of the
-  usual absolute-score `scoreColor`, since the question this chart
-  answers is which side of the model's guess a transfer landed on, not
-  how good the outcome was in isolation. Made the chart's card
-  collapsible (a `<button>` wrapping the `<h2>`, toggling
-  `aria-expanded` and the body's `[hidden]`), since it's the one
-  card-length chart on a page that's otherwise a table, so a reader who
-  just wants the table shouldn't have to scroll past ~7,800 plotted
-  points to reach it.
-- Added fee/age range filters and a "Export these results as CSV" link
-  (`/api/transfers/export`, `/api/loans/export`, uncapped, ignores
-  pagination) to Browse and Loans, plus a "✓ Permanent" badge on any
-  loan whose player later signed permanently for the same club, in both
-  the table and the detail card. The conversion check
-  (`find_loan_conversion()`) matches a loan row against a later transfer
-  row on player id + exact from/to club, taking the earliest such match;
-  verified against a real example (Timur Suleymanov's 2023 Pari NN →
-  Loko Moscow loan converting to a permanent transfer in mid-2024). All
-  three filters, the export link, and the new range inputs stay in sync
-  with each other and the URL through the same `currentFilterParams()`/
-  `syncURL()` pattern the existing search/position/league filters
-  already used. The fee inputs' label and displayed value didn't update
-  on a currency change at first, the same bug Predict's fee field
-  already had and fixed (see `updateFeeCurrencyDisplay` below). Ported
-  the same fix to Browse, keeping `state.minFeeEurM`/`maxFeeEurM` as the
-  real currency-independent bounds and only converting for display.
-- Extended Compare from a fixed A/B pair to 2-4 scenarios: "+ Add
-  another option" reveals a 3rd/4th column (each removable), the
-  results grid and "Top factors" breakdowns are now built dynamically
-  per result instead of two hardcoded columns, the highest score gets a
-  highlighted border, and the old single pairwise "delta" sentence
-  became a `verdictSentence()` that ranks all of them and names the
-  winner plus its gap to the runner-up. `/api/compare` changed shape to
-  match (a `scenarios: [{request, label}, ...]` list, 2-4 of them,
-  instead of hardcoded `a`/`b`/`label_a`/`label_b`), a breaking change
-  with no other consumer to worry about. The URL-sync/restore feature
-  below generalized the same way: `syncURL()` writes every scenario that
-  was actually in the last comparison (dropping a stale 3rd/4th
-  scenario's params if the next comparison only has two), and
-  `restoreFromURL()` reveals however many c/d columns a link specifies
-  before resolving them.
-- Made a finished Compare comparison bookmarkable and shareable: both
-  scenarios' player/club/fee/age sync to the URL after a successful
-  compare, and opening that link resolves everything and re-runs the
-  comparison automatically. Needed a new `/api/players/{player_id}`
-  endpoint (players_lookup.csv has no by-id lookup otherwise, only
-  `/api/players/search`), registered *after* the existing
-  `/api/players/search` and `/api/players/career-search` routes
-  specifically, since a bare `{player_id}` path segment matches any
-  string and, registered first, would have swallowed every request meant
-  for those two and 422'd trying to parse "search"/"career-search" as an
-  int, breaking both search endpoints entirely. Also caught while testing
-  by hand: resolving each comparison scenario's player+club and applying
-  it to the form were the same step, so a stale link where only one
-  scenario's id failed to resolve still populated the *other* one,
-  leaving one column filled in normally and the other blank with no
-  visible reason Compare never ran. Fixed by resolving both scenarios
-  first and only applying either one once both are confirmed to exist.
-- Added a "Where this lands" section to Predict, plotting the current
-  prediction as a marker against the sitewide fee/age trend lines from a
-  new, lighter `/api/analytics/trends` endpoint (just `fee_trend`/
-  `age_trend`, factored out of `/api/analytics` so Predict doesn't have
-  to ship that page's much larger scatter payload just for two small
-  series). Also added a fee slider next to the fee number input,
-  debounce-re-predicting live as it's dragged once a first prediction
-  already exists. Deliberately fee-only, not age too, since a player's
-  age at a hypothetical transfer isn't something to explore a range of.
-  Caught while testing it by hand: since age has no live re-predict, the
-  age marker chart was reading the age field live at render time, so
-  editing age without re-submitting and then triggering any re-render
-  (e.g. a currency change) plotted the new, unsubmitted age against the
-  *old* score. Fixed by snapshotting the exact age/fee a prediction was
-  computed from (`state.lastPredictInputs`) instead of re-reading the
-  form.
+  suggestions to Player Timelines (nearest-neighbor on a z-scored
+  career-shape vector).
+- Added a cross-league flow breakdown to League Trends (top trading
+  partners by transfer count, incoming/outgoing).
+- Added three Club Report Cards features: head-to-head club comparison,
+  spend-vs-quality-by-year chart, and recruiting-by-position breakdown.
+- Added a predicted-vs-actual scatter chart to Model vs Reality, colored
+  by which side of the y=x line a transfer landed on.
+- Added fee/age range filters and CSV export to Browse/Loans, plus a
+  "✓ Permanent" badge for loans that later converted to a permanent
+  transfer.
+- Extended Compare from a fixed A/B pair to 2-4 scenarios, with a ranked
+  plain-English verdict.
+- Made a finished Compare comparison bookmarkable and shareable via URL
+  sync.
+- Added Predict's "Where this lands" section (prediction plotted against
+  sitewide fee/age trend lines) and a live-updating fee slider.
 - Synced Browse/Loans/Model vs Reality/Club Report Cards/League Trends'
-  search/filter/sort/page state to the URL (via `history.replaceState`),
-  so a filtered view is finally bookmarkable and shareable instead of
-  always resetting on reload. See `readURLParams()`/`writeURLParams()`
-  in `settings.js`.
-- Removed the Analytics page's success-score-by-position box plot (down
-  to four charts) and replaced every chart's hover-only `<title>`
-  tooltip (the trend-line markers, the yearly points on the
-  market-over-time chart) with a real click/tap-triggered tooltip
-  (`#chart-tooltip`, positioned in JS near the click point via
-  `showChartTooltip()` in `analytics.js`). `<title>` alone never fires
-  on a touch device (there's no hover state to trigger it) and has a
-  real delay even on desktop; `<title>` is kept alongside the new
-  `data-tooltip` attribute as a free bonus for a patient mouse user, but
-  it's no longer the thing relied on.
-- Fixed every hand-drawn chart on the site (Player Timelines, League
-  Trends, Analytics) rendering tiny and stranded in a large dead gap
-  below a narrow viewport. Each `<svg>` set `width="100%"` but a fixed
-  pixel `height`, which only matches its `viewBox`'s aspect ratio at
-  exactly the viewBox's own width; narrower than that, the browser
-  scales the chart down to fit the width while the element's box keeps
-  the old fixed height. `.timeline-chart-wrap svg { width: 100%; height:
-  auto; }` in `style.css` fixes all of them from one place, no per-chart
-  JS changes needed. Also made the Analytics page's three scatter charts
-  (fee vs. score, age vs. score, fee vs. market value) clickable. Each
-  point now opens its full `/api/transfers/detail` card, the same as
-  every other list page, via one delegated click listener per chart
-  rather than one per point; a larger invisible circle on top of each
-  small visible dot gives touch a real target to hit. And restyled the
-  fee/age trend line from a flat `var(--text)` line (black in light
-  theme, competing with the scoreColor'd dots for attention) to a dashed
-  light-blue line (`--trend-line`) with small hoverable markers at each
-  underlying bucket, reading as its own series rather than a slash
-  across the chart.
-- Added an Analytics page (`/analytics.html` + `/api/analytics`): five
-  hand-drawn SVG charts (fee vs. score, age vs. score, score by position,
-  fee vs. market value, market volume over time) in the same no-library
-  inline-SVG style as Player Timelines' career chart and League Trends'
-  index chart, rather than pulling in a charting dependency for one page.
-  Caught along the way: `DataFrame.where(cond, None)` on a float64 column
-  casts `None` straight back to `NaN` to preserve the column's dtype
-  instead of promoting it to `object`, silently reintroducing the exact
-  raw-NaN-leak bug a `/api/leagues/trends` test already guards against on
-  a different endpoint. Fixed by converting each scatter column
-  explicitly (`None if pd.isna(v) else float(v)`, per value) instead of
-  trusting a whole-DataFrame `.where()`, and added the equivalent test for
-  this endpoint.
-- Renamed the "Biggest Surprises" page to "Model vs Reality" and added a
-  "Most accurate predictions first" option to its Show filter (sorting by
-  `abs_surprise_delta`, the new backend field is `|surprise_delta|`,
-  computed once alongside the existing merge in `app/main.py`), since the
-  old name undersold a page that can now also surface the model's closest
-  calls, not just its biggest misses.
-- Ran a third club-name sweep, this time matching on string similarity
-  (`difflib`) instead of shared whole words, to catch the abbreviation/typo
-  pairs the second sweep's method structurally couldn't ("Y.
-  Malatyaspor"/"Yeni Malatyaspor" share no whole word; neither do "Aalesund"/
-  "Aalesunds FK" once the trailing "s" is accounted for). Added 16 more
-  verified `CLUB_NICKNAME_GROUPS` entries, one genuine data-entry
-  inconsistency ("FC Helsingör"/"FC Helsingør", two different Nordic
-  letters for the same Danish club), and rejected "Atalanta"/"Atlanta"
-  (Italy's Atalanta BC vs. MLS's Atlanta United, different leagues),
-  "Metalurg D."/"Metalurg Z." (two different Ukrainian clubs sharing a
-  single-top-flight country, so the usual league check can't tell them
-  apart), and "Al-Wehda"/"Al-Wahda" (likely different Saudi/UAE clubs).
-  Found a second Metalist-shaped case too: Belgian "Beerschot AC" only
-  appears in 2013, the year the club went bankrupt. Flagged to the user,
-  who confirmed merging just the later "Beerschot VA"/"Beerschot V.A."
-  spellings and leaving "Beerschot AC" split.
-- Ran a second full club-name sweep after a user report that "Swansea" and
-  "Swansea City" still showed as two rows on Club Report Cards. Checked
-  every pair of names in the dataset sharing a whole word (not just the
-  original ~103 clusters) and added ~35 more mechanical `CLUB_NAME_STRIP_TOKENS`
-  (generic markers like "AS", "Calcio", "Spor Kulübü") and ~95 more
-  `CLUB_NICKNAME_GROUPS` entries, each individually verified the same way as
-  the original set. Also caught and rejected several look-alike traps the
-  same way "Racing"/"Racing Club" was originally: "Barcelona"/"RCD Espanyol
-  Barcelona" (two different clubs), "Rangers"/"Queens Park Rangers" (Glasgow
-  Rangers, not QPR), "Krasnodar"/"Kuban Krasnodar" (two different clubs from
-  the same city, the dissolved one marked with a trailing year), and seven
-  club-vs-its-own-B/youth-team pairs, left split since a reserve side runs
-  its own transfer history. One cluster, Ukrainian "Metalist Kharkiv" (which
-  has a real, still-contested ownership dispute after its 2016 bankruptcy),
-  was flagged to the user rather than guessed; only the confirmed-safe half
-  of that cluster was merged.
-- Made Club Report Cards' six highlights (best/worst signing, best/worst
-  flip, best/worst departure) clickable. Each one now drills into that
-  specific transfer's own full breakdown card in the same modal, with a
-  "← Back" link to return to the club view. Required adding `player_id` to
-  `build_club_report_cards`' highlight dicts in `app/main.py`, since they
-  previously only carried enough to describe themselves, not enough to
-  look themselves up via `/api/transfers/detail`.
-- Restructured the nav into three dropdowns (Predict, Browse, Insights)
-  plus Home and About, and split `/` into a real home page (the curated
-  showcase cards, moved here, plus a linked directory of every page) with
-  the predict form moved to its own `/predict.html`, since nine flat nav
-  links had become too many for one row. `settings.js` gained the shared
-  click-to-open/close dropdown behavior (`initNavDropdowns`) every page
-  loads; `app.js` dropped the now-dead `loadExamples`/`renderBreakdown`
-  it no longer needed once the showcase cards left the predict page.
-- Added League Trends (`/leagues.html` + `/api/leagues/trends`): every
-  major league's average fee and average success score, comparing its
-  earliest against its most recent 3 complete years (its current
-  in-progress year, checked directly to run far below a normal season's
-  volume, is excluded from every average). Indexes both series to the same
-  early-period baseline so a euro amount and a 0-100 score can share one
-  honest chart. Real result across nearly every league: fees have grown
-  30-320% while average success score has barely moved (often within a
-  couple of points), a genuine "spending is outpacing performance" pattern
-  in this data, not an assumption going in.
-- Added Player Timelines (`/player.html` + `/api/players/{id}/career` +
-  `/api/players/career-search`): search any player to see their whole
-  scored career as one chronological, real-date-scaled chart: permanent
-  transfers as solid dots, loans as hollow rings, both colored by score.
-  Added a dedicated search endpoint rather than reusing the Predict form's
-  player autocomplete, since that one is filtered to `players_lookup.csv`'s
-  market-value threshold and would have silently hidden ~59% of players
-  with real scored history (checked directly), mostly retired or
-  lower-value players, exactly the kind of long, uneven career this page
-  exists to show.
-- Added Club Report Cards (`/clubs.html` + `/api/clubs/leaderboard`): every
-  club ranked as a recruiter (incoming transfers, spend, buy-develop-resell
-  profit, how departing players did elsewhere). Found and fixed a real bug
-  along the way: an early version attributed a club's *buyer's* eventual
-  resale profit to whichever club had sold it that player originally (e.g.
-  crediting Real Madrid's sale of Ronaldo to Juventus with Juventus's own
-  later resale of him). Resale profit belongs to the buyer
-  (`to_club_name`), not the seller, since `next_transfer_fee` is what a
-  third club later paid *that buyer*. Also added `build_club_name_aliases`
-  to merge ~75 same-club name variants that differ only by a generic
-  legal-entity marker or accent encoding ("FC Barcelona"/"Barcelona"), then
-  extended it with `CLUB_NICKNAME_GROUPS`, ~28 hand-verified
-  nickname/official-name pairs sharing no token at all ("Man
-  City"/"Manchester City", "PSG"/"Paris Saint-Germain", "Bor.
-  Dortmund"/"Borussia Dortmund"/"Dortmund"), each checked against the real
-  data (matching league both sides, non-contradictory dates) rather than
-  assumed, which is what confirmed "Sporting" is safe to fold into Sporting
-  CP specifically rather than the ambiguous case ("Sporting" could also
-  mean Sporting Gijón or Royal Charleroi) it looks like on name alone.
-  `transfers_processed.csv` has no club_id, so without either fix, several
-  major clubs' report cards were silently missing part of their real
-  history.
-- Moved club-name canonicalization to run once at startup on
-  `transfers_df`/`loans_df`/`comparables["meta"]` directly (previously only
-  applied inside Club Report Cards' own aggregation). Browse, Loans,
-  Biggest Surprises, and Predict/Compare's comparables now all show the
-  same name for the same club too, not just `/clubs.html`. Also caught and
-  force-split a false merge the mechanical pass would otherwise have made
-  once loans data joined the count: "Racing" and the unrelated Argentine
-  "Racing Club" share the generic word "club" but not a league.
-- Changed the canonical-name pick from "whichever spelling has the most
-  transfer mentions" to "whichever spelling is longest" ("Tottenham
-  Hotspur" over "Tottenham", "Arsenal FC" over "Arsenal"), since a reader
-  unfamiliar with a shorthand is more likely to recognize the fuller name.
-- Added billions formatting (`eur_m()`/`formatMoney()`, e.g. `"€2049m"` ->
-  `"€2.05b"`). No individual transfer fee reaches a billion, but a club's
-  aggregate spend or resale-profit total on `/clubs.html` regularly does.
-- Added a "Biggest Surprises" page (`/surprises.html` + `/api/surprises`):
-  every transfer ranked by how far its real outcome diverged from a 5-fold
-  cross-validated, held-out model prediction, showing the biggest
-  overachievers and busts a pre-transfer-only model didn't see coming.
-- Added keyboard navigation and ARIA roles to the player/club search
-  autocomplete on Predict and Compare (previously mouse-only); fixed
-  missing input IDs on Compare; moved the compare-delta conclusion below
-  the evidence it's based on; blocked predicting a transfer to a
-  player's own current club.
-- Fixed the transfer-fee input not updating when currency changed, and
+  filter state to the URL.
+- Removed Analytics' box plot and replaced hover-only chart tooltips
+  with click/tap tooltips (hover never fires on touch devices).
+- Fixed every hand-drawn chart rendering tiny on narrow viewports (a
+  fixed pixel height fighting a responsive width); made Analytics'
+  scatter charts clickable into a transfer's full breakdown.
+- Added the Analytics page (5 hand-drawn SVG charts, no charting
+  library).
+- Renamed "Biggest Surprises" to "Model vs Reality," added a "most
+  accurate" sort option.
+- Ran two further club-name matching sweeps (string-similarity, then a
+  broader shared-word pass) beyond the original alias list, adding
+  ~110 more verified entries total and rejecting several look-alike
+  traps along the way (e.g. "Barcelona"/"RCD Espanyol Barcelona," two
+  different clubs).
+- Made Club Report Cards' best/worst highlights clickable into their own
+  transfer breakdown card.
+- Restructured the nav into three dropdowns plus Home/About; split `/`
+  into a real home page with Predict moved to its own URL.
+- Added League Trends (`/leagues.html`, fee vs. success trend by
+  league).
+- Added Player Timelines (`/player.html`, career-as-timeline chart).
+- Added Club Report Cards (`/clubs.html`, clubs ranked as recruiters,
+  including the original `build_club_name_aliases`/
+  `CLUB_NICKNAME_GROUPS` alias-merging system); fixed resale profit
+  being credited to the wrong (selling, not buying) club.
+- Moved club-name canonicalization to run once at startup, so every
+  page shows consistent names, not just Club Report Cards.
+- Changed the canonical club-name pick from "most mentions" to "longest
+  spelling" (e.g. "Tottenham Hotspur" over "Tottenham").
+- Added billions formatting for large euro amounts (club spend/resale
+  totals).
+- Added the original "Biggest Surprises" page (predicted-vs-actual
+  ranking).
+- Added keyboard navigation and ARIA roles to the Predict/Compare
+  autocomplete; blocked predicting a transfer to a player's own current
+  club.
+- Fixed the transfer-fee input not updating on currency change, and
   silently mis-scoring a foreign-currency-typed fee as EUR.
-- Extended accessibility work to Browse/Loans: keyboard-openable table
-  rows, and a shared focus-trap/dialog helper reused across all three of
-  the site's modals.
-- Fixed a CSS Grid layout bug where selecting a player or club visually
-  stretched the unrelated sibling field beside it.
+- Extended accessibility work to Browse/Loans (keyboard-openable rows,
+  shared modal focus-trap).
+- Fixed a CSS Grid bug where selecting a player/club visually stretched
+  the sibling field beside it.
