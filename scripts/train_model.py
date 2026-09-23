@@ -481,6 +481,24 @@ def main():
         for position, sub in df.groupby("position")
     }
 
+    # sub_position needs the same position-conditional treatment as
+    # POSITION_CONDITIONAL_FEATURES above, but as a MODE, not a median -
+    # it's categorical. reference_values["sub_position"] (the flat,
+    # dataset-wide mode) resolves to the single most common sub-position
+    # across ALL positions combined (Centre-Forward, the single largest
+    # sub-position group) - comparing e.g. a Left-Back against "a typical
+    # Centre-Forward" in app/main.py's explain_prediction swaps sub_position
+    # alone while every other feature (goal output, defensive stats, ...)
+    # stays at the real Defender's values, producing a synthetic row that
+    # never exists in real data and an outsized, misleading swap
+    # contribution - checked directly on a real Left-Back-to-big-club
+    # prediction: -13.7 pts using the flat mode vs. -0.2 pts using the
+    # position-conditional mode (Centre-Back, the modal Defender sub-role).
+    sub_position_reference_by_position = {
+        position: sub["sub_position"].mode().iloc[0]
+        for position, sub in df.groupby("position")
+    }
+
     # For a live prediction with no real recent-performance data at all
     # (see app/main.py:impute_recent_performance - a player currently at a
     # club outside LEAGUE_MAP, e.g. Messi at Inter Miami), a single median
@@ -635,6 +653,7 @@ def main():
             "reference_values": reference_values,
             "reference_values_paid": reference_values_paid,
             "reference_values_by_position": reference_values_by_position,
+            "sub_position_reference_by_position": sub_position_reference_by_position,
             "recent_performance_samples": recent_performance_samples,
             "position_conditional_features": POSITION_CONDITIONAL_FEATURES,
             "fee_regression": fee_regression,

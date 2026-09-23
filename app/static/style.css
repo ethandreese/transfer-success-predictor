@@ -553,6 +553,20 @@ h2 {
 
 .explain-value { text-align: right; font-variant-numeric: tabular-nums; }
 
+/* The "N other factors combined" summary row under Predict's "Why this
+   score" list (see renderPredictResult in app.js) - a 2-column reuse of
+   .explain-row (no bar track, since it's a sum of several factors rather
+   than one), styled as a subtotal (muted, italic, dashed top border) so it
+   reads as closing out the list rather than one more individual factor. */
+.explain-row-other {
+  grid-template-columns: 1fr 3rem;
+  border-top: 1px dashed var(--border);
+  border-bottom: none;
+  color: var(--muted);
+  font-style: italic;
+}
+.explain-row-other .explain-label { color: var(--muted); }
+
 /* Hover tooltip used by breakdown/explain labels */
 .tooltip-wrap {
   position: relative;

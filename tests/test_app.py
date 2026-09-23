@@ -29,7 +29,7 @@ def explain_all(payload_dict):
     req = PredictRequest(**payload_dict)
     feature_row, real_data_flags = build_feature_row(req)
     raw_score = float(pipeline.predict(feature_row)[0])
-    return explain_prediction(feature_row, raw_score, real_data_flags, top_k=100)
+    return explain_prediction(feature_row, raw_score, real_data_flags, top_k=100)["factors"]
 
 
 @pytest.fixture
@@ -185,7 +185,7 @@ def test_predict_missing_recent_performance_is_imputed_not_zero(sample_predict_p
     assert real_data_flags["pre_apps"] is False
 
     raw_score = float(pipeline.predict(feature_row)[0])
-    explanation = explain_prediction(feature_row, raw_score, real_data_flags, top_k=100)
+    explanation = explain_prediction(feature_row, raw_score, real_data_flags, top_k=100)["factors"]
     all_features = {e["feature"]: e for e in explanation}
     # pre_apps/pre_minutes/pre_mins_per_app are explained together as one
     # "pre_playing_time" entry (see PLAYING_TIME_FEATURES) - pre_goals_p90/

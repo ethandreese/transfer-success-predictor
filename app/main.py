@@ -1648,6 +1648,17 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_data_f
     transfer; negative means it pulled the score down. This is a simple,
     transparent stand-in for a proper SHAP explanation.
 
+    Returns {"factors": [...], "baseline_score": ..., "other_total": ...,
+    "other_count": ...} rather than a bare list - "factors" is still only
+    the top top_k by magnitude (unchanged behavior), but every contribution
+    across all ~20 features is computed regardless, so the caller can show
+    an honest "starting point" (the model's prediction if every feature
+    were at its typical/reference value - NOT a flat 50, whatever this
+    model happens to predict for an entirely typical transfer) and an
+    "everything else combined" total for the factors that didn't make the
+    top_k cut, so the displayed numbers actually reconcile to the shown
+    score instead of silently only covering a fraction of it.
+
     real_data_flags (see build_feature_row) says which pre-transfer signals
     were genuinely computed from real data rather than reference-imputed -
     the 4 pre-transfer FotMob composites, plus each of the 5
@@ -1685,6 +1696,13 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_data_f
     position_conditional = set(metadata["position_conditional_features"])
     position_reference = metadata["reference_values_by_position"].get(position, {})
 
+    # sub_position's own "typical" needs the same position-conditional
+    # treatment as position_reference above, but as a mode (categorical) -
+    # see train_model.py's sub_position_reference_by_position for why the
+    # flat dataset-wide mode (Centre-Forward) is a bad comparison point for
+    # e.g. a Left-Back.
+    sub_position_reference = metadata["sub_position_reference_by_position"].get(position)
+
     # A €100m fee for a player already valued at €70m isn't remarkable -
     # a flat "typical paid fee" (~€6m) makes any big-money move for an
     # already-valuable player look like a wild outlier. Compare the actual
@@ -1710,6 +1728,8 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_data_f
             return pretransfer_fotmob_composite_medians[feat], "a typical transfer's"
         if feat == "log_transfer_fee" and is_paid_transfer:
             return expected_log_fee, "what's typically paid for a similarly-valued player:"
+        if feat == "sub_position" and sub_position_reference is not None:
+            return sub_position_reference, f"a typical {POSITION_PLURAL.get(position, position).rstrip('s')}'s"
         if feat in position_conditional and feat in position_reference and pd.notna(position_reference[feat]):
             # pd.notna guards a real gap: a GK-only stat (e.g. saves) has no
             # meaningful median for outfield positions at all (virtually no
@@ -1948,7 +1968,23 @@ def explain_prediction(feature_row: pd.DataFrame, base_score: float, real_data_f
         })
 
     contributions.sort(key=lambda c: abs(c["contribution"]), reverse=True)
-    return contributions[:top_k]
+    shown = contributions[:top_k]
+    # Built from the same rounded per-feature numbers the response already
+    # shows (not the raw unrounded model outputs), so baseline_score + every
+    # shown contribution + other_total reconciles to the displayed score
+    # using exactly the arithmetic a reader doing it by hand would do -
+    # small (<0.1pt) rounding slack is possible since each contribution was
+    # independently rounded to 1 decimal, same tolerance already present in
+    # every other rounded total in this file.
+    total_contribution = sum(c["contribution"] for c in contributions)
+    baseline_score = round(base_score - total_contribution, 1)
+    other_total = round(total_contribution - sum(c["contribution"] for c in shown), 1)
+    return {
+        "factors": shown,
+        "baseline_score": baseline_score,
+        "other_total": other_total,
+        "other_count": len(contributions) - len(shown),
+    }
 
 
 # The features sensitivity_analysis is willing to swap to a *better* value
@@ -2761,7 +2797,7 @@ def predict(req: PredictRequest, top_k: int = 5):
             raw_score = predict_marginalized_recent_performance(feature_row, position)
         score = max(0.0, min(100.0, raw_score))
         comps = find_comparables(feature_row)
-        explanation = explain_prediction(feature_row, median_point_score, real_data_flags, top_k=top_k)
+        explanation_result = explain_prediction(feature_row, median_point_score, real_data_flags, top_k=top_k)
         sensitivity = sensitivity_analysis(feature_row, median_point_score, real_data_flags)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -2771,7 +2807,10 @@ def predict(req: PredictRequest, top_k: int = 5):
         "success_score": round(score, 1),
         "score_range": score_range,
         "comparable_transfers": comps,
-        "explanation": explanation,
+        "explanation": explanation_result["factors"],
+        "explanation_baseline": explanation_result["baseline_score"],
+        "explanation_other_total": explanation_result["other_total"],
+        "explanation_other_count": explanation_result["other_count"],
         "sensitivity": sensitivity,
         "model_test_mae": metadata["test_mae"],
         "model_test_r2": metadata["test_r2"],

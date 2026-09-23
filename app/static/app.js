@@ -349,6 +349,14 @@ function renderPredictResult(data) {
       <span style="color:${scoreColor(c.success_score)}">${c.success_score}</span>
     </div>
   `).join("");
+  // The "Why this score" list below only ever shows the top few factors by
+  // magnitude, not all ~20 the model actually computes - without this note,
+  // adding up the shown numbers looks like it should reach the score above
+  // and mysteriously doesn't (data.explanation_baseline is the model's own
+  // prediction for a completely typical transfer, not a flat 50 - see
+  // explain_prediction in app/main.py).
+  document.getElementById("explanation-baseline-note").textContent =
+    `Starting point (a completely typical transfer): ${data.explanation_baseline}. Each factor below shows how this transfer's actual profile shifts that number up or down.`;
   document.getElementById("explanation-list").innerHTML = data.explanation.map(e => {
     const positive = e.contribution >= 0;
     const width = Math.min(Math.abs(e.contribution) * 4, 100);
@@ -368,6 +376,22 @@ function renderPredictResult(data) {
       </div>
     `;
   }).join("");
+  // Closes the loop the baseline note above opens: baseline + every shown
+  // factor + this "everything else" total always reconciles to the
+  // headline score, even though only a handful of factors are listed
+  // individually above.
+  const otherRow = document.getElementById("explanation-other-row");
+  if (data.explanation_other_count > 0) {
+    const positive = data.explanation_other_total >= 0;
+    otherRow.innerHTML = `
+      <div class="explain-row explain-row-other">
+        <span class="explain-label">${data.explanation_other_count} other factor${data.explanation_other_count === 1 ? "" : "s"} combined</span>
+        <span class="explain-value">${positive ? "+" : ""}${data.explanation_other_total}</span>
+      </div>
+    `;
+  } else {
+    otherRow.innerHTML = "";
+  }
   renderSensitivity(data.sensitivity);
 }
 

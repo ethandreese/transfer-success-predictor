@@ -117,6 +117,12 @@
       "club_quality_ratio": 1.2881791188508145
     }
   },
+  "sub_position_reference_by_position": {
+    "Attack": "Centre-Forward",
+    "Defender": "Centre-Back",
+    "Goalkeeper": "Goalkeeper",
+    "Midfield": "Central Midfield"
+  },
   "recent_performance_samples": {
     "Attack": [
       {
