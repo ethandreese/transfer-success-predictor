@@ -67,8 +67,8 @@ club_id,name,domestic_competition_id,club_value_proxy
 410,Udinese Calcio,IT1,212755000.0
 12321,Girona FC,ES1,212050000.0
 36,Fenerbahce,TR1,210055000.0
-1075,SC Braga,PO1,209310000.0
 417,OGC Nice,FR1,209225000.0
+1075,SC Braga,PO1,205310000.0
 409,Fußballclub Red Bull Salzburg,A1,203800000.0
 1090,AZ Alkmaar,NL1,203300000.0
 86,SV Werder Bremen,L1,200125000.0
@@ -104,9 +104,9 @@ club_id,name,domestic_competition_id,club_value_proxy
 1003,Leicester City,GB1,139875000.0
 677,Ipswich Town,GB1,139100000.0
 995,FC Nantes,FR1,138050000.0
-537,S. A. F. Botafogo,BRA1,136550000.0
 124,Rangers FC,SC1,136550000.0
 16704,FK Krasnodar,RU1,136550000.0
+537,S. A. F. Botafogo,BRA1,136550000.0
 232,FK Spartak Moskva,RU1,136075000.0
 1049,Valencia CF,ES1,136050000.0
 41,Hamburger SV,L1,134725000.0
@@ -172,8 +172,8 @@ club_id,name,domestic_competition_id,club_value_proxy
 501,Fotballklubben Bodø/Glimt,NO1,81275000.0
 306,SC Heerenveen,NL1,79850000.0
 6890,Basaksehir FK,TR1,79705000.0
-3057,Standard Liège,BE1,76400000.0
 6600,Sport Club Internacional,BRA1,76400000.0
+3057,Standard Liège,BE1,76400000.0
 34911,Neom Sports Club,SA1,76350000.0
 1465,GD Estoril Praia,PO1,76220000.0
 679,Clube Atlético Paranaense,BRA1,76185000.0
@@ -181,6 +181,7 @@ club_id,name,domestic_competition_id,club_value_proxy
 2778,FC Nordsjaelland,DK1,74900000.0
 984,West Bromwich Albion,GB1,73995000.0
 2036,1. Fußballclub Heidenheim 1846,L1,73000000.0
+26,FC Basel 1893,C1,72100000.0
 2407,CF Monterrey,MEX1,71975000.0
 941,FC Viktoria Plzen,TS1,71425000.0
 618,AS Saint-Étienne,FR1,70585000.0
@@ -188,7 +189,6 @@ club_id,name,domestic_competition_id,club_value_proxy
 1444,Racing Club Asociación Civil de Avellaneda,ARG1,69425000.0
 475,Sint-Truidense VV,BE1,69400000.0
 126,Caykur Rizespor,TR1,69315000.0
-26,FC Basel 1893,C1,68100000.0
 4035,CF Pachuca,MEX1,67600000.0
 452,BSC Young Boys,C1,67425000.0
 520,Cercle Brugge,BE1,67200000.0
@@ -248,8 +248,8 @@ club_id,name,domestic_competition_id,club_value_proxy
 2125,Esporte Clube Vitória,BRA1,48325000.0
 813,Columbus Crew,MLS1,47825000.0
 9636,Seattle Sounders FC,MLS1,47825000.0
-1123,Norwich City,GB1,47500000.0
 447,HNK Hajduk Split,KR1,47500000.0
+1123,Norwich City,GB1,47500000.0
 13353,Club Tijuana,MEX1,47025000.0
 63966,Nashville SC,MLS1,46150000.0
 1247,Colorado Rapids,MLS1,46150000.0
@@ -321,8 +321,8 @@ club_id,name,domestic_competition_id,club_value_proxy
 301,FCSB,RO1,35625000.0
 28844,Al-Taawoun Football Club,SA1,35450000.0
 1304,Heracles Almelo,NL1,34610000.0
-105,SV Darmstadt 98,L1,34575000.0
 527,Football Club Lausanne-Sport,C1,34575000.0
+105,SV Darmstadt 98,L1,34575000.0
 88,Widzew Lodz,PL1,34050000.0
 6676,A.G.S Asteras Tripolis,GR1,33910000.0
 4941,Club León FC,MEX1,33825000.0
@@ -330,12 +330,12 @@ club_id,name,domestic_competition_id,club_value_proxy
 455,FC Rapid 1923,RO1,33500000.0
 1293,Tromsø Idrettslag,NO1,33400000.0
 2311,"SK Sigma Olomouc, a.s.",TS1,33350000.0
-9168,Houston Dynamo,MLS1,33250000.0
 1177,Silkeborg IF,DK1,33250000.0
+9168,Houston Dynamo,MLS1,33250000.0
 2759,Ross County FC,SC1,33025000.0
 60949,Volou Neos Podosferikos Syllogos,GR1,32650000.0
-85465,Karpaty Lviv,UKR1,32550000.0
 173,Odense Boldklub,DK1,32550000.0
+85465,Karpaty Lviv,UKR1,32550000.0
 1286,Club Atlético Newell’s Old Boys,ARG1,32400000.0
 5662,Puebla FC,MEX1,32325000.0
 14,Austria Vienna,A1,32125000.0
@@ -377,8 +377,8 @@ club_id,name,domestic_competition_id,club_value_proxy
 928,Club Atlético Platense,ARG1,28300000.0
 1100,Sportsklubben Brann,NO1,28275000.0
 1039,Queens Park Rangers,GB1,28275000.0
-1059,Hammarby IF,SE1,28025000.0
 218,San Jose Earthquakes,MLS1,28025000.0
+1059,Hammarby IF,SE1,28025000.0
 3592,Kryvbas Kryvyi Rig,UKR1,27950000.0
 1244,CD Leganés,ES1,27760000.0
 2417,Club Atlético Belgrano,ARG1,27500000.0
@@ -479,14 +479,14 @@ club_id,name,domestic_competition_id,club_value_proxy
 1533,SD Eibar,ES1,16350000.0
 6631,Tokyo Football Club,JAP1,16350000.0
 26459,NK Veres Rivne,UKR1,16275000.0
-828,Urawa Red Diamonds,JAP1,16125000.0
 54189,RWD Molenbeek,BE1,16125000.0
+828,Urawa Red Diamonds,JAP1,16125000.0
 1022,Cerezo Osaka,JAP1,16075000.0
 1283,FC Emmen,NL1,16000000.0
-11854,Junior FC,COL1,15975000.0
 128,AO Xanthi,GR1,15975000.0
-76,Vålerengens Idrettsforening,NO1,15925000.0
+11854,Junior FC,COL1,15975000.0
 29228,Royal Excel Mouscron (-2022),BE1,15925000.0
+76,Vålerengens Idrettsforening,NO1,15925000.0
 3958,Rakuten Vissel Kobe,JAP1,15875000.0
 1066,Nagoya Grampus Eight,JAP1,15750000.0
 8054,Sydney FC,AUS1,15750000.0
@@ -498,8 +498,8 @@ club_id,name,domestic_competition_id,club_value_proxy
 6110,Korona Kielce,PL1,15250000.0
 327,NK Osijek,KR1,15175000.0
 1897,FC Hradec Kralove,TS1,15100000.0
-3828,Yokohama Marinos,JAP1,15075000.0
 6502,Jeonbuk Hyundai Motors,RSK1,15075000.0
+3828,Yokohama Marinos,JAP1,15075000.0
 3535,Ulsan Hyundai Football Club,RSK1,15050000.0
 2671,PAS Giannina,GR1,15010000.0
 1268,ADO Den Haag,NL1,15000000.0
@@ -514,13 +514,13 @@ club_id,name,domestic_competition_id,club_value_proxy
 10503,Deportes Tolima,COL1,14600000.0
 2969,Dijon FCO,FR1,14550000.0
 855,EA Guingamp,FR1,14510000.0
+24575,HNK Gorica,KR1,14400000.0
 4633,FK Novi Pazar,SER1,14400000.0
 599,NK Varazdin,KR1,14400000.0
-24575,HNK Gorica,KR1,14400000.0
 672,JEF United,JAP1,14350000.0
 19,Brescia Calcio,IT1,13950000.0
-595,SC Bastia,FR1,13925000.0
 192,Roda JC Kerkrade,NL1,13925000.0
+595,SC Bastia,FR1,13925000.0
 4467,TSV Hartberg,A1,13850000.0
 33328,FK Radnik Surdulica,SER1,13850000.0
 1322,FK Jablonec,TS1,13700000.0
@@ -543,8 +543,8 @@ club_id,name,domestic_competition_id,club_value_proxy
 924,Istanbulspor,TR1,12950000.0
 6399,Sandefjord Fotball,NO1,12850000.0
 169,Panionios Athens,GR1,12800000.0
-1416,Amiens SC,FR1,12750000.0
 1426,VVV-Venlo,NL1,12750000.0
+1416,Amiens SC,FR1,12750000.0
 2457,B SAD,PO1,12700000.0
 2362,Slaven Belupo Koprivnica,KR1,12650000.0
 1162,SM Caen,FR1,12600000.0
@@ -560,44 +560,44 @@ club_id,name,domestic_competition_id,club_value_proxy
 14687,Club Atlético Gimnasia y Esgrima de Mendoza,ARG1,12375000.0
 3840,Adana Demirspor,TR1,12360000.0
 9597,Avispa Fukuoka,JAP1,12350000.0
-450,FK Dukla Prague,TS1,12325000.0
 6112,Piast Gliwice,PL1,12325000.0
+450,FK Dukla Prague,TS1,12325000.0
 6495,Atlético Bucaramanga,COL1,12300000.0
 266,SV Ried,A1,12235000.0
-788,FK Napredak Krusevac,SER1,12200000.0
 11648,Independiente Santa Fe,COL1,12200000.0
+788,FK Napredak Krusevac,SER1,12200000.0
 17425,Internacional de Bogotá,COL1,12150000.0
 4309,Hamarkameratene,NO1,12150000.0
 133,SC Cambuur Leeuwarden,NL1,12125000.0
 5219,AOK Kerkyra,GR1,12125000.0
 8818,FC Botosani,RO1,12085000.0
 2414,AC Horsens,DK1,11975000.0
-2446,WSG Tirol,A1,11950000.0
 1110,Huddersfield Town,GB1,11950000.0
+2446,WSG Tirol,A1,11950000.0
 21975,Football Club Mito HollyHock,JAP1,11925000.0
 48726,Rukh Lviv,UKR1,11875000.0
 21459,Gangwon Football Club,RSK1,11775000.0
-6500,Football Club Seoul,RSK1,11725000.0
 875,Adelaide United,AUS1,11725000.0
+6500,Football Club Seoul,RSK1,11725000.0
 4171,Benevento Calcio,IT1,11670000.0
 41278,ACSC FC Arges,RO1,11550000.0
 10,Arminia Bielefeld,L1,11500000.0
-316,Grazer AK 1902,A1,11475000.0
 9465,Petrolul Ploiesti,RO1,11475000.0
+316,Grazer AK 1902,A1,11475000.0
 4,1.FC Nuremberg,L1,11200000.0
 22171,Fagiano Okayama Sports Club,JAP1,11125000.0
 36100,Western Sydney Wanderers,AUS1,11000000.0
-4083,FC Crotone,IT1,10970000.0
 2722,SPAL,IT1,10970000.0
-6505,Gimcheon Sangmu Football Club,RSK1,10950000.0
+4083,FC Crotone,IT1,10970000.0
 8445,Wellington Phoenix,AUS1,10950000.0
+6505,Gimcheon Sangmu Football Club,RSK1,10950000.0
 6912,FC Vizela,PO1,10925000.0
 5358,SD Huesca,ES1,10900000.0
 5776,FC Fredericia,DK1,10850000.0
 6414,Metalist Kharkiv (- 2016),UKR1,10850000.0
 1186,Torpedo Moscow,RU1,10775000.0
-11194,NK Lokomotiva Zagreb,KR1,10725000.0
 897,Deportivo de La Coruña,ES1,10725000.0
+11194,NK Lokomotiva Zagreb,KR1,10725000.0
 2700,Anzhi Makhachkala ( -2022),RU1,10700000.0
 25580,Melbourne City FC,AUS1,10675000.0
 21957,AO Platanias,GR1,10645000.0
@@ -639,18 +639,18 @@ club_id,name,domestic_competition_id,club_value_proxy
 1191,Falkirk FC,SC1,8650000.0
 4128,Amkar Perm,RU1,8575000.0
 311,Football Club Pohang Steelers,RSK1,8450000.0
-23184,KFUM-Kameratene Oslo,NO1,8400000.0
 5551,Newcastle United Jets,AUS1,8400000.0
-814,FK Teplice,TS1,8400000.0
 19684,Jeju SK Football Club,RSK1,8400000.0
+23184,KFUM-Kameratene Oslo,NO1,8400000.0
+814,FK Teplice,TS1,8400000.0
 6996,Goverla Uzhgorod (- 2016),UKR1,8360000.0
 498,KSC Lokeren (- 2020),BE1,8225000.0
 524,Gaziantepspor (- 2020),TR1,8200000.0
 5818,Hobro IK,DK1,8150000.0
 6993,FK Mariupol,UKR1,8140000.0
-7831,Brisbane Roar,AUS1,8100000.0
 3426,Esbjerg fB,DK1,8100000.0
-1084,Málaga CF,ES1,8060000.0
+7831,Brisbane Roar,AUS1,8100000.0
+1084,Málaga CF,ES1,8035000.0
 6107,Morski Związkowy Klub Sportowy Arka Gdynia Spółka Akcyjna,PL1,8025000.0
 14171,Thonon Évian Grand Genève FC,FR1,8000000.0
 37255,FK Csikszereda Miercurea Ciuc,RO1,7970000.0
@@ -666,8 +666,8 @@ club_id,name,domestic_competition_id,club_value_proxy
 6954,Central Coast Mariners,AUS1,7500000.0
 84122,Epicentr Kamyanets-Podilskyi,UKR1,7410000.0
 28956,AEL Kalloni,GR1,7385000.0
-41201,PFK Tambov (-2021),RU1,7375000.0
 1011,Halmstads BK,SE1,7375000.0
+41201,PFK Tambov (-2021),RU1,7375000.0
 60551,SC Dnipro-1,UKR1,7360000.0
 23611,Olimpik Donetsk,UKR1,7335000.0
 2477,Karpaty Lviv (-2021),UKR1,7285000.0
@@ -687,15 +687,15 @@ club_id,name,domestic_competition_id,club_value_proxy
 3216,Mersin Talimyurdu SK,TR1,6625000.0
 1159,AS Nancy-Lorraine,FR1,6600000.0
 2439,Kuban Krasnodar (-2018),RU1,6550000.0
-1118,Örgryte IS,SE1,6500000.0
 22381,Al-Raed SFC,SA1,6500000.0
+1118,Örgryte IS,SE1,6500000.0
 7136,Envigado FC,COL1,6475000.0
 3062,Athens Kallithea,GR1,6435000.0
 2715,RFC Seraing,BE1,6325000.0
 9007,Arsenal Kyiv,UKR1,6200000.0
 30925,Gwangju Football Club,RSK1,6125000.0
-5220,GS Ergotelis,GR1,6100000.0
 553,Ionikos Nikeas,GR1,6100000.0
+5220,GS Ergotelis,GR1,6100000.0
 3209,Pendikspor,TR1,5975000.0
 3349,CD Feirense,PO1,5925000.0
 15906,Termalica Bruk-Bet Nieciecza Klub Sportowy,PL1,5850000.0
@@ -706,16 +706,16 @@ club_id,name,domestic_competition_id,club_value_proxy
 11380,ASFC Buzau (2016-2025),RO1,5525000.0
 10492,Esporte Clube Juventude,BRA1,5500000.0
 10870,Fortaleza Esporte Clube,BRA1,5450000.0
-4795,FC Ingolstadt 04,L1,5425000.0
 1894,Hvidovre IF,DK1,5425000.0
+4795,FC Ingolstadt 04,L1,5425000.0
 24245,Ümraniyespor,TR1,5385000.0
 2375,Altay SK,TR1,5275000.0
 23,Eintracht Braunschweig,L1,5250000.0
 3691,Tom Tomsk,RU1,5235000.0
 22902,Alianza FC,COL1,5225000.0
-81401,SC Poltava,UKR1,5200000.0
 8718,Sport Club do Recife,BRA1,5200000.0
 825,Eskisehirspor,TR1,5200000.0
+81401,SC Poltava,UKR1,5200000.0
 1506,Kardemir Karabükspor,TR1,5190000.0
 3609,Rotor Volgograd,RU1,5050000.0
 2292,Elazigspor,TR1,5000000.0
@@ -725,8 +725,8 @@ club_id,name,domestic_competition_id,club_value_proxy
 16247,PFK Stal Kamyanske (-2018),UKR1,4880000.0
 12438,Volga Nizhniy Novgorod (- 2016),RU1,4725000.0
 9811,Deportivo Pereira,COL1,4700000.0
-993,Córdoba CF,ES1,4600000.0
 2029,Ceará Sporting Club,BRA1,4600000.0
+993,Córdoba CF,ES1,4600000.0
 1032,Reading FC,GB1,4575000.0
 1627,Catania FC,IT1,4555000.0
 38628,Llaneros FC,COL1,4525000.0
@@ -762,8 +762,8 @@ club_id,name,domestic_competition_id,club_value_proxy
 1387,Siena FC,IT1,2745000.0
 3690,SKA Khabarovsk,RU1,2735000.0
 22431,Stal Mielec,PL1,2550000.0
-566,Beerschot AC,BE1,2500000.0
 2844,IFK Norrköping,SE1,2500000.0
+566,Beerschot AC,BE1,2500000.0
 2323,Orduspor,TR1,2475000.0
 976,CF União Madeira (-2021),PO1,2475000.0
 6,Adanaspor,TR1,2445000.0
@@ -782,8 +782,8 @@ club_id,name,domestic_competition_id,club_value_proxy
 4102,AC Carpi,IT1,1160000.0
 1057,Bryne FK,NO1,1125000.0
 31622,Suwon FC,RSK1,1000000.0
-8457,Shonan Bellmare,JAP1,1000000.0
 2817,Strømsgodset IF,NO1,1000000.0
+8457,Shonan Bellmare,JAP1,1000000.0
 1321,SK Dynamo Ceske Budejovice,TS1,700000.0
 54585,Sepsi OSK Sf. Gheorghe,RO1,600000.0
 12574,CD Godoy Cruz Antonio Tomba,ARG1,500000.0

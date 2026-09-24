@@ -30,13 +30,13 @@
     "to_domestic_competition_id"
   ],
   "target": "success_score",
-  "test_mae": 12.16,
-  "test_r2": 0.217,
-  "baseline_mae": 14.37,
+  "test_mae": 11.99,
+  "test_r2": 0.23,
+  "baseline_mae": 14.26,
   "n_train": 5912,
   "n_test": 1896,
   "reference_values": {
-    "age_at_transfer": 26.75564681724846,
+    "age_at_transfer": 26.755646817248458,
     "height_vs_position": 0.44879171461448664,
     "pre_apps": 27.0,
     "pre_minutes": 1907.0,
@@ -81,7 +81,7 @@
       "club_quality_ratio": 1.3309546533101755
     },
     "Defender": {
-      "age_at_transfer": 27.030800821355236,
+      "age_at_transfer": 27.03080082135524,
       "pre_apps": 26.0,
       "pre_minutes": 2060.0,
       "pre_goals_p90": 0.0344827586206896,
@@ -93,7 +93,7 @@
       "club_quality_ratio": 1.4183123877917414
     },
     "Goalkeeper": {
-      "age_at_transfer": 28.91170431211499,
+      "age_at_transfer": 28.911704312114992,
       "pre_apps": 26.0,
       "pre_minutes": 2340.0,
       "pre_goals_p90": 0.0,
@@ -105,7 +105,7 @@
       "club_quality_ratio": 1.8053882001291717
     },
     "Midfield": {
-      "age_at_transfer": 26.642026009582477,
+      "age_at_transfer": 26.64202600958248,
       "pre_apps": 27.0,
       "pre_minutes": 1878.0,
       "pre_goals_p90": 0.0897308075772681,
@@ -228,7 +228,7 @@
         "pre_minutes": 275.0,
         "pre_goals_p90": 0.3272727272727272,
         "pre_ga_p90": 0.3272727272727272,
-        "pre_mins_per_app": 21.153846153846153
+        "pre_mins_per_app": 21.153846153846157
       },
       {
         "pre_apps": 25.0,
@@ -291,7 +291,7 @@
         "pre_minutes": 1092.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0824175824175824,
-        "pre_mins_per_app": 57.473684210526315
+        "pre_mins_per_app": 57.47368421052632
       },
       {
         "pre_apps": 20.0,
@@ -585,7 +585,7 @@
         "pre_minutes": 647.0,
         "pre_goals_p90": 0.1391035548686244,
         "pre_ga_p90": 0.2782071097372488,
-        "pre_mins_per_app": 28.130434782608695
+        "pre_mins_per_app": 28.130434782608692
       },
       {
         "pre_apps": 31.0,
@@ -634,7 +634,7 @@
         "pre_minutes": 1224.0,
         "pre_goals_p90": 0.0735294117647058,
         "pre_ga_p90": 0.1470588235294117,
-        "pre_mins_per_app": 43.714285714285715
+        "pre_mins_per_app": 43.71428571428572
       },
       {
         "pre_apps": 45.0,
@@ -704,7 +704,7 @@
         "pre_minutes": 866.0,
         "pre_goals_p90": 0.207852193995381,
         "pre_ga_p90": 0.207852193995381,
-        "pre_mins_per_app": 57.733333333333334
+        "pre_mins_per_app": 57.73333333333333
       },
       {
         "pre_apps": 17.0,
@@ -837,7 +837,7 @@
         "pre_minutes": 389.0,
         "pre_goals_p90": 0.2313624678663239,
         "pre_ga_p90": 0.4627249357326478,
-        "pre_mins_per_app": 25.933333333333337
+        "pre_mins_per_app": 25.933333333333334
       },
       {
         "pre_apps": 32.0,
@@ -921,7 +921,7 @@
         "pre_minutes": 875.0,
         "pre_goals_p90": 0.2057142857142857,
         "pre_ga_p90": 0.3085714285714285,
-        "pre_mins_per_app": 51.47058823529411
+        "pre_mins_per_app": 51.47058823529412
       },
       {
         "pre_apps": 36.0,
@@ -963,7 +963,7 @@
         "pre_minutes": 1168.0,
         "pre_goals_p90": 0.0770547945205479,
         "pre_ga_p90": 0.3852739726027397,
-        "pre_mins_per_app": 61.473684210526315
+        "pre_mins_per_app": 61.47368421052632
       },
       {
         "pre_apps": 42.0,
@@ -1432,7 +1432,7 @@
         "pre_minutes": 1091.0,
         "pre_goals_p90": 0.1649862511457378,
         "pre_ga_p90": 0.2474793767186067,
-        "pre_mins_per_app": 60.611111111111114
+        "pre_mins_per_app": 60.61111111111112
       },
       {
         "pre_apps": 16.0,
@@ -1495,7 +1495,7 @@
         "pre_minutes": 998.0,
         "pre_goals_p90": 0.1803607214428857,
         "pre_ga_p90": 0.2705410821643286,
-        "pre_mins_per_app": 58.705882352941174
+        "pre_mins_per_app": 58.70588235294117
       },
       {
         "pre_apps": 19.0,
@@ -2139,7 +2139,7 @@
         "pre_minutes": 1382.0,
         "pre_goals_p90": 0.260492040520984,
         "pre_ga_p90": 0.5209840810419681,
-        "pre_mins_per_app": 41.878787878787875
+        "pre_mins_per_app": 41.87878787878788
       },
       {
         "pre_apps": 43.0,
@@ -2258,7 +2258,7 @@
         "pre_minutes": 1078.0,
         "pre_goals_p90": 0.4174397031539889,
         "pre_ga_p90": 0.6679035250463822,
-        "pre_mins_per_app": 44.916666666666664
+        "pre_mins_per_app": 44.91666666666666
       },
       {
         "pre_apps": 32.0,
@@ -2356,7 +2356,7 @@
         "pre_minutes": 1684.0,
         "pre_goals_p90": 0.4275534441805226,
         "pre_ga_p90": 0.5878859857482185,
-        "pre_mins_per_app": 62.370370370370374
+        "pre_mins_per_app": 62.37037037037037
       },
       {
         "pre_apps": 30.0,
@@ -2475,7 +2475,7 @@
         "pre_minutes": 2023.0,
         "pre_goals_p90": 0.5338606030647554,
         "pre_ga_p90": 0.8452792881858626,
-        "pre_mins_per_app": 61.303030303030305
+        "pre_mins_per_app": 61.30303030303031
       },
       {
         "pre_apps": 52.0,
@@ -2657,7 +2657,7 @@
         "pre_minutes": 747.0,
         "pre_goals_p90": 0.1204819277108433,
         "pre_ga_p90": 0.1204819277108433,
-        "pre_mins_per_app": 53.357142857142854
+        "pre_mins_per_app": 53.35714285714285
       },
       {
         "pre_apps": 34.0,
@@ -2685,7 +2685,7 @@
         "pre_minutes": 1003.0,
         "pre_goals_p90": 0.0897308075772681,
         "pre_ga_p90": 0.448654037886341,
-        "pre_mins_per_app": 41.791666666666664
+        "pre_mins_per_app": 41.79166666666666
       },
       {
         "pre_apps": 14.0,
@@ -2741,7 +2741,7 @@
         "pre_minutes": 443.0,
         "pre_goals_p90": 0.4063205417607223,
         "pre_ga_p90": 0.6094808126410836,
-        "pre_mins_per_app": 36.916666666666664
+        "pre_mins_per_app": 36.91666666666666
       },
       {
         "pre_apps": 25.0,
@@ -2846,7 +2846,7 @@
         "pre_minutes": 769.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.1170351105331599,
-        "pre_mins_per_app": 40.473684210526315
+        "pre_mins_per_app": 40.47368421052632
       },
       {
         "pre_apps": 30.0,
@@ -3224,7 +3224,7 @@
         "pre_minutes": 977.0,
         "pre_goals_p90": 0.1842374616171955,
         "pre_ga_p90": 0.4605936540429888,
-        "pre_mins_per_app": 51.421052631578945
+        "pre_mins_per_app": 51.42105263157895
       },
       {
         "pre_apps": 36.0,
@@ -3350,7 +3350,7 @@
         "pre_minutes": 226.0,
         "pre_goals_p90": 1.1946902654867255,
         "pre_ga_p90": 1.1946902654867255,
-        "pre_mins_per_app": 18.833333333333332
+        "pre_mins_per_app": 18.83333333333333
       },
       {
         "pre_apps": 39.0,
@@ -3630,7 +3630,7 @@
         "pre_minutes": 1627.0,
         "pre_goals_p90": 0.0553165334972341,
         "pre_ga_p90": 0.4425322679778734,
-        "pre_mins_per_app": 58.107142857142854
+        "pre_mins_per_app": 58.10714285714285
       },
       {
         "pre_apps": 33.0,
@@ -3770,7 +3770,7 @@
         "pre_minutes": 1016.0,
         "pre_goals_p90": 0.1771653543307086,
         "pre_ga_p90": 0.3543307086614173,
-        "pre_mins_per_app": 53.473684210526315
+        "pre_mins_per_app": 53.47368421052632
       },
       {
         "pre_apps": 16.0,
@@ -3798,7 +3798,7 @@
         "pre_minutes": 2669.0,
         "pre_goals_p90": 0.7081303859123267,
         "pre_ga_p90": 0.775571375046834,
-        "pre_mins_per_app": 56.787234042553195
+        "pre_mins_per_app": 56.7872340425532
       },
       {
         "pre_apps": 30.0,
@@ -3861,7 +3861,7 @@
         "pre_minutes": 2368.0,
         "pre_goals_p90": 0.4560810810810811,
         "pre_ga_p90": 0.7981418918918919,
-        "pre_mins_per_app": 44.679245283018865
+        "pre_mins_per_app": 44.67924528301887
       },
       {
         "pre_apps": 19.0,
@@ -3903,7 +3903,7 @@
         "pre_minutes": 922.0,
         "pre_goals_p90": 0.0976138828633405,
         "pre_ga_p90": 0.2928416485900217,
-        "pre_mins_per_app": 43.904761904761905
+        "pre_mins_per_app": 43.90476190476191
       },
       {
         "pre_apps": 29.0,
@@ -3980,7 +3980,7 @@
         "pre_minutes": 1285.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0700389105058365,
-        "pre_mins_per_app": 53.541666666666664
+        "pre_mins_per_app": 53.54166666666666
       },
       {
         "pre_apps": 10.0,
@@ -4001,7 +4001,7 @@
         "pre_minutes": 1035.0,
         "pre_goals_p90": 0.6086956521739131,
         "pre_ga_p90": 0.8695652173913043,
-        "pre_mins_per_app": 54.473684210526315
+        "pre_mins_per_app": 54.47368421052632
       },
       {
         "pre_apps": 23.0,
@@ -4169,7 +4169,7 @@
         "pre_minutes": 1462.0,
         "pre_goals_p90": 0.307797537619699,
         "pre_ga_p90": 0.4924760601915184,
-        "pre_mins_per_app": 52.214285714285715
+        "pre_mins_per_app": 52.21428571428572
       },
       {
         "pre_apps": 20.0,
@@ -4211,7 +4211,7 @@
         "pre_minutes": 2122.0,
         "pre_goals_p90": 0.5937794533459001,
         "pre_ga_p90": 0.6786050895381716,
-        "pre_mins_per_app": 57.351351351351354
+        "pre_mins_per_app": 57.35135135135136
       },
       {
         "pre_apps": 32.0,
@@ -4813,7 +4813,7 @@
         "pre_minutes": 1867.0,
         "pre_goals_p90": 0.096411355115158,
         "pre_ga_p90": 0.241028387787895,
-        "pre_mins_per_app": 51.861111111111114
+        "pre_mins_per_app": 51.86111111111112
       },
       {
         "pre_apps": 22.0,
@@ -4855,7 +4855,7 @@
         "pre_minutes": 2558.0,
         "pre_goals_p90": 0.4222048475371384,
         "pre_ga_p90": 0.6684910086004692,
-        "pre_mins_per_app": 62.390243902439025
+        "pre_mins_per_app": 62.39024390243903
       },
       {
         "pre_apps": 14.0,
@@ -4981,7 +4981,7 @@
         "pre_minutes": 851.0,
         "pre_goals_p90": 0.4230317273795534,
         "pre_ga_p90": 0.6345475910693302,
-        "pre_mins_per_app": 56.733333333333334
+        "pre_mins_per_app": 56.73333333333333
       },
       {
         "pre_apps": 26.0,
@@ -5016,7 +5016,7 @@
         "pre_minutes": 1822.0,
         "pre_goals_p90": 0.0987925356750823,
         "pre_ga_p90": 0.0987925356750823,
-        "pre_mins_per_app": 60.733333333333334
+        "pre_mins_per_app": 60.73333333333333
       },
       {
         "pre_apps": 40.0,
@@ -5156,7 +5156,7 @@
         "pre_minutes": 581.0,
         "pre_goals_p90": 0.1549053356282272,
         "pre_ga_p90": 0.1549053356282272,
-        "pre_mins_per_app": 38.733333333333334
+        "pre_mins_per_app": 38.73333333333333
       },
       {
         "pre_apps": 13.0,
@@ -5317,7 +5317,7 @@
         "pre_minutes": 1885.0,
         "pre_goals_p90": 0.143236074270557,
         "pre_ga_p90": 0.286472148541114,
-        "pre_mins_per_app": 60.806451612903224
+        "pre_mins_per_app": 60.80645161290322
       },
       {
         "pre_apps": 13.0,
@@ -5359,7 +5359,7 @@
         "pre_minutes": 1588.0,
         "pre_goals_p90": 0.2267002518891687,
         "pre_ga_p90": 0.2833753148614609,
-        "pre_mins_per_app": 54.758620689655174
+        "pre_mins_per_app": 54.75862068965517
       },
       {
         "pre_apps": 29.0,
@@ -5541,7 +5541,7 @@
         "pre_minutes": 1299.0,
         "pre_goals_p90": 0.069284064665127,
         "pre_ga_p90": 0.207852193995381,
-        "pre_mins_per_app": 61.857142857142854
+        "pre_mins_per_app": 61.85714285714285
       },
       {
         "pre_apps": 20.0,
@@ -5681,7 +5681,7 @@
         "pre_minutes": 1309.0,
         "pre_goals_p90": 0.2062643239113827,
         "pre_ga_p90": 0.2750190985485103,
-        "pre_mins_per_app": 39.666666666666664
+        "pre_mins_per_app": 39.66666666666666
       },
       {
         "pre_apps": 14.0,
@@ -5856,7 +5856,7 @@
         "pre_minutes": 1132.0,
         "pre_goals_p90": 0.3975265017667844,
         "pre_ga_p90": 0.4770318021201414,
-        "pre_mins_per_app": 47.166666666666664
+        "pre_mins_per_app": 47.16666666666666
       },
       {
         "pre_apps": 21.0,
@@ -5877,7 +5877,7 @@
         "pre_minutes": 1445.0,
         "pre_goals_p90": 0.0622837370242214,
         "pre_ga_p90": 0.3737024221453287,
-        "pre_mins_per_app": 49.827586206896555
+        "pre_mins_per_app": 49.82758620689656
       },
       {
         "pre_apps": 10.0,
@@ -6185,7 +6185,7 @@
         "pre_minutes": 1465.0,
         "pre_goals_p90": 0.1843003412969283,
         "pre_ga_p90": 0.3071672354948805,
-        "pre_mins_per_app": 61.041666666666664
+        "pre_mins_per_app": 61.04166666666666
       },
       {
         "pre_apps": 36.0,
@@ -6423,7 +6423,7 @@
         "pre_minutes": 1026.0,
         "pre_goals_p90": 0.3508771929824561,
         "pre_ga_p90": 0.4385964912280701,
-        "pre_mins_per_app": 44.608695652173914
+        "pre_mins_per_app": 44.60869565217392
       },
       {
         "pre_apps": 42.0,
@@ -6689,7 +6689,7 @@
         "pre_minutes": 1300.0,
         "pre_goals_p90": 0.5538461538461539,
         "pre_ga_p90": 0.6230769230769231,
-        "pre_mins_per_app": 61.904761904761905
+        "pre_mins_per_app": 61.90476190476191
       },
       {
         "pre_apps": 28.0,
@@ -6815,7 +6815,7 @@
         "pre_minutes": 1309.0,
         "pre_goals_p90": 0.1375095492742551,
         "pre_ga_p90": 0.481283422459893,
-        "pre_mins_per_app": 54.541666666666664
+        "pre_mins_per_app": 54.54166666666666
       },
       {
         "pre_apps": 43.0,
@@ -6885,7 +6885,7 @@
         "pre_minutes": 1086.0,
         "pre_goals_p90": 0.2486187845303867,
         "pre_ga_p90": 0.4143646408839779,
-        "pre_mins_per_app": 51.714285714285715
+        "pre_mins_per_app": 51.71428571428572
       },
       {
         "pre_apps": 34.0,
@@ -6899,7 +6899,7 @@
         "pre_minutes": 795.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.4528301886792452,
-        "pre_mins_per_app": 44.166666666666664
+        "pre_mins_per_app": 44.16666666666666
       },
       {
         "pre_apps": 42.0,
@@ -6913,7 +6913,7 @@
         "pre_minutes": 1534.0,
         "pre_goals_p90": 0.2346805736636245,
         "pre_ga_p90": 0.5280312907431551,
-        "pre_mins_per_app": 42.611111111111114
+        "pre_mins_per_app": 42.61111111111112
       },
       {
         "pre_apps": 37.0,
@@ -7032,7 +7032,7 @@
         "pre_minutes": 892.0,
         "pre_goals_p90": 0.2017937219730941,
         "pre_ga_p90": 0.4035874439461883,
-        "pre_mins_per_app": 52.47058823529411
+        "pre_mins_per_app": 52.47058823529412
       },
       {
         "pre_apps": 26.0,
@@ -7228,7 +7228,7 @@
         "pre_minutes": 1270.0,
         "pre_goals_p90": 0.3543307086614173,
         "pre_ga_p90": 0.7795275590551181,
-        "pre_mins_per_app": 52.916666666666664
+        "pre_mins_per_app": 52.91666666666666
       },
       {
         "pre_apps": 34.0,
@@ -7277,7 +7277,7 @@
         "pre_minutes": 1258.0,
         "pre_goals_p90": 0.2146263910969793,
         "pre_ga_p90": 0.2861685214626391,
-        "pre_mins_per_app": 59.904761904761905
+        "pre_mins_per_app": 59.90476190476191
       },
       {
         "pre_apps": 23.0,
@@ -7291,7 +7291,7 @@
         "pre_minutes": 1429.0,
         "pre_goals_p90": 0.251924422673198,
         "pre_ga_p90": 0.377886634009797,
-        "pre_mins_per_app": 59.541666666666664
+        "pre_mins_per_app": 59.54166666666666
       },
       {
         "pre_apps": 29.0,
@@ -7466,7 +7466,7 @@
         "pre_minutes": 671.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.1341281669150521,
-        "pre_mins_per_app": 55.916666666666664
+        "pre_mins_per_app": 55.91666666666666
       },
       {
         "pre_apps": 47.0,
@@ -7634,7 +7634,7 @@
         "pre_minutes": 295.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 1.220338983050847,
-        "pre_mins_per_app": 24.583333333333332
+        "pre_mins_per_app": 24.58333333333333
       },
       {
         "pre_apps": 22.0,
@@ -7921,7 +7921,7 @@
         "pre_minutes": 587.0,
         "pre_goals_p90": 0.3066439522998296,
         "pre_ga_p90": 0.3066439522998296,
-        "pre_mins_per_app": 48.916666666666664
+        "pre_mins_per_app": 48.91666666666666
       },
       {
         "pre_apps": 20.0,
@@ -7984,7 +7984,7 @@
         "pre_minutes": 839.0,
         "pre_goals_p90": 0.6436233611442193,
         "pre_ga_p90": 0.6436233611442193,
-        "pre_mins_per_app": 46.611111111111114
+        "pre_mins_per_app": 46.61111111111112
       },
       {
         "pre_apps": 38.0,
@@ -8236,7 +8236,7 @@
         "pre_minutes": 446.0,
         "pre_goals_p90": 0.2017937219730941,
         "pre_ga_p90": 0.2017937219730941,
-        "pre_mins_per_app": 37.166666666666664
+        "pre_mins_per_app": 37.16666666666666
       },
       {
         "pre_apps": 19.0,
@@ -8509,7 +8509,7 @@
         "pre_minutes": 1108.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0812274368231047,
-        "pre_mins_per_app": 46.166666666666664
+        "pre_mins_per_app": 46.16666666666666
       },
       {
         "pre_apps": 38.0,
@@ -8621,7 +8621,7 @@
         "pre_minutes": 1297.0,
         "pre_goals_p90": 0.5551272166538165,
         "pre_ga_p90": 0.6939090208172707,
-        "pre_mins_per_app": 54.041666666666664
+        "pre_mins_per_app": 54.04166666666666
       },
       {
         "pre_apps": 14.0,
@@ -8719,14 +8719,14 @@
         "pre_minutes": 2678.0,
         "pre_goals_p90": 0.2016430171769977,
         "pre_ga_p90": 0.4705003734129948,
-        "pre_mins_per_app": 55.791666666666664
+        "pre_mins_per_app": 55.79166666666666
       },
       {
         "pre_apps": 14.0,
         "pre_minutes": 570.0,
         "pre_goals_p90": 0.1578947368421052,
         "pre_ga_p90": 0.1578947368421052,
-        "pre_mins_per_app": 40.714285714285715
+        "pre_mins_per_app": 40.71428571428572
       },
       {
         "pre_apps": 30.0,
@@ -8761,7 +8761,7 @@
         "pre_minutes": 333.0,
         "pre_goals_p90": 0.2702702702702703,
         "pre_ga_p90": 0.2702702702702703,
-        "pre_mins_per_app": 30.272727272727273
+        "pre_mins_per_app": 30.272727272727277
       },
       {
         "pre_apps": 24.0,
@@ -8803,21 +8803,21 @@
         "pre_minutes": 866.0,
         "pre_goals_p90": 0.207852193995381,
         "pre_ga_p90": 0.5196304849884527,
-        "pre_mins_per_app": 48.111111111111114
+        "pre_mins_per_app": 48.11111111111112
       },
       {
         "pre_apps": 15.0,
         "pre_minutes": 941.0,
         "pre_goals_p90": 0.7651434643995749,
         "pre_ga_p90": 0.7651434643995749,
-        "pre_mins_per_app": 62.733333333333334
+        "pre_mins_per_app": 62.73333333333333
       },
       {
         "pre_apps": 24.0,
         "pre_minutes": 728.0,
         "pre_goals_p90": 0.2472527472527472,
         "pre_ga_p90": 0.4945054945054945,
-        "pre_mins_per_app": 30.333333333333332
+        "pre_mins_per_app": 30.33333333333333
       },
       {
         "pre_apps": 36.0,
@@ -8852,7 +8852,7 @@
         "pre_minutes": 1912.0,
         "pre_goals_p90": 0.2824267782426778,
         "pre_ga_p90": 0.5177824267782427,
-        "pre_mins_per_app": 53.111111111111114
+        "pre_mins_per_app": 53.11111111111112
       },
       {
         "pre_apps": 30.0,
@@ -8873,7 +8873,7 @@
         "pre_minutes": 1490.0,
         "pre_goals_p90": 0.1208053691275167,
         "pre_ga_p90": 0.3624161073825503,
-        "pre_mins_per_app": 53.214285714285715
+        "pre_mins_per_app": 53.21428571428572
       },
       {
         "pre_apps": 30.0,
@@ -8901,7 +8901,7 @@
         "pre_minutes": 1393.0,
         "pre_goals_p90": 0.5168700646087581,
         "pre_ga_p90": 0.6460875807609475,
-        "pre_mins_per_app": 58.041666666666664
+        "pre_mins_per_app": 58.04166666666666
       },
       {
         "pre_apps": 22.0,
@@ -8978,7 +8978,7 @@
         "pre_minutes": 911.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.1975850713501646,
-        "pre_mins_per_app": 50.611111111111114
+        "pre_mins_per_app": 50.61111111111112
       },
       {
         "pre_apps": 18.0,
@@ -8999,7 +8999,7 @@
         "pre_minutes": 975.0,
         "pre_goals_p90": 0.1846153846153846,
         "pre_ga_p90": 0.1846153846153846,
-        "pre_mins_per_app": 54.166666666666664
+        "pre_mins_per_app": 54.16666666666666
       },
       {
         "pre_apps": 35.0,
@@ -9118,7 +9118,7 @@
         "pre_minutes": 658.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.2735562310030395,
-        "pre_mins_per_app": 28.60869565217391
+        "pre_mins_per_app": 28.608695652173918
       },
       {
         "pre_apps": 27.0,
@@ -9195,7 +9195,7 @@
         "pre_minutes": 370.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 30.833333333333332
+        "pre_mins_per_app": 30.83333333333333
       },
       {
         "pre_apps": 30.0,
@@ -9601,7 +9601,7 @@
         "pre_minutes": 528.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.1704545454545454,
-        "pre_mins_per_app": 37.714285714285715
+        "pre_mins_per_app": 37.71428571428572
       },
       {
         "pre_apps": 41.0,
@@ -10203,7 +10203,7 @@
         "pre_minutes": 758.0,
         "pre_goals_p90": 0.949868073878628,
         "pre_ga_p90": 1.899736147757256,
-        "pre_mins_per_app": 42.111111111111114
+        "pre_mins_per_app": 42.11111111111112
       },
       {
         "pre_apps": 10.0,
@@ -10434,7 +10434,7 @@
         "pre_minutes": 1270.0,
         "pre_goals_p90": 0.2125984251968504,
         "pre_ga_p90": 0.2125984251968504,
-        "pre_mins_per_app": 52.916666666666664
+        "pre_mins_per_app": 52.91666666666666
       },
       {
         "pre_apps": 24.0,
@@ -10532,7 +10532,7 @@
         "pre_minutes": 1158.0,
         "pre_goals_p90": 0.310880829015544,
         "pre_ga_p90": 0.38860103626943,
-        "pre_mins_per_app": 41.357142857142854
+        "pre_mins_per_app": 41.35714285714285
       },
       {
         "pre_apps": 37.0,
@@ -10616,7 +10616,7 @@
         "pre_minutes": 620.0,
         "pre_goals_p90": 0.7258064516129032,
         "pre_ga_p90": 0.8709677419354839,
-        "pre_mins_per_app": 51.666666666666664
+        "pre_mins_per_app": 51.66666666666666
       },
       {
         "pre_apps": 29.0,
@@ -10756,7 +10756,7 @@
         "pre_minutes": 1528.0,
         "pre_goals_p90": 0.2945026178010471,
         "pre_ga_p90": 0.4712041884816754,
-        "pre_mins_per_app": 46.303030303030305
+        "pre_mins_per_app": 46.30303030303031
       },
       {
         "pre_apps": 36.0,
@@ -10882,7 +10882,7 @@
         "pre_minutes": 1475.0,
         "pre_goals_p90": 0.3661016949152542,
         "pre_ga_p90": 0.6101694915254237,
-        "pre_mins_per_app": 49.166666666666664
+        "pre_mins_per_app": 49.16666666666666
       },
       {
         "pre_apps": 23.0,
@@ -10980,7 +10980,7 @@
         "pre_minutes": 1121.0,
         "pre_goals_p90": 0.5619982158786797,
         "pre_ga_p90": 0.5619982158786797,
-        "pre_mins_per_app": 32.970588235294116
+        "pre_mins_per_app": 32.97058823529412
       },
       {
         "pre_apps": 45.0,
@@ -11197,7 +11197,7 @@
         "pre_minutes": 1015.0,
         "pre_goals_p90": 0.2660098522167488,
         "pre_ga_p90": 0.5320197044334976,
-        "pre_mins_per_app": 59.705882352941174
+        "pre_mins_per_app": 59.70588235294117
       },
       {
         "pre_apps": 32.0,
@@ -11449,7 +11449,7 @@
         "pre_minutes": 1876.0,
         "pre_goals_p90": 0.1918976545842217,
         "pre_ga_p90": 0.431769722814499,
-        "pre_mins_per_app": 52.111111111111114
+        "pre_mins_per_app": 52.11111111111112
       },
       {
         "pre_apps": 34.0,
@@ -11659,7 +11659,7 @@
         "pre_minutes": 1039.0,
         "pre_goals_p90": 0.3464870067372473,
         "pre_ga_p90": 0.6063522617901829,
-        "pre_mins_per_app": 43.291666666666664
+        "pre_mins_per_app": 43.29166666666666
       },
       {
         "pre_apps": 29.0,
@@ -11708,7 +11708,7 @@
         "pre_minutes": 973.0,
         "pre_goals_p90": 0.092497430626927,
         "pre_ga_p90": 0.277492291880781,
-        "pre_mins_per_app": 40.541666666666664
+        "pre_mins_per_app": 40.54166666666666
       },
       {
         "pre_apps": 32.0,
@@ -11785,7 +11785,7 @@
         "pre_minutes": 2115.0,
         "pre_goals_p90": 0.3404255319148936,
         "pre_ga_p90": 0.3829787234042553,
-        "pre_mins_per_app": 62.205882352941174
+        "pre_mins_per_app": 62.20588235294117
       },
       {
         "pre_apps": 40.0,
@@ -12009,14 +12009,14 @@
         "pre_minutes": 854.0,
         "pre_goals_p90": 0.5269320843091335,
         "pre_ga_p90": 0.5269320843091335,
-        "pre_mins_per_app": 40.666666666666664
+        "pre_mins_per_app": 40.66666666666666
       },
       {
         "pre_apps": 34.0,
         "pre_minutes": 2166.0,
         "pre_goals_p90": 0.3739612188365651,
         "pre_ga_p90": 0.4986149584487535,
-        "pre_mins_per_app": 63.705882352941174
+        "pre_mins_per_app": 63.70588235294117
       },
       {
         "pre_apps": 13.0,
@@ -12079,7 +12079,7 @@
         "pre_minutes": 565.0,
         "pre_goals_p90": 0.3185840707964602,
         "pre_ga_p90": 0.6371681415929203,
-        "pre_mins_per_app": 19.482758620689655
+        "pre_mins_per_app": 19.48275862068965
       },
       {
         "pre_apps": 21.0,
@@ -12205,7 +12205,7 @@
         "pre_minutes": 1737.0,
         "pre_goals_p90": 0.6735751295336788,
         "pre_ga_p90": 0.7772020725388601,
-        "pre_mins_per_app": 46.945945945945944
+        "pre_mins_per_app": 46.94594594594594
       },
       {
         "pre_apps": 36.0,
@@ -12436,14 +12436,14 @@
         "pre_minutes": 1522.0,
         "pre_goals_p90": 0.7687253613666228,
         "pre_ga_p90": 0.8278580814717477,
-        "pre_mins_per_app": 63.416666666666664
+        "pre_mins_per_app": 63.41666666666666
       },
       {
         "pre_apps": 21.0,
         "pre_minutes": 1085.0,
         "pre_goals_p90": 0.1658986175115207,
         "pre_ga_p90": 0.4976958525345622,
-        "pre_mins_per_app": 51.666666666666664
+        "pre_mins_per_app": 51.66666666666666
       },
       {
         "pre_apps": 28.0,
@@ -12688,7 +12688,7 @@
         "pre_minutes": 1043.0,
         "pre_goals_p90": 0.3451581975071908,
         "pre_ga_p90": 0.6903163950143816,
-        "pre_mins_per_app": 49.666666666666664
+        "pre_mins_per_app": 49.66666666666666
       },
       {
         "pre_apps": 19.0,
@@ -13038,7 +13038,7 @@
         "pre_minutes": 295.0,
         "pre_goals_p90": 0.3050847457627118,
         "pre_ga_p90": 0.9152542372881356,
-        "pre_mins_per_app": 24.583333333333332
+        "pre_mins_per_app": 24.58333333333333
       },
       {
         "pre_apps": 28.0,
@@ -13073,7 +13073,7 @@
         "pre_minutes": 1329.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.2708803611738148,
-        "pre_mins_per_app": 47.464285714285715
+        "pre_mins_per_app": 47.46428571428572
       },
       {
         "pre_apps": 36.0,
@@ -13416,7 +13416,7 @@
         "pre_minutes": 1229.0,
         "pre_goals_p90": 0.2196908055329536,
         "pre_ga_p90": 0.3661513425549227,
-        "pre_mins_per_app": 39.645161290322584
+        "pre_mins_per_app": 39.64516129032258
       },
       {
         "pre_apps": 26.0,
@@ -13591,7 +13591,7 @@
         "pre_minutes": 2600.0,
         "pre_goals_p90": 0.173076923076923,
         "pre_ga_p90": 0.3115384615384615,
-        "pre_mins_per_app": 61.904761904761905
+        "pre_mins_per_app": 61.90476190476191
       },
       {
         "pre_apps": 42.0,
@@ -13927,7 +13927,7 @@
         "pre_minutes": 2029.0,
         "pre_goals_p90": 0.1330704780680138,
         "pre_ga_p90": 0.4435682602267126,
-        "pre_mins_per_app": 56.361111111111114
+        "pre_mins_per_app": 56.36111111111112
       },
       {
         "pre_apps": 27.0,
@@ -14025,7 +14025,7 @@
         "pre_minutes": 545.0,
         "pre_goals_p90": 0.4954128440366973,
         "pre_ga_p90": 0.6605504587155964,
-        "pre_mins_per_app": 45.416666666666664
+        "pre_mins_per_app": 45.41666666666666
       },
       {
         "pre_apps": 20.0,
@@ -14095,7 +14095,7 @@
         "pre_minutes": 1519.0,
         "pre_goals_p90": 0.3554970375246873,
         "pre_ga_p90": 0.4147465437788018,
-        "pre_mins_per_app": 63.291666666666664
+        "pre_mins_per_app": 63.29166666666666
       },
       {
         "pre_apps": 27.0,
@@ -14116,7 +14116,7 @@
         "pre_minutes": 866.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 57.733333333333334
+        "pre_mins_per_app": 57.73333333333333
       },
       {
         "pre_apps": 17.0,
@@ -14620,7 +14620,7 @@
         "pre_minutes": 1942.0,
         "pre_goals_p90": 0.3707518022657054,
         "pre_ga_p90": 0.5561277033985582,
-        "pre_mins_per_app": 62.645161290322584
+        "pre_mins_per_app": 62.64516129032258
       },
       {
         "pre_apps": 48.0,
@@ -14634,7 +14634,7 @@
         "pre_minutes": 845.0,
         "pre_goals_p90": 0.2130177514792899,
         "pre_ga_p90": 0.3195266272189349,
-        "pre_mins_per_app": 44.473684210526315
+        "pre_mins_per_app": 44.47368421052632
       },
       {
         "pre_apps": 13.0,
@@ -14816,7 +14816,7 @@
         "pre_minutes": 946.0,
         "pre_goals_p90": 0.2854122621564482,
         "pre_ga_p90": 0.2854122621564482,
-        "pre_mins_per_app": 39.416666666666664
+        "pre_mins_per_app": 39.41666666666666
       },
       {
         "pre_apps": 31.0,
@@ -14963,7 +14963,7 @@
         "pre_minutes": 991.0,
         "pre_goals_p90": 0.4540867810292634,
         "pre_ga_p90": 0.8173562058526741,
-        "pre_mins_per_app": 28.314285714285713
+        "pre_mins_per_app": 28.314285714285717
       },
       {
         "pre_apps": 36.0,
@@ -14984,14 +14984,14 @@
         "pre_minutes": 991.0,
         "pre_goals_p90": 0.272452068617558,
         "pre_ga_p90": 0.272452068617558,
-        "pre_mins_per_app": 41.291666666666664
+        "pre_mins_per_app": 41.29166666666666
       },
       {
         "pre_apps": 13.0,
         "pre_minutes": 379.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.2374670184696569,
-        "pre_mins_per_app": 29.153846153846153
+        "pre_mins_per_app": 29.153846153846157
       },
       {
         "pre_apps": 38.0,
@@ -15040,14 +15040,14 @@
         "pre_minutes": 416.0,
         "pre_goals_p90": 0.4326923076923077,
         "pre_ga_p90": 1.0817307692307694,
-        "pre_mins_per_app": 24.470588235294116
+        "pre_mins_per_app": 24.47058823529412
       },
       {
         "pre_apps": 28.0,
         "pre_minutes": 1088.0,
         "pre_goals_p90": 0.1654411764705882,
         "pre_ga_p90": 0.2481617647058823,
-        "pre_mins_per_app": 38.857142857142854
+        "pre_mins_per_app": 38.85714285714285
       },
       {
         "pre_apps": 35.0,
@@ -15089,14 +15089,14 @@
         "pre_minutes": 572.0,
         "pre_goals_p90": 0.472027972027972,
         "pre_ga_p90": 0.472027972027972,
-        "pre_mins_per_app": 47.666666666666664
+        "pre_mins_per_app": 47.66666666666666
       },
       {
         "pre_apps": 33.0,
         "pre_minutes": 1825.0,
         "pre_goals_p90": 0.5424657534246575,
         "pre_ga_p90": 0.8383561643835616,
-        "pre_mins_per_app": 55.303030303030305
+        "pre_mins_per_app": 55.30303030303031
       },
       {
         "pre_apps": 28.0,
@@ -15201,7 +15201,7 @@
         "pre_minutes": 731.0,
         "pre_goals_p90": 0.3693570451436389,
         "pre_ga_p90": 0.3693570451436389,
-        "pre_mins_per_app": 40.611111111111114
+        "pre_mins_per_app": 40.61111111111112
       },
       {
         "pre_apps": 20.0,
@@ -15306,7 +15306,7 @@
         "pre_minutes": 2184.0,
         "pre_goals_p90": 0.5357142857142857,
         "pre_ga_p90": 0.6181318681318682,
-        "pre_mins_per_app": 59.027027027027025
+        "pre_mins_per_app": 59.02702702702703
       },
       {
         "pre_apps": 35.0,
@@ -15446,7 +15446,7 @@
         "pre_minutes": 1279.0,
         "pre_goals_p90": 0.4222048475371384,
         "pre_ga_p90": 0.4222048475371384,
-        "pre_mins_per_app": 47.370370370370374
+        "pre_mins_per_app": 47.37037037037037
       },
       {
         "pre_apps": 26.0,
@@ -15670,7 +15670,7 @@
         "pre_minutes": 1049.0,
         "pre_goals_p90": 0.1715919923736892,
         "pre_ga_p90": 0.2573879885605338,
-        "pre_mins_per_app": 37.464285714285715
+        "pre_mins_per_app": 37.46428571428572
       },
       {
         "pre_apps": 30.0,
@@ -16146,7 +16146,7 @@
         "pre_minutes": 2139.0,
         "pre_goals_p90": 0.5049088359046283,
         "pre_ga_p90": 0.6311360448807855,
-        "pre_mins_per_app": 62.911764705882355
+        "pre_mins_per_app": 62.91176470588236
       },
       {
         "pre_apps": 45.0,
@@ -16349,7 +16349,7 @@
         "pre_minutes": 1259.0,
         "pre_goals_p90": 0.4289118347895155,
         "pre_ga_p90": 0.5718824463860206,
-        "pre_mins_per_app": 44.964285714285715
+        "pre_mins_per_app": 44.96428571428572
       },
       {
         "pre_apps": 33.0,
@@ -16468,14 +16468,14 @@
         "pre_minutes": 1161.0,
         "pre_goals_p90": 0.1550387596899224,
         "pre_ga_p90": 0.3875968992248062,
-        "pre_mins_per_app": 41.464285714285715
+        "pre_mins_per_app": 41.46428571428572
       },
       {
         "pre_apps": 29.0,
         "pre_minutes": 857.0,
         "pre_goals_p90": 0.3150525087514585,
         "pre_ga_p90": 0.6301050175029171,
-        "pre_mins_per_app": 29.551724137931036
+        "pre_mins_per_app": 29.55172413793104
       },
       {
         "pre_apps": 39.0,
@@ -16636,7 +16636,7 @@
         "pre_minutes": 260.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 23.636363636363637
+        "pre_mins_per_app": 23.63636363636364
       },
       {
         "pre_apps": 10.0,
@@ -16895,7 +16895,7 @@
         "pre_minutes": 1561.0,
         "pre_goals_p90": 0.3459320948110186,
         "pre_ga_p90": 0.5188981422165279,
-        "pre_mins_per_app": 43.361111111111114
+        "pre_mins_per_app": 43.36111111111112
       },
       {
         "pre_apps": 31.0,
@@ -16916,7 +16916,7 @@
         "pre_minutes": 379.0,
         "pre_goals_p90": 0.4749340369393139,
         "pre_ga_p90": 0.4749340369393139,
-        "pre_mins_per_app": 29.153846153846153
+        "pre_mins_per_app": 29.153846153846157
       },
       {
         "pre_apps": 15.0,
@@ -16993,7 +16993,7 @@
         "pre_minutes": 2056.0,
         "pre_goals_p90": 0.2626459143968871,
         "pre_ga_p90": 0.306420233463035,
-        "pre_mins_per_app": 62.303030303030305
+        "pre_mins_per_app": 62.30303030303031
       },
       {
         "pre_apps": 33.0,
@@ -19151,7 +19151,7 @@
         "pre_minutes": 653.0,
         "pre_goals_p90": 0.4134762633996937,
         "pre_ga_p90": 0.5513016845329249,
-        "pre_mins_per_app": 54.416666666666664
+        "pre_mins_per_app": 54.41666666666666
       },
       {
         "pre_apps": 26.0,
@@ -19319,7 +19319,7 @@
         "pre_minutes": 1316.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0683890577507598,
-        "pre_mins_per_app": 62.666666666666664
+        "pre_mins_per_app": 62.66666666666666
       },
       {
         "pre_apps": 49.0,
@@ -19564,7 +19564,7 @@
         "pre_minutes": 539.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 44.916666666666664
+        "pre_mins_per_app": 44.91666666666666
       },
       {
         "pre_apps": 30.0,
@@ -20446,7 +20446,7 @@
         "pre_minutes": 1302.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0691244239631336,
-        "pre_mins_per_app": 56.608695652173914
+        "pre_mins_per_app": 56.60869565217392
       },
       {
         "pre_apps": 30.0,
@@ -20586,7 +20586,7 @@
         "pre_minutes": 925.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.1945945945945946,
-        "pre_mins_per_app": 61.666666666666664
+        "pre_mins_per_app": 61.66666666666666
       },
       {
         "pre_apps": 34.0,
@@ -22308,7 +22308,7 @@
         "pre_minutes": 1483.0,
         "pre_goals_p90": 0.0606877950101146,
         "pre_ga_p90": 0.0606877950101146,
-        "pre_mins_per_app": 61.791666666666664
+        "pre_mins_per_app": 61.79166666666666
       },
       {
         "pre_apps": 21.0,
@@ -22644,7 +22644,7 @@
         "pre_minutes": 815.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 58.214285714285715
+        "pre_mins_per_app": 58.21428571428572
       },
       {
         "pre_apps": 26.0,
@@ -24919,7 +24919,7 @@
         "pre_minutes": 835.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.1077844311377245,
-        "pre_mins_per_app": 55.666666666666664
+        "pre_mins_per_app": 55.66666666666666
       },
       {
         "pre_apps": 34.0,
@@ -25185,7 +25185,7 @@
         "pre_minutes": 500.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 41.666666666666664
+        "pre_mins_per_app": 41.66666666666666
       },
       {
         "pre_apps": 23.0,
@@ -25444,7 +25444,7 @@
         "pre_minutes": 1309.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 54.541666666666664
+        "pre_mins_per_app": 54.54166666666666
       },
       {
         "pre_apps": 32.0,
@@ -26690,7 +26690,7 @@
         "pre_minutes": 885.0,
         "pre_goals_p90": 0.1016949152542373,
         "pre_ga_p90": 0.1016949152542373,
-        "pre_mins_per_app": 63.214285714285715
+        "pre_mins_per_app": 63.21428571428572
       },
       {
         "pre_apps": 24.0,
@@ -26767,7 +26767,7 @@
         "pre_minutes": 911.0,
         "pre_goals_p90": 0.0987925356750823,
         "pre_ga_p90": 0.0987925356750823,
-        "pre_mins_per_app": 50.611111111111114
+        "pre_mins_per_app": 50.61111111111112
       },
       {
         "pre_apps": 29.0,
@@ -27110,7 +27110,7 @@
         "pre_minutes": 443.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 36.916666666666664
+        "pre_mins_per_app": 36.91666666666666
       },
       {
         "pre_apps": 14.0,
@@ -27131,7 +27131,7 @@
         "pre_minutes": 734.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 61.166666666666664
+        "pre_mins_per_app": 61.16666666666666
       },
       {
         "pre_apps": 27.0,
@@ -27334,7 +27334,7 @@
         "pre_minutes": 866.0,
         "pre_goals_p90": 0.207852193995381,
         "pre_ga_p90": 0.5196304849884527,
-        "pre_mins_per_app": 48.111111111111114
+        "pre_mins_per_app": 48.11111111111112
       },
       {
         "pre_apps": 26.0,
@@ -28167,7 +28167,7 @@
         "pre_minutes": 1684.0,
         "pre_goals_p90": 0.1603325415676959,
         "pre_ga_p90": 0.3206650831353919,
-        "pre_mins_per_app": 62.370370370370374
+        "pre_mins_per_app": 62.37037037037037
       },
       {
         "pre_apps": 17.0,
@@ -28300,7 +28300,7 @@
         "pre_minutes": 3246.0,
         "pre_goals_p90": 0.11090573012939,
         "pre_ga_p90": 0.277264325323475,
-        "pre_mins_per_app": 60.111111111111114
+        "pre_mins_per_app": 60.11111111111112
       },
       {
         "pre_apps": 39.0,
@@ -28314,7 +28314,7 @@
         "pre_minutes": 2942.0,
         "pre_goals_p90": 0.1223657375934738,
         "pre_ga_p90": 0.3670972127804215,
-        "pre_mins_per_app": 61.291666666666664
+        "pre_mins_per_app": 61.29166666666666
       },
       {
         "pre_apps": 26.0,
@@ -28979,7 +28979,7 @@
         "pre_minutes": 1333.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0675168792198049,
-        "pre_mins_per_app": 49.370370370370374
+        "pre_mins_per_app": 49.37037037037037
       },
       {
         "pre_apps": 26.0,
@@ -29399,7 +29399,7 @@
         "pre_minutes": 851.0,
         "pre_goals_p90": 0.1057579318448883,
         "pre_ga_p90": 0.2115158636897767,
-        "pre_mins_per_app": 56.733333333333334
+        "pre_mins_per_app": 56.73333333333333
       },
       {
         "pre_apps": 30.0,
@@ -29595,7 +29595,7 @@
         "pre_minutes": 282.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 25.636363636363637
+        "pre_mins_per_app": 25.63636363636364
       },
       {
         "pre_apps": 29.0,
@@ -29728,7 +29728,7 @@
         "pre_minutes": 491.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 40.916666666666664
+        "pre_mins_per_app": 40.91666666666666
       },
       {
         "pre_apps": 24.0,
@@ -29791,7 +29791,7 @@
         "pre_minutes": 746.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.1206434316353887,
-        "pre_mins_per_app": 62.166666666666664
+        "pre_mins_per_app": 62.16666666666666
       },
       {
         "pre_apps": 29.0,
@@ -30169,7 +30169,7 @@
         "pre_minutes": 1126.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 40.214285714285715
+        "pre_mins_per_app": 40.21428571428572
       },
       {
         "pre_apps": 41.0,
@@ -30673,7 +30673,7 @@
         "pre_minutes": 749.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 41.611111111111114
+        "pre_mins_per_app": 41.61111111111112
       },
       {
         "pre_apps": 18.0,
@@ -30743,7 +30743,7 @@
         "pre_minutes": 812.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.2216748768472906,
-        "pre_mins_per_app": 45.111111111111114
+        "pre_mins_per_app": 45.11111111111112
       },
       {
         "pre_apps": 10.0,
@@ -31156,7 +31156,7 @@
         "pre_minutes": 1363.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.132061628760088,
-        "pre_mins_per_app": 56.791666666666664
+        "pre_mins_per_app": 56.79166666666666
       },
       {
         "pre_apps": 14.0,
@@ -31170,7 +31170,7 @@
         "pre_minutes": 1150.0,
         "pre_goals_p90": 0.0782608695652174,
         "pre_ga_p90": 0.1565217391304348,
-        "pre_mins_per_app": 42.592592592592595
+        "pre_mins_per_app": 42.5925925925926
       },
       {
         "pre_apps": 22.0,
@@ -31268,7 +31268,7 @@
         "pre_minutes": 825.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.2181818181818181,
-        "pre_mins_per_app": 30.555555555555557
+        "pre_mins_per_app": 30.55555555555556
       },
       {
         "pre_apps": 14.0,
@@ -31870,7 +31870,7 @@
         "pre_minutes": 1063.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.1693320790216368,
-        "pre_mins_per_app": 44.291666666666664
+        "pre_mins_per_app": 44.29166666666666
       },
       {
         "pre_apps": 30.0,
@@ -32024,7 +32024,7 @@
         "pre_minutes": 1769.0,
         "pre_goals_p90": 0.2035048049745619,
         "pre_ga_p90": 0.2035048049745619,
-        "pre_mins_per_app": 36.854166666666664
+        "pre_mins_per_app": 36.85416666666666
       },
       {
         "pre_apps": 26.0,
@@ -32388,7 +32388,7 @@
         "pre_minutes": 665.0,
         "pre_goals_p90": 0.2706766917293233,
         "pre_ga_p90": 0.406015037593985,
-        "pre_mins_per_app": 55.416666666666664
+        "pre_mins_per_app": 55.41666666666666
       },
       {
         "pre_apps": 28.0,
@@ -32976,7 +32976,7 @@
         "pre_minutes": 2067.0,
         "pre_goals_p90": 0.0435413642960812,
         "pre_ga_p90": 0.2177068214804064,
-        "pre_mins_per_app": 57.416666666666664
+        "pre_mins_per_app": 57.41666666666666
       },
       {
         "pre_apps": 29.0,
@@ -33011,7 +33011,7 @@
         "pre_minutes": 449.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.2004454342984409,
-        "pre_mins_per_app": 29.933333333333337
+        "pre_mins_per_app": 29.933333333333334
       },
       {
         "pre_apps": 20.0,
@@ -33200,7 +33200,7 @@
         "pre_minutes": 1532.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.2349869451697128,
-        "pre_mins_per_app": 54.714285714285715
+        "pre_mins_per_app": 54.71428571428572
       },
       {
         "pre_apps": 33.0,
@@ -33354,7 +33354,7 @@
         "pre_minutes": 1570.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.1146496815286624,
-        "pre_mins_per_app": 50.645161290322584
+        "pre_mins_per_app": 50.64516129032258
       },
       {
         "pre_apps": 11.0,
@@ -33375,7 +33375,7 @@
         "pre_minutes": 470.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 39.166666666666664
+        "pre_mins_per_app": 39.16666666666666
       },
       {
         "pre_apps": 20.0,
@@ -33844,7 +33844,7 @@
         "pre_minutes": 1296.0,
         "pre_goals_p90": 0.0694444444444444,
         "pre_ga_p90": 0.0694444444444444,
-        "pre_mins_per_app": 61.714285714285715
+        "pre_mins_per_app": 61.71428571428572
       },
       {
         "pre_apps": 11.0,
@@ -34068,7 +34068,7 @@
         "pre_minutes": 1249.0,
         "pre_goals_p90": 0.288230584467574,
         "pre_ga_p90": 0.288230584467574,
-        "pre_mins_per_app": 59.476190476190474
+        "pre_mins_per_app": 59.47619047619048
       },
       {
         "pre_apps": 31.0,
@@ -34138,7 +34138,7 @@
         "pre_minutes": 1749.0,
         "pre_goals_p90": 0.0514579759862778,
         "pre_ga_p90": 0.2572898799313893,
-        "pre_mins_per_app": 62.464285714285715
+        "pre_mins_per_app": 62.46428571428572
       },
       {
         "pre_apps": 28.0,
@@ -34376,7 +34376,7 @@
         "pre_minutes": 644.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.139751552795031,
-        "pre_mins_per_app": 53.666666666666664
+        "pre_mins_per_app": 53.66666666666666
       },
       {
         "pre_apps": 31.0,
@@ -34992,7 +34992,7 @@
         "pre_minutes": 724.0,
         "pre_goals_p90": 0.1243093922651933,
         "pre_ga_p90": 0.1243093922651933,
-        "pre_mins_per_app": 51.714285714285715
+        "pre_mins_per_app": 51.71428571428572
       },
       {
         "pre_apps": 12.0,
@@ -35279,7 +35279,7 @@
         "pre_minutes": 1624.0,
         "pre_goals_p90": 0.0554187192118226,
         "pre_ga_p90": 0.0554187192118226,
-        "pre_mins_per_app": 60.148148148148145
+        "pre_mins_per_app": 60.14814814814815
       },
       {
         "pre_apps": 45.0,
@@ -35314,7 +35314,7 @@
         "pre_minutes": 713.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 59.416666666666664
+        "pre_mins_per_app": 59.41666666666666
       },
       {
         "pre_apps": 35.0,
@@ -38489,7 +38489,7 @@
         "pre_minutes": 874.0,
         "pre_goals_p90": 0.4118993135011441,
         "pre_ga_p90": 1.0297482837528604,
-        "pre_mins_per_app": 51.411764705882355
+        "pre_mins_per_app": 51.41176470588236
       },
       {
         "pre_apps": 19.0,
@@ -38839,7 +38839,7 @@
         "pre_minutes": 883.0,
         "pre_goals_p90": 0.101925254813137,
         "pre_ga_p90": 0.101925254813137,
-        "pre_mins_per_app": 36.791666666666664
+        "pre_mins_per_app": 36.79166666666666
       },
       {
         "pre_apps": 25.0,
@@ -39056,7 +39056,7 @@
         "pre_minutes": 289.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.3114186851211072,
-        "pre_mins_per_app": 24.083333333333332
+        "pre_mins_per_app": 24.08333333333333
       },
       {
         "pre_apps": 36.0,
@@ -39182,7 +39182,7 @@
         "pre_minutes": 602.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.2990033222591362,
-        "pre_mins_per_app": 50.166666666666664
+        "pre_mins_per_app": 50.16666666666666
       },
       {
         "pre_apps": 43.0,
@@ -39378,7 +39378,7 @@
         "pre_minutes": 2146.0,
         "pre_goals_p90": 0.0419384902143522,
         "pre_ga_p90": 0.2096924510717614,
-        "pre_mins_per_app": 56.473684210526315
+        "pre_mins_per_app": 56.47368421052632
       },
       {
         "pre_apps": 20.0,
@@ -39406,7 +39406,7 @@
         "pre_minutes": 1557.0,
         "pre_goals_p90": 0.1734104046242774,
         "pre_ga_p90": 0.1734104046242774,
-        "pre_mins_per_app": 55.607142857142854
+        "pre_mins_per_app": 55.60714285714285
       },
       {
         "pre_apps": 14.0,
@@ -39490,7 +39490,7 @@
         "pre_minutes": 1950.0,
         "pre_goals_p90": 0.1846153846153846,
         "pre_ga_p90": 0.2307692307692307,
-        "pre_mins_per_app": 55.714285714285715
+        "pre_mins_per_app": 55.71428571428572
       },
       {
         "pre_apps": 40.0,
@@ -39665,7 +39665,7 @@
         "pre_minutes": 852.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 60.857142857142854
+        "pre_mins_per_app": 60.85714285714285
       },
       {
         "pre_apps": 35.0,
@@ -39749,7 +39749,7 @@
         "pre_minutes": 1326.0,
         "pre_goals_p90": 0.3393665158371041,
         "pre_ga_p90": 0.6787330316742082,
-        "pre_mins_per_app": 49.111111111111114
+        "pre_mins_per_app": 49.11111111111112
       },
       {
         "pre_apps": 32.0,
@@ -39798,7 +39798,7 @@
         "pre_minutes": 831.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 46.166666666666664
+        "pre_mins_per_app": 46.16666666666666
       },
       {
         "pre_apps": 26.0,
@@ -39819,7 +39819,7 @@
         "pre_minutes": 892.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.2017937219730941,
-        "pre_mins_per_app": 63.714285714285715
+        "pre_mins_per_app": 63.71428571428572
       },
       {
         "pre_apps": 30.0,
@@ -40519,7 +40519,7 @@
         "pre_minutes": 1036.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0868725868725868,
-        "pre_mins_per_app": 43.166666666666664
+        "pre_mins_per_app": 43.16666666666666
       },
       {
         "pre_apps": 34.0,
@@ -40890,7 +40890,7 @@
         "pre_minutes": 857.0,
         "pre_goals_p90": 0.2100350058343057,
         "pre_ga_p90": 0.2100350058343057,
-        "pre_mins_per_app": 61.214285714285715
+        "pre_mins_per_app": 61.21428571428572
       },
       {
         "pre_apps": 19.0,
@@ -40995,7 +40995,7 @@
         "pre_minutes": 1516.0,
         "pre_goals_p90": 0.1187335092348284,
         "pre_ga_p90": 0.2374670184696569,
-        "pre_mins_per_app": 56.148148148148145
+        "pre_mins_per_app": 56.14814814814815
       },
       {
         "pre_apps": 10.0,
@@ -41184,7 +41184,7 @@
         "pre_minutes": 1085.0,
         "pre_goals_p90": 0.1658986175115207,
         "pre_ga_p90": 0.663594470046083,
-        "pre_mins_per_app": 51.666666666666664
+        "pre_mins_per_app": 51.66666666666666
       },
       {
         "pre_apps": 32.0,
@@ -41443,7 +41443,7 @@
         "pre_minutes": 811.0,
         "pre_goals_p90": 0.1109741060419235,
         "pre_ga_p90": 0.1109741060419235,
-        "pre_mins_per_app": 47.705882352941174
+        "pre_mins_per_app": 47.70588235294117
       },
       {
         "pre_apps": 29.0,
@@ -41562,7 +41562,7 @@
         "pre_minutes": 1295.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 61.666666666666664
+        "pre_mins_per_app": 61.66666666666666
       },
       {
         "pre_apps": 26.0,
@@ -41611,7 +41611,7 @@
         "pre_minutes": 1420.0,
         "pre_goals_p90": 0.1267605633802817,
         "pre_ga_p90": 0.2535211267605634,
-        "pre_mins_per_app": 59.166666666666664
+        "pre_mins_per_app": 59.16666666666666
       },
       {
         "pre_apps": 22.0,
@@ -41688,7 +41688,7 @@
         "pre_minutes": 1525.0,
         "pre_goals_p90": 0.0590163934426229,
         "pre_ga_p90": 0.2950819672131147,
-        "pre_mins_per_app": 54.464285714285715
+        "pre_mins_per_app": 54.46428571428572
       },
       {
         "pre_apps": 20.0,
@@ -41877,7 +41877,7 @@
         "pre_minutes": 1952.0,
         "pre_goals_p90": 0.0461065573770491,
         "pre_ga_p90": 0.0461065573770491,
-        "pre_mins_per_app": 57.411764705882355
+        "pre_mins_per_app": 57.41176470588236
       },
       {
         "pre_apps": 17.0,
@@ -42045,7 +42045,7 @@
         "pre_minutes": 940.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.2872340425531914,
-        "pre_mins_per_app": 49.473684210526315
+        "pre_mins_per_app": 49.47368421052632
       },
       {
         "pre_apps": 36.0,
@@ -42129,7 +42129,7 @@
         "pre_minutes": 2227.0,
         "pre_goals_p90": 0.2020655590480467,
         "pre_ga_p90": 0.4445442299057027,
-        "pre_mins_per_app": 61.861111111111114
+        "pre_mins_per_app": 61.86111111111112
       },
       {
         "pre_apps": 14.0,
@@ -42178,7 +42178,7 @@
         "pre_minutes": 731.0,
         "pre_goals_p90": 0.2462380300957592,
         "pre_ga_p90": 0.7387140902872777,
-        "pre_mins_per_app": 52.214285714285715
+        "pre_mins_per_app": 52.21428571428572
       },
       {
         "pre_apps": 31.0,
@@ -42213,7 +42213,7 @@
         "pre_minutes": 902.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0997782705099778,
-        "pre_mins_per_app": 47.473684210526315
+        "pre_mins_per_app": 47.47368421052632
       },
       {
         "pre_apps": 22.0,
@@ -42269,7 +42269,7 @@
         "pre_minutes": 956.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 53.111111111111114
+        "pre_mins_per_app": 53.11111111111112
       },
       {
         "pre_apps": 18.0,
@@ -42304,7 +42304,7 @@
         "pre_minutes": 1337.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 63.666666666666664
+        "pre_mins_per_app": 63.66666666666666
       },
       {
         "pre_apps": 23.0,
@@ -42885,7 +42885,7 @@
         "pre_minutes": 1895.0,
         "pre_goals_p90": 0.0949868073878627,
         "pre_ga_p90": 0.3324538258575197,
-        "pre_mins_per_app": 63.166666666666664
+        "pre_mins_per_app": 63.16666666666666
       },
       {
         "pre_apps": 42.0,
@@ -43095,7 +43095,7 @@
         "pre_minutes": 680.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.1323529411764706,
-        "pre_mins_per_app": 56.666666666666664
+        "pre_mins_per_app": 56.66666666666666
       },
       {
         "pre_apps": 32.0,
@@ -43228,7 +43228,7 @@
         "pre_minutes": 815.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 58.214285714285715
+        "pre_mins_per_app": 58.21428571428572
       },
       {
         "pre_apps": 36.0,
@@ -43319,7 +43319,7 @@
         "pre_minutes": 1663.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 61.592592592592595
+        "pre_mins_per_app": 61.5925925925926
       },
       {
         "pre_apps": 34.0,
@@ -43599,14 +43599,14 @@
         "pre_minutes": 1291.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.069713400464756,
-        "pre_mins_per_app": 53.791666666666664
+        "pre_mins_per_app": 53.79166666666666
       },
       {
         "pre_apps": 21.0,
         "pre_minutes": 774.0,
         "pre_goals_p90": 0.1162790697674418,
         "pre_ga_p90": 0.1162790697674418,
-        "pre_mins_per_app": 36.857142857142854
+        "pre_mins_per_app": 36.85714285714285
       },
       {
         "pre_apps": 21.0,
@@ -43900,7 +43900,7 @@
         "pre_minutes": 875.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 51.47058823529411
+        "pre_mins_per_app": 51.47058823529412
       },
       {
         "pre_apps": 32.0,
@@ -44173,7 +44173,7 @@
         "pre_minutes": 1845.0,
         "pre_goals_p90": 0.2439024390243902,
         "pre_ga_p90": 0.3902439024390244,
-        "pre_mins_per_app": 52.714285714285715
+        "pre_mins_per_app": 52.71428571428572
       },
       {
         "pre_apps": 11.0,
@@ -44215,7 +44215,7 @@
         "pre_minutes": 1045.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 61.47058823529411
+        "pre_mins_per_app": 61.47058823529412
       },
       {
         "pre_apps": 28.0,
@@ -44250,7 +44250,7 @@
         "pre_minutes": 940.0,
         "pre_goals_p90": 0.0957446808510638,
         "pre_ga_p90": 0.2872340425531914,
-        "pre_mins_per_app": 62.666666666666664
+        "pre_mins_per_app": 62.66666666666666
       },
       {
         "pre_apps": 30.0,
@@ -44768,7 +44768,7 @@
         "pre_minutes": 339.0,
         "pre_goals_p90": 0.2654867256637168,
         "pre_ga_p90": 0.2654867256637168,
-        "pre_mins_per_app": 26.076923076923077
+        "pre_mins_per_app": 26.07692307692308
       },
       {
         "pre_apps": 38.0,
@@ -45048,7 +45048,7 @@
         "pre_minutes": 976.0,
         "pre_goals_p90": 0.0922131147540983,
         "pre_ga_p90": 0.1844262295081967,
-        "pre_mins_per_app": 46.476190476190474
+        "pre_mins_per_app": 46.47619047619048
       },
       {
         "pre_apps": 24.0,
@@ -45321,7 +45321,7 @@
         "pre_minutes": 333.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.2702702702702703,
-        "pre_mins_per_app": 30.272727272727273
+        "pre_mins_per_app": 30.272727272727277
       },
       {
         "pre_apps": 18.0,
@@ -45342,7 +45342,7 @@
         "pre_minutes": 1612.0,
         "pre_goals_p90": 0.1116625310173697,
         "pre_ga_p90": 0.2233250620347394,
-        "pre_mins_per_app": 53.733333333333334
+        "pre_mins_per_app": 53.73333333333333
       },
       {
         "pre_apps": 28.0,
@@ -45580,7 +45580,7 @@
         "pre_minutes": 337.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 28.083333333333332
+        "pre_mins_per_app": 28.08333333333333
       },
       {
         "pre_apps": 24.0,
@@ -45769,7 +45769,7 @@
         "pre_minutes": 1005.0,
         "pre_goals_p90": 0.0895522388059701,
         "pre_ga_p90": 0.0895522388059701,
-        "pre_mins_per_app": 47.857142857142854
+        "pre_mins_per_app": 47.85714285714285
       },
       {
         "pre_apps": 30.0,
@@ -45867,7 +45867,7 @@
         "pre_minutes": 731.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.1231190150478796,
-        "pre_mins_per_app": 48.733333333333334
+        "pre_mins_per_app": 48.73333333333333
       },
       {
         "pre_apps": 27.0,
@@ -46084,7 +46084,7 @@
         "pre_minutes": 1849.0,
         "pre_goals_p90": 0.0486749594375338,
         "pre_ga_p90": 0.243374797187669,
-        "pre_mins_per_app": 59.645161290322584
+        "pre_mins_per_app": 59.64516129032258
       },
       {
         "pre_apps": 37.0,
@@ -46399,7 +46399,7 @@
         "pre_minutes": 1578.0,
         "pre_goals_p90": 0.2281368821292775,
         "pre_ga_p90": 0.6844106463878327,
-        "pre_mins_per_app": 56.357142857142854
+        "pre_mins_per_app": 56.35714285714285
       },
       {
         "pre_apps": 29.0,
@@ -46490,7 +46490,7 @@
         "pre_minutes": 1069.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 50.904761904761905
+        "pre_mins_per_app": 50.90476190476191
       },
       {
         "pre_apps": 20.0,
@@ -46644,7 +46644,7 @@
         "pre_minutes": 1903.0,
         "pre_goals_p90": 0.1891749868628481,
         "pre_ga_p90": 0.2364687335785601,
-        "pre_mins_per_app": 52.861111111111114
+        "pre_mins_per_app": 52.86111111111112
       },
       {
         "pre_apps": 26.0,
@@ -46812,7 +46812,7 @@
         "pre_minutes": 509.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.5304518664047151,
-        "pre_mins_per_app": 29.941176470588236
+        "pre_mins_per_app": 29.94117647058824
       },
       {
         "pre_apps": 34.0,
@@ -47393,7 +47393,7 @@
         "pre_minutes": 201.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 18.272727272727273
+        "pre_mins_per_app": 18.272727272727277
       },
       {
         "pre_apps": 49.0,
@@ -47470,7 +47470,7 @@
         "pre_minutes": 929.0,
         "pre_goals_p90": 0.0968783638320775,
         "pre_ga_p90": 0.0968783638320775,
-        "pre_mins_per_app": 51.611111111111114
+        "pre_mins_per_app": 51.61111111111112
       },
       {
         "pre_apps": 16.0,
@@ -47645,7 +47645,7 @@
         "pre_minutes": 1078.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 63.411764705882355
+        "pre_mins_per_app": 63.41176470588236
       },
       {
         "pre_apps": 26.0,
@@ -47743,7 +47743,7 @@
         "pre_minutes": 1805.0,
         "pre_goals_p90": 0.2493074792243767,
         "pre_ga_p90": 0.299168975069252,
-        "pre_mins_per_app": 58.225806451612904
+        "pre_mins_per_app": 58.2258064516129
       },
       {
         "pre_apps": 33.0,
@@ -48023,7 +48023,7 @@
         "pre_minutes": 705.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.1276595744680851,
-        "pre_mins_per_app": 39.166666666666664
+        "pre_mins_per_app": 39.16666666666666
       },
       {
         "pre_apps": 25.0,
@@ -48667,7 +48667,7 @@
         "pre_minutes": 1462.0,
         "pre_goals_p90": 0.0615595075239398,
         "pre_ga_p90": 0.1231190150478796,
-        "pre_mins_per_app": 54.148148148148145
+        "pre_mins_per_app": 54.14814814814815
       },
       {
         "pre_apps": 24.0,
@@ -48835,7 +48835,7 @@
         "pre_minutes": 2200.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0409090909090909,
-        "pre_mins_per_app": 61.111111111111114
+        "pre_mins_per_app": 61.11111111111112
       },
       {
         "pre_apps": 41.0,
@@ -48919,7 +48919,7 @@
         "pre_minutes": 1690.0,
         "pre_goals_p90": 0.0532544378698224,
         "pre_ga_p90": 0.1065088757396449,
-        "pre_mins_per_app": 62.592592592592595
+        "pre_mins_per_app": 62.5925925925926
       },
       {
         "pre_apps": 17.0,
@@ -49241,7 +49241,7 @@
         "pre_minutes": 1165.0,
         "pre_goals_p90": 0.1545064377682403,
         "pre_ga_p90": 0.3090128755364806,
-        "pre_mins_per_app": 55.476190476190474
+        "pre_mins_per_app": 55.47619047619048
       },
       {
         "pre_apps": 18.0,
@@ -49717,7 +49717,7 @@
         "pre_minutes": 1588.0,
         "pre_goals_p90": 0.1700251889168765,
         "pre_ga_p90": 0.2267002518891687,
-        "pre_mins_per_app": 56.714285714285715
+        "pre_mins_per_app": 56.71428571428572
       },
       {
         "pre_apps": 12.0,
@@ -49941,7 +49941,7 @@
         "pre_minutes": 1704.0,
         "pre_goals_p90": 0.0528169014084507,
         "pre_ga_p90": 0.0528169014084507,
-        "pre_mins_per_app": 63.111111111111114
+        "pre_mins_per_app": 63.11111111111112
       },
       {
         "pre_apps": 31.0,
@@ -50095,7 +50095,7 @@
         "pre_minutes": 677.0,
         "pre_goals_p90": 0.2658788774002954,
         "pre_ga_p90": 0.3988183161004431,
-        "pre_mins_per_app": 56.416666666666664
+        "pre_mins_per_app": 56.41666666666666
       },
       {
         "pre_apps": 22.0,
@@ -50179,7 +50179,7 @@
         "pre_minutes": 407.0,
         "pre_goals_p90": 0.4422604422604422,
         "pre_ga_p90": 0.4422604422604422,
-        "pre_mins_per_app": 23.941176470588236
+        "pre_mins_per_app": 23.94117647058824
       },
       {
         "pre_apps": 13.0,
@@ -50494,7 +50494,7 @@
         "pre_minutes": 348.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 31.636363636363637
+        "pre_mins_per_app": 31.63636363636364
       },
       {
         "pre_apps": 11.0,
@@ -50529,14 +50529,14 @@
         "pre_minutes": 1205.0,
         "pre_goals_p90": 0.1493775933609958,
         "pre_ga_p90": 0.2987551867219917,
-        "pre_mins_per_app": 63.421052631578945
+        "pre_mins_per_app": 63.42105263157895
       },
       {
         "pre_apps": 14.0,
         "pre_minutes": 808.0,
         "pre_goals_p90": 0.1113861386138613,
         "pre_ga_p90": 0.1113861386138613,
-        "pre_mins_per_app": 57.714285714285715
+        "pre_mins_per_app": 57.71428571428572
       },
       {
         "pre_apps": 11.0,
@@ -50634,7 +50634,7 @@
         "pre_minutes": 261.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 20.076923076923077
+        "pre_mins_per_app": 20.07692307692308
       },
       {
         "pre_apps": 13.0,
@@ -50998,7 +50998,7 @@
         "pre_minutes": 1102.0,
         "pre_goals_p90": 0.0816696914700544,
         "pre_ga_p90": 0.1633393829401088,
-        "pre_mins_per_app": 36.733333333333334
+        "pre_mins_per_app": 36.73333333333333
       },
       {
         "pre_apps": 42.0,
@@ -51187,7 +51187,7 @@
         "pre_minutes": 2166.0,
         "pre_goals_p90": 0.1246537396121883,
         "pre_ga_p90": 0.3739612188365651,
-        "pre_mins_per_app": 63.705882352941174
+        "pre_mins_per_app": 63.70588235294117
       },
       {
         "pre_apps": 35.0,
@@ -51467,7 +51467,7 @@
         "pre_minutes": 808.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 38.476190476190474
+        "pre_mins_per_app": 38.47619047619048
       },
       {
         "pre_apps": 29.0,
@@ -51495,7 +51495,7 @@
         "pre_minutes": 1009.0,
         "pre_goals_p90": 0.0891972249752229,
         "pre_ga_p90": 0.1783944499504459,
-        "pre_mins_per_app": 42.041666666666664
+        "pre_mins_per_app": 42.04166666666666
       },
       {
         "pre_apps": 17.0,
@@ -52125,7 +52125,7 @@
         "pre_minutes": 2084.0,
         "pre_goals_p90": 0.0863723608445297,
         "pre_ga_p90": 0.1727447216890595,
-        "pre_mins_per_app": 59.542857142857144
+        "pre_mins_per_app": 59.54285714285714
       },
       {
         "pre_apps": 19.0,
@@ -52230,7 +52230,7 @@
         "pre_minutes": 1329.0,
         "pre_goals_p90": 0.1354401805869074,
         "pre_ga_p90": 0.4063205417607223,
-        "pre_mins_per_app": 47.464285714285715
+        "pre_mins_per_app": 47.46428571428572
       },
       {
         "pre_apps": 26.0,
@@ -52258,7 +52258,7 @@
         "pre_minutes": 1029.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.1749271137026239,
-        "pre_mins_per_app": 57.166666666666664
+        "pre_mins_per_app": 57.16666666666666
       },
       {
         "pre_apps": 27.0,
@@ -52349,14 +52349,14 @@
         "pre_minutes": 952.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0945378151260504,
-        "pre_mins_per_app": 31.733333333333334
+        "pre_mins_per_app": 31.73333333333333
       },
       {
         "pre_apps": 24.0,
         "pre_minutes": 707.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.1272984441301273,
-        "pre_mins_per_app": 29.458333333333332
+        "pre_mins_per_app": 29.45833333333333
       },
       {
         "pre_apps": 40.0,
@@ -52384,7 +52384,7 @@
         "pre_minutes": 1897.0,
         "pre_goals_p90": 0.0948866631523458,
         "pre_ga_p90": 0.1897733263046916,
-        "pre_mins_per_app": 49.921052631578945
+        "pre_mins_per_app": 49.92105263157895
       },
       {
         "pre_apps": 35.0,
@@ -52412,7 +52412,7 @@
         "pre_minutes": 1020.0,
         "pre_goals_p90": 0.088235294117647,
         "pre_ga_p90": 0.088235294117647,
-        "pre_mins_per_app": 56.666666666666664
+        "pre_mins_per_app": 56.66666666666666
       },
       {
         "pre_apps": 33.0,
@@ -52510,7 +52510,7 @@
         "pre_minutes": 485.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.1855670103092783,
-        "pre_mins_per_app": 23.095238095238095
+        "pre_mins_per_app": 23.09523809523809
       },
       {
         "pre_apps": 28.0,
@@ -52727,7 +52727,7 @@
         "pre_minutes": 1717.0,
         "pre_goals_p90": 0.157251019219569,
         "pre_ga_p90": 0.157251019219569,
-        "pre_mins_per_app": 57.233333333333334
+        "pre_mins_per_app": 57.23333333333333
       },
       {
         "pre_apps": 24.0,
@@ -53000,7 +53000,7 @@
         "pre_minutes": 1302.0,
         "pre_goals_p90": 0.2073732718894009,
         "pre_ga_p90": 0.4147465437788018,
-        "pre_mins_per_app": 56.608695652173914
+        "pre_mins_per_app": 56.60869565217392
       },
       {
         "pre_apps": 31.0,
@@ -53028,7 +53028,7 @@
         "pre_minutes": 348.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.5172413793103449,
-        "pre_mins_per_app": 31.636363636363637
+        "pre_mins_per_app": 31.63636363636364
       },
       {
         "pre_apps": 42.0,
@@ -53112,21 +53112,21 @@
         "pre_minutes": 599.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.1502504173622704,
-        "pre_mins_per_app": 49.916666666666664
+        "pre_mins_per_app": 49.91666666666666
       },
       {
         "pre_apps": 21.0,
         "pre_minutes": 1257.0,
         "pre_goals_p90": 0.071599045346062,
         "pre_ga_p90": 0.071599045346062,
-        "pre_mins_per_app": 59.857142857142854
+        "pre_mins_per_app": 59.85714285714285
       },
       {
         "pre_apps": 29.0,
         "pre_minutes": 1358.0,
         "pre_goals_p90": 0.1325478645066274,
         "pre_ga_p90": 0.3313696612665684,
-        "pre_mins_per_app": 46.827586206896555
+        "pre_mins_per_app": 46.82758620689656
       },
       {
         "pre_apps": 40.0,
@@ -53287,7 +53287,7 @@
         "pre_minutes": 1453.0,
         "pre_goals_p90": 0.0619408121128699,
         "pre_ga_p90": 0.0619408121128699,
-        "pre_mins_per_app": 60.541666666666664
+        "pre_mins_per_app": 60.54166666666666
       },
       {
         "pre_apps": 24.0,
@@ -53343,14 +53343,14 @@
         "pre_minutes": 1070.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.0,
-        "pre_mins_per_app": 38.214285714285715
+        "pre_mins_per_app": 38.21428571428572
       },
       {
         "pre_apps": 31.0,
         "pre_minutes": 1694.0,
         "pre_goals_p90": 0.371900826446281,
         "pre_ga_p90": 0.4781582054309327,
-        "pre_mins_per_app": 54.645161290322584
+        "pre_mins_per_app": 54.64516129032258
       },
       {
         "pre_apps": 10.0,
@@ -53385,7 +53385,7 @@
         "pre_minutes": 1396.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.1934097421203438,
-        "pre_mins_per_app": 58.166666666666664
+        "pre_mins_per_app": 58.16666666666666
       },
       {
         "pre_apps": 33.0,
@@ -53623,14 +53623,14 @@
         "pre_minutes": 670.0,
         "pre_goals_p90": 0.2686567164179104,
         "pre_ga_p90": 0.2686567164179104,
-        "pre_mins_per_app": 39.411764705882355
+        "pre_mins_per_app": 39.41176470588236
       },
       {
         "pre_apps": 27.0,
         "pre_minutes": 1314.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.136986301369863,
-        "pre_mins_per_app": 48.666666666666664
+        "pre_mins_per_app": 48.66666666666666
       },
       {
         "pre_apps": 32.0,
@@ -53651,7 +53651,7 @@
         "pre_minutes": 484.0,
         "pre_goals_p90": 0.371900826446281,
         "pre_ga_p90": 0.371900826446281,
-        "pre_mins_per_app": 28.470588235294116
+        "pre_mins_per_app": 28.47058823529412
       },
       {
         "pre_apps": 30.0,
@@ -53784,7 +53784,7 @@
         "pre_minutes": 790.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.3417721518987341,
-        "pre_mins_per_app": 26.333333333333332
+        "pre_mins_per_app": 26.33333333333333
       },
       {
         "pre_apps": 21.0,
@@ -53938,7 +53938,7 @@
         "pre_minutes": 1427.0,
         "pre_goals_p90": 0.1261387526278906,
         "pre_ga_p90": 0.2522775052557813,
-        "pre_mins_per_app": 41.97058823529411
+        "pre_mins_per_app": 41.97058823529412
       },
       {
         "pre_apps": 33.0,
@@ -53952,7 +53952,7 @@
         "pre_minutes": 1279.0,
         "pre_goals_p90": 0.1407349491790461,
         "pre_ga_p90": 0.2814698983580923,
-        "pre_mins_per_app": 53.291666666666664
+        "pre_mins_per_app": 53.29166666666666
       },
       {
         "pre_apps": 31.0,
@@ -54029,7 +54029,7 @@
         "pre_minutes": 2089.0,
         "pre_goals_p90": 0.1723312589755864,
         "pre_ga_p90": 0.2584968884633796,
-        "pre_mins_per_app": 63.303030303030305
+        "pre_mins_per_app": 63.30303030303031
       },
       {
         "pre_apps": 35.0,
@@ -54603,7 +54603,7 @@
         "pre_minutes": 2023.0,
         "pre_goals_p90": 0.0,
         "pre_ga_p90": 0.1334651507661888,
-        "pre_mins_per_app": 61.303030303030305
+        "pre_mins_per_app": 61.30303030303031
       },
       {
         "pre_apps": 42.0,
@@ -54645,7 +54645,7 @@
         "pre_minutes": 2222.0,
         "pre_goals_p90": 0.2025202520252025,
         "pre_ga_p90": 0.4455445544554455,
-        "pre_mins_per_app": 41.148148148148145
+        "pre_mins_per_app": 41.14814814814815
       },
       {
         "pre_apps": 20.0,
@@ -54802,17 +54802,17 @@
     "club_quality_ratio"
   ],
   "fee_regression": {
-    "slope": 1.0714250151913376,
-    "intercept": -1.2472713609758312
+    "slope": 1.0714250151913323,
+    "intercept": -1.2472713609758501
   },
   "club_value_rating_regression": {
     "to": {
-      "slope": 8.475282676320386,
-      "intercept": -108.66077617823684
+      "slope": 8.522114058540888,
+      "intercept": -109.52974139272321
     },
     "from": {
-      "slope": 4.9426165373593465,
-      "intercept": -40.39385293175807
+      "slope": 4.992424730014332,
+      "intercept": -41.30184459124763
     }
   },
   "pct_free_transfers": 0.433,
@@ -54824,61 +54824,61 @@
     "_default": 182.26818647540983
   },
   "league_success_baseline_to": {
-    "BE1": 51.0,
+    "BE1": 50.9,
     "DK1": 53.8,
-    "ES1": 49.0,
-    "FR1": 50.6,
-    "GB1": 48.9,
+    "ES1": 49.1,
+    "FR1": 50.5,
+    "GB1": 48.8,
     "GR1": 47.9,
-    "IT1": 48.3,
+    "IT1": 48.4,
     "L1": 50.3,
     "NL1": 51.7,
-    "PO1": 50.7,
-    "RU1": 48.2,
-    "SC1": 50.4,
-    "TR1": 48.0,
+    "PO1": 50.8,
+    "RU1": 48.3,
+    "SC1": 50.3,
+    "TR1": 47.9,
     "UKR1": 48.2
   },
   "league_success_baseline_from": {
-    "BE1": 50.8,
-    "DK1": 50.7,
-    "ES1": 50.2,
+    "BE1": 50.9,
+    "DK1": 50.6,
+    "ES1": 50.3,
     "FR1": 50.0,
     "GB1": 51.0,
-    "GR1": 45.9,
+    "GR1": 46.0,
     "IT1": 48.3,
     "L1": 52.1,
     "NL1": 51.3,
-    "PO1": 49.6,
-    "RU1": 46.0,
-    "SC1": 49.1,
-    "TR1": 47.4,
+    "PO1": 49.5,
+    "RU1": 46.2,
+    "SC1": 49.2,
+    "TR1": 47.2,
     "UKR1": 48.1
   },
   "position_success_baseline": {
     "Attack": 50.0,
     "Defender": 47.9,
-    "Goalkeeper": 46.7,
+    "Goalkeeper": 46.8,
     "Midfield": 50.8
   },
   "sub_position_success_baseline": {
-    "Attacking Midfield": 57.9,
+    "Attacking Midfield": 57.7,
     "Central Midfield": 49.8,
     "Centre-Back": 46.8,
     "Centre-Forward": 49.5,
-    "Defensive Midfield": 46.9,
-    "Goalkeeper": 46.7,
+    "Defensive Midfield": 47.0,
+    "Goalkeeper": 46.8,
     "Left Midfield": 53.9,
     "Left Winger": 51.2,
-    "Left-Back": 48.4,
-    "Right Midfield": 55.9,
-    "Right Winger": 50.0,
-    "Right-Back": 48.1,
-    "Second Striker": 58.4
+    "Left-Back": 48.2,
+    "Right Midfield": 55.6,
+    "Right Winger": 50.1,
+    "Right-Back": 48.2,
+    "Second Striker": 58.2
   },
   "foot_success_baseline": {
     "both": 50.3,
-    "left": 50.9,
+    "left": 51.0,
     "right": 48.8
   },
   "pretransfer_percentile_tables": {
@@ -54943,7 +54943,7 @@
         6.873210733511907,
         6.88,
         6.886865688206106,
-        6.8999999999999995,
+        6.9,
         6.91,
         6.920736879300725,
         6.937853102876211,
@@ -55238,7 +55238,7 @@
         6.844673663751215,
         6.851204472477064,
         6.860333689839573,
-        6.873278197911697,
+        6.873278197911698,
         6.88,
         6.890776399217221,
         6.900000000000001,
@@ -55247,7 +55247,7 @@
         6.9431536000000005,
         6.953605571518024,
         6.9681869585360205,
-        6.9799999999999995,
+        6.98,
         6.985292568825316,
         6.99,
         7.0,
@@ -55273,7 +55273,7 @@
         7.2,
         7.218297918957442,
         7.230869698033708,
-        7.241038805970151,
+        7.24103880597015,
         7.26,
         7.27,
         7.28,
@@ -56106,18 +56106,18 @@
         1.7307692307692308,
         1.7651964689928823,
         1.7972677045914507,
-        1.830728097397947,
+        1.8307280973979472,
         1.859516939836276,
         1.9053782810087494,
         1.9467885747723366,
         1.9993758127438237,
         2.0419646612759474,
-        2.103246433841614,
+        2.1032464338416137,
         2.1417263475310966,
         2.185683166428094,
-        2.232193393768886,
+        2.2321933937688856,
         2.3007220283514997,
-        2.3395155241134855,
+        2.339515524113486,
         2.4252543639409123,
         2.504046493181925,
         2.63547441726966,
@@ -56223,7 +56223,7 @@
         1.5034347214530808,
         1.5915418502202625,
         1.7083688276591362,
-        1.813112826216471,
+        1.8131128262164715,
         1.9440534734370827,
         2.31527883880825,
         3.15
@@ -56414,16 +56414,16 @@
         1.7393276406935885,
         1.7756486286137878,
         1.799880024237528,
-        1.8360557113840794,
+        1.8360557113840796,
         1.8727437564307368,
-        1.9066115974823423,
+        1.906611597482342,
         1.9525915003696022,
         1.967420226453937,
         2.000140460397971,
         2.0346156830546858,
         2.0999570220641295,
         2.1353402338393432,
-        2.188170528047765,
+        2.1881705280477655,
         2.2409786807840892,
         2.292362226188787,
         2.3770048794489087,
@@ -56489,9 +56489,9 @@
         18.204732620320854,
         18.388132295719842,
         18.5,
-        18.624560747663555,
-        18.727013126168362,
-        18.855021903108355,
+        18.62456074766356,
+        18.727013126168366,
+        18.85502190310836,
         19.005000000000006,
         19.2,
         19.30706707692308,
@@ -56504,7 +56504,7 @@
         20.765266058063663,
         21.10107868020305,
         21.3,
-        21.470540994418144,
+        21.470540994418137,
         21.8,
         21.903779106577563,
         22.1883932346723,
@@ -56512,19 +56512,19 @@
         22.77456924397034,
         23.07773151125402,
         23.390934768568354,
-        23.810046358477898,
+        23.810046358477894,
         24.016,
         24.407000000000004,
         24.69235699256511,
         25.288999999999998,
-        25.597452372058278,
+        25.597452372058275,
         25.9,
         26.2,
-        26.554620689655174,
+        26.554620689655177,
         26.974676292232164,
         27.435000000000002,
         28.0,
-        28.299999999999997,
+        28.3,
         28.838466230936824,
         29.2,
         29.792406914893615,
@@ -56559,7 +56559,7 @@
         26.00783498239141,
         26.3129658992207,
         26.543893172841827,
-        26.92423694779116,
+        26.924236947791158,
         27.4,
         27.9,
         28.1,
@@ -56694,7 +56694,7 @@
         19.468776119402982,
         19.624,
         19.8,
-        19.838820838627697,
+        19.8388208386277,
         19.9,
         19.927270901033975,
         20.0,
@@ -56727,7 +56727,7 @@
         23.253163120567375,
         23.395999999999997,
         23.61445936676773,
-        24.03592345134081,
+        24.035923451340814,
         24.36,
         24.520428571428567,
         24.9825183714002,
@@ -56756,7 +56756,7 @@
         21.775072935637276,
         22.58878002147168,
         22.89724225181517,
-        23.30097316425833,
+        23.300973164258338,
         23.609470937129302,
         24.272,
         24.9027457795432,
@@ -56764,11 +56764,11 @@
         25.698331374853115,
         25.927676355066772,
         26.262666666666668,
-        26.561890636704117,
+        26.561890636704113,
         26.9,
         27.3,
-        27.531113823295303,
-        27.699999999999996,
+        27.53111382329531,
+        27.7,
         28.196393085787452,
         28.40397380627558,
         28.850797546012267,
@@ -56814,7 +56814,7 @@
         41.4,
         41.72051735138636,
         42.00637798432659,
-        42.33199713364386,
+        42.33199713364387,
         42.7,
         43.2,
         43.5,
@@ -56838,7 +56838,7 @@
         54.16351219512195,
         54.95209085132393,
         55.79286432160804,
-        56.79836444444444,
+        56.798364444444445,
         58.008,
         59.16721377724858,
         60.80577121771217,
@@ -56925,7 +56925,7 @@
         1.7959873313136874,
         1.8,
         1.804658703071672,
-        1.8999999999999997,
+        1.9,
         1.9,
         1.900321033210332,
         2.0,
@@ -57250,7 +57250,7 @@
         1.8000000000000005,
         1.899716349310571,
         1.9,
-        1.9627599570280836,
+        1.9627599570280838,
         2.078679853802674,
         2.1,
         2.2,
@@ -57429,7 +57429,7 @@
         1.8,
         1.8,
         1.8000000000000005,
-        1.8272254065262468,
+        1.827225406526246,
         1.8770313220145909,
         1.9,
         1.9,
@@ -57619,7 +57619,7 @@
         1.8,
         1.8,
         1.8285451434533588,
-        1.8891573213713553,
+        1.8891573213713555,
         1.9,
         1.9,
         1.9,
@@ -57657,16 +57657,16 @@
         2.6,
         2.6,
         2.6147099153361952,
-        2.666525862260695,
+        2.6665258622606944,
         2.7,
         2.7,
-        2.7742439553329787,
+        2.7742439553329783,
         2.8,
         2.815023979676009,
         2.9,
-        2.90217527030968,
+        2.9021752703096806,
         3.0,
-        3.064560498325206,
+        3.0645604983252066,
         3.130351067963745,
         3.2,
         3.294900763358778,
@@ -58077,7 +58077,7 @@
         1.7,
         1.746990886089175,
         1.8,
-        1.8163511450381689,
+        1.8163511450381684,
         1.9,
         1.9,
         1.9908628276257911,
@@ -58088,7 +58088,7 @@
         2.3,
         2.4678924651025533,
         2.7,
-        3.5999999999999996
+        3.6
       ]
     },
     "pre_fotmob_effective_clearance": {
@@ -58223,10 +58223,10 @@
         1.7695820681955938,
         1.8,
         1.8265031046447238,
-        1.8999999999999997,
+        1.9,
         1.9,
         1.9001093247588423,
-        1.9732334956318052,
+        1.9732334956318054,
         2.0,
         2.0,
         2.069510351172158,
@@ -58234,7 +58234,7 @@
         2.1,
         2.1471093638071768,
         2.2,
-        2.2145317805295934,
+        2.214531780529594,
         2.2821684098133908,
         2.3,
         2.304170985435975,
@@ -58245,7 +58245,7 @@
         2.6,
         2.6056404070863164,
         2.7,
-        2.7067716535433073,
+        2.7067716535433077,
         2.8,
         2.8052812185781475,
         2.9,
@@ -58265,13 +58265,13 @@
         3.5,
         3.5607368294549517,
         3.6,
-        3.6126445853437006,
+        3.6126445853437,
         3.7,
         3.7058749999999994,
         3.8,
-        3.8698414510265797,
+        3.86984145102658,
         3.9,
-        3.98025176726941,
+        3.9802517672694098,
         4.0,
         4.1,
         4.194389364015599,
@@ -58514,7 +58514,7 @@
         1.6999999999999997,
         1.7633661775939762,
         1.8,
-        1.8385123260599883,
+        1.8385123260599885,
         1.9,
         1.9815502887890362,
         2.0,
@@ -58548,7 +58548,7 @@
         3.0,
         3.1,
         3.1085837224758563,
-        3.195503848127244,
+        3.1955038481272444,
         3.2,
         3.201112201963535,
         3.2999999999999994,
@@ -58567,9 +58567,9 @@
         3.7699776760416066,
         3.8,
         3.8,
-        3.8749964421543366,
+        3.874996442154337,
         3.9,
-        3.9738259178663307,
+        3.97382591786633,
         4.0,
         4.0552558815358415,
         4.1,
@@ -58605,7 +58605,7 @@
         5.8,
         6.0,
         6.2,
-        6.3999999999999995,
+        6.4,
         6.7089999999999925,
         10.2
       ],
@@ -58618,7 +58618,7 @@
         3.4,
         3.496819846037697,
         3.5615440344124973,
-        3.6006554262645456,
+        3.600655426264546,
         3.75014170195728,
         3.8,
         3.848559446717909,
@@ -58633,7 +58633,7 @@
         4.3,
         4.3,
         4.3,
-        4.368272688281817,
+        4.3682726882818175,
         4.4,
         4.4,
         4.451864815131102,
@@ -58693,7 +58693,7 @@
         6.2,
         6.283268044131135,
         6.3,
-        6.3999999999999995,
+        6.4,
         6.4,
         6.499793679549114,
         6.5,
@@ -58706,7 +58706,7 @@
         7.097523595505619,
         7.2,
         7.3,
-        7.4,
+        7.3999999999999995,
         7.544694288677226,
         7.9,
         8.29757803332551,
@@ -58823,7 +58823,7 @@
         3.6388011381599745,
         3.8,
         3.9,
-        3.975015263992584,
+        3.975015263992585,
         4.063617243173226,
         4.1,
         4.2,
@@ -58859,7 +58859,7 @@
         5.547565965362946,
         5.6,
         5.6002162724200675,
-        5.666644934159583,
+        5.666644934159584,
         5.7,
         5.7,
         5.700000000000001,
@@ -58891,7 +58891,7 @@
         6.8,
         6.800000000000001,
         6.9,
-        6.9187637969094915,
+        6.918763796909492,
         7.0,
         7.0,
         7.0601924571307615,
@@ -58924,10 +58924,10 @@
         1.7,
         2.052,
         2.1,
-        2.127870515069367,
+        2.1278705150693673,
         2.2,
         2.2033916083916085,
-        2.216483399734396,
+        2.2164833997343965,
         2.3,
         2.308,
         2.4,
@@ -58952,7 +58952,7 @@
         2.7093333333333334,
         2.745359346598483,
         2.7553956737723855,
-        2.7686271035049486,
+        2.768627103504948,
         2.8,
         2.802898550724638,
         2.8466619663141404,
@@ -58969,14 +58969,14 @@
         3.0,
         3.0,
         3.0,
-        3.0103435948361468,
+        3.010343594836147,
         3.065855072463768,
         3.1,
         3.1,
         3.1,
         3.110936949152542,
         3.1379257647621954,
-        3.1928358208955228,
+        3.192835820895523,
         3.2,
         3.2,
         3.2,
@@ -58997,7 +58997,7 @@
         3.40128,
         3.4270400000000003,
         3.4851851851851854,
-        3.49381512605042,
+        3.4938151260504204,
         3.5,
         3.5,
         3.5,
@@ -59007,7 +59007,7 @@
         3.6,
         3.6,
         3.663640560086167,
-        3.6995610425240053,
+        3.6995610425240057,
         3.7,
         3.7,
         3.764960000000001,
