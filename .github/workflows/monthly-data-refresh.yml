@@ -6,7 +6,10 @@ name: Monthly data refresh
 # fetch script caches to data/raw/*.csv and skips ids it already has, so a
 # routine month (a normal number of new transfers) is a small incremental
 # update, not a full 23k-request rebuild - the two hour, thousands-of-
-# requests case is only the very first run against a fresh cache.
+# requests case is only the very first run against a fresh cache. The
+# FotMob fetches and build_dataset.py run twice (see the comment further
+# down) so this cycle's own new transfers get real FotMob stats instead
+# of a one-cycle-late fallback.
 #
 # Requires two repo secrets (Settings -> Secrets and variables -> Actions):
 # KAGGLE_USERNAME and KAGGLE_KEY, from a Kaggle account's
@@ -82,13 +85,32 @@ jobs:
             python scripts/fetch_transfer_types.py
           fi
 
-      - name: Fetch FotMob season stats
+      # FotMob fetches and build_dataset.py are circularly dependent: the
+      # fetches need build_dataset.py's own output (data/transfers_processed
+      # .csv) to know which transfers to fetch stats for, but build_dataset
+      # .py needs the fetches' cache to merge FotMob features in. Pass 1
+      # here only sees last cycle's committed transfer list, so this
+      # cycle's brand-new transfers get no fetch attempt yet and are built
+      # with imputed FotMob features; running both again (pass 2, below)
+      # once build_dataset.py has written the fresh list closes that loop
+      # within the same run, mirroring build_lookups.py's existing
+      # double-run for the same kind of reason.
+      - name: Fetch FotMob season stats (pass 1)
         run: python scripts/fetch_fotmob_stats.py
 
-      - name: Fetch pre-transfer FotMob composites
+      - name: Fetch pre-transfer FotMob composites (pass 1)
         run: python scripts/fetch_pretransfer_fotmob_stats.py
 
-      - name: Build processed dataset
+      - name: Build processed dataset (pass 1)
+        run: python scripts/build_dataset.py
+
+      - name: Fetch FotMob season stats (pass 2, now sees this cycle's new transfers)
+        run: python scripts/fetch_fotmob_stats.py
+
+      - name: Fetch pre-transfer FotMob composites (pass 2)
+        run: python scripts/fetch_pretransfer_fotmob_stats.py
+
+      - name: Build processed dataset (pass 2, merges the now-complete FotMob cache)
         run: python scripts/build_dataset.py
 
       - name: Build search lookups (pass 1)

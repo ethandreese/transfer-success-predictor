@@ -62,6 +62,9 @@ the app:
 ./.venv/bin/python scripts/fetch_fotmob_stats.py              # optional but recommended - see below
 ./.venv/bin/python scripts/fetch_pretransfer_fotmob_stats.py  # optional but recommended - see below
 ./.venv/bin/python scripts/build_dataset.py
+./.venv/bin/python scripts/fetch_fotmob_stats.py              # run again - see below
+./.venv/bin/python scripts/fetch_pretransfer_fotmob_stats.py  # run again - see below
+./.venv/bin/python scripts/build_dataset.py                   # run again to merge in the FotMob data just fetched for this batch's own new transfers
 ./.venv/bin/python scripts/build_lookups.py
 ./.venv/bin/python scripts/fetch_current_fotmob_stats.py      # optional but recommended - see below
 ./.venv/bin/python scripts/build_lookups.py                   # run again to merge in the current-FotMob snapshot just fetched
@@ -86,6 +89,20 @@ falling back to the population median/`None`). Both pretransfer scripts
 reuse `fetch_fotmob_stats.py`'s cache/matching directly, so they run in
 seconds once that cache is warm.
 
+`fetch_fotmob_stats.py`/`fetch_pretransfer_fotmob_stats.py` and
+`build_dataset.py` are circularly dependent - the fetches read
+`data/transfers_processed.csv` to know which transfers to fetch stats
+for, but that file is `build_dataset.py`'s own output, and
+`build_dataset.py` in turn reads the fetches' cache to merge FotMob
+features in. Run once, the fetches only see whichever transfer list was
+last committed, so a transfer that's brand-new in this run's Kaggle
+snapshot gets no fetch attempt and is built with imputed FotMob
+features. Running the fetches and `build_dataset.py` a second time (as
+above) closes that loop in one sitting: pass 1 gets `transfers_processed
+.csv` current, pass 2's fetches now see this run's new transfers and
+fetch their real stats, and pass 2's `build_dataset.py` merges those in
+- the same reason `build_lookups.py` also runs twice, below.
+
 `compute_prediction_surprises.py` is the one exception - **not
 optional**, since `app/main.py` loads its output
 (`data/prediction_surprises.csv`) unconditionally at startup for the
@@ -101,12 +118,16 @@ touch `model.joblib`.
 
 [`.github/workflows/monthly-data-refresh.yml`](.github/workflows/monthly-data-refresh.yml)
 runs the exact sequence above on a schedule (06:00 UTC on the 1st of each
-month) so the site isn't static: latest Kaggle dataset snapshot → all four
-fetch scripts → `build_dataset.py` → `build_lookups.py` (×2) →
-`train_model.py` → `compute_prediction_surprises.py` → `pytest` as a gate
-→ commit + push `data/` and `app/model/` if anything changed. A push to
-`main` is what triggers Render's deploy (`autoDeployTrigger: commit` in
-`render.yaml`), so a clean run reaches production with no extra step.
+month) so the site isn't static: latest Kaggle dataset snapshot →
+`fetch_transfer_types.py` → `fetch_fotmob_stats.py` +
+`fetch_pretransfer_fotmob_stats.py` + `build_dataset.py` (×2, to close
+their circular dependency in one run - see above) → `build_lookups.py`
+→ `fetch_current_fotmob_stats.py` → `build_lookups.py` again →
+`train_model.py` → `compute_prediction_surprises.py` → `pytest` as a
+gate → commit + push `data/` and `app/model/` if anything changed. A
+push to `main` is what triggers Render's deploy (`autoDeployTrigger:
+commit` in `render.yaml`), so a clean run reaches production with no
+extra step.
 
 Each fetch script's cache (`data/raw/*.csv`) is committed and
 id-keyed, so a routine month - the Kaggle dataset gaining however many
