@@ -395,7 +395,7 @@ async function loadScatter() {
   const first = accuracy[0], last = accuracy[accuracy.length - 1];
   const trendWord = last.mae < first.mae ? "improved" : "worsened";
   document.getElementById("accuracy-desc").textContent =
-    `The held-out model's typical miss by transfer year, ${first.year}–${last.year} (the current in-progress year excluded, same reasoning as every other by-year chart on the site). It's ${trendWord} from ${first.mae.toFixed(1)} to ${last.mae.toFixed(1)} points. Click/tap any point for that year's exact numbers.`;
+    `The held-out model's typical prediction error by transfer year, ${first.year}–${last.year} (this year is excluded since it's still incomplete). That error has ${trendWord} from ${first.mae.toFixed(1)} to ${last.mae.toFixed(1)} points. Click/tap any point for that year's exact numbers.`;
 }
 
 /** Toggle the model-accuracy chart card open/closed, same pattern as the predicted-vs-actual card. */
