@@ -66,8 +66,15 @@ the app:
 ./.venv/bin/python scripts/fetch_current_fotmob_stats.py      # optional but recommended - see below
 ./.venv/bin/python scripts/build_lookups.py                   # run again to merge in the current-FotMob snapshot just fetched
 ./.venv/bin/python scripts/train_model.py
-./.venv/bin/python scripts/compute_prediction_surprises.py
+./.venv/bin/python -m scripts.compute_prediction_surprises    # -m, not a script path - see below
 ```
+
+`compute_prediction_surprises.py` is the one script here that imports a
+sibling module the package-qualified way (`from scripts.train_model
+import ...`), so it needs the repo root on `sys.path` the way `-m`
+provides automatically; run as a plain script path instead
+(`python scripts/compute_prediction_surprises.py`), it fails with
+`ModuleNotFoundError: No module named 'scripts'`.
 
 `fetch_transfer_types.py`, `fetch_fotmob_stats.py`,
 `fetch_pretransfer_fotmob_stats.py`, and `fetch_current_fotmob_stats.py`
@@ -96,6 +103,34 @@ outcome - unlike `model.joblib` itself, which is refit on the *full*
 dataset for accurate live serving (and is therefore partly circular on
 historical transfers, since it saw the answer). Runs in seconds; doesn't
 touch `model.joblib`.
+
+### Automated monthly refresh
+
+[`.github/workflows/monthly-data-refresh.yml`](.github/workflows/monthly-data-refresh.yml)
+runs the exact sequence above on a schedule (06:00 UTC on the 1st of each
+month) so the site isn't static: latest Kaggle dataset snapshot → all four
+fetch scripts → `build_dataset.py` → `build_lookups.py` (×2) →
+`train_model.py` → `compute_prediction_surprises.py` → `pytest` as a gate
+→ commit + push `data/` and `app/model/` if anything changed. A push to
+`main` is what triggers Render's deploy (`autoDeployTrigger: commit` in
+`render.yaml`), so a clean run reaches production with no extra step.
+
+Each fetch script's cache (`data/raw/*.csv`) is committed and
+id-keyed, so a routine month - the Kaggle dataset gaining however many
+transfers happened since last run - only fetches that delta, not the
+~23k-request full rebuild described above; that full-rebuild case only
+happens once, the first time the cache is empty. If `pytest` fails on the
+freshly trained model, the job stops before committing anything - the
+workflow shows red in the Actions tab and GitHub emails the repo owner by
+default for a failed scheduled run, which is the only alerting here.
+
+Needs two repository secrets (**Settings → Secrets and variables →
+Actions**): `KAGGLE_USERNAME` and `KAGGLE_KEY`, from a Kaggle account's
+**Settings → API → Create New Token** (downloads a `kaggle.json` with
+both values). Test it on demand from the **Actions** tab → "Monthly data
+refresh" → **Run workflow**, optionally with a small
+`transfer_types_limit` so a test run finishes in minutes instead of
+however long the real monthly delta takes.
 
 ## Testing
 

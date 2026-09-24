@@ -1,0 +1,116 @@
+name: Monthly data refresh
+
+# Re-runs the full data pipeline (README's "Regenerating data/*.csv and the
+# model from scratch" section) against whatever the upstream Kaggle dataset
+# and Transfermarkt/FotMob look like today, then commits the result. Each
+# fetch script caches to data/raw/*.csv and skips ids it already has, so a
+# routine month (a normal number of new transfers) is a small incremental
+# update, not a full 23k-request rebuild - the two hour, thousands-of-
+# requests case is only the very first run against a fresh cache.
+#
+# Requires two repo secrets (Settings -> Secrets and variables -> Actions):
+# KAGGLE_USERNAME and KAGGLE_KEY, from a Kaggle account's
+# Settings -> API -> "Create New Token".
+
+on:
+  schedule:
+    - cron: "0 6 1 * *" # 06:00 UTC on the 1st of every month
+  workflow_dispatch:
+    inputs:
+      transfer_types_limit:
+        description: "Cap fetch_transfer_types.py to the first N not-yet-cached players (for a quick manual test run; leave blank for a full run)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+# Prevents two runs (a scheduled one overlapping a manual workflow_dispatch
+# test) from racing to commit/push at the same time.
+concurrency:
+  group: monthly-data-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    # A from-scratch cache (first run, or after a long gap) is the ~2-3
+    # hour case described above; this just caps a genuinely stuck run
+    # rather than trying to time a normal one.
+    timeout-minutes: 300
+    env:
+      # compute_prediction_surprises.py imports scripts.train_model as a
+      # package (`from scripts.train_model import ...`), which needs the
+      # repo root on the path - plain `python scripts/foo.py` only puts
+      # scripts/ itself there. Matches pytest.ini's `pythonpath = .`.
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version-file: .python-version
+          cache: pip
+
+      - run: pip install -r requirements-pipeline.txt
+
+      - name: Download latest Kaggle dataset
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+        run: |
+          RAW_DIR=$(python -c "import kagglehub; print(kagglehub.dataset_download('davidcariboo/player-scores'))" | tail -1)
+          echo "Resolved Transfermarkt dataset dir: $RAW_DIR"
+          echo "TRANSFERMARKT_RAW_DIR=$RAW_DIR" >> "$GITHUB_ENV"
+
+      - name: Fetch transfer types (loan detection)
+        run: |
+          if [ -n "${{ github.event.inputs.transfer_types_limit }}" ]; then
+            python scripts/fetch_transfer_types.py --limit "${{ github.event.inputs.transfer_types_limit }}"
+          else
+            python scripts/fetch_transfer_types.py
+          fi
+
+      - name: Fetch FotMob season stats
+        run: python scripts/fetch_fotmob_stats.py
+
+      - name: Fetch pre-transfer FotMob composites
+        run: python scripts/fetch_pretransfer_fotmob_stats.py
+
+      - name: Build processed dataset
+        run: python scripts/build_dataset.py
+
+      - name: Build search lookups (pass 1)
+        run: python scripts/build_lookups.py
+
+      - name: Fetch current-form FotMob stats
+        run: python scripts/fetch_current_fotmob_stats.py
+
+      - name: Build search lookups (pass 2, merges current-form snapshot)
+        run: python scripts/build_lookups.py
+
+      - name: Train model
+        run: python scripts/train_model.py
+
+      - name: Compute held-out prediction surprises
+        run: python scripts/compute_prediction_surprises.py
+
+      # A hard gate: if this run produced something the test suite
+      # doesn't like, stop here rather than commit/push it. The job goes
+      # red in the Actions tab and GitHub emails the repo owner by
+      # default for a failed scheduled run, which is this pipeline's only
+      # alerting - there's no separate notification step.
+      - name: Run test suite
+        run: pytest
+
+      - name: Commit and push if data changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/ app/model/
+          if git diff --cached --quiet; then
+            echo "No data changes this run - nothing to commit."
+          else
+            git commit -m "Monthly data refresh - $(date -u +'%Y-%m-%d')"
+            git push
+          fi
