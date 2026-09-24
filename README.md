@@ -66,15 +66,8 @@ the app:
 ./.venv/bin/python scripts/fetch_current_fotmob_stats.py      # optional but recommended - see below
 ./.venv/bin/python scripts/build_lookups.py                   # run again to merge in the current-FotMob snapshot just fetched
 ./.venv/bin/python scripts/train_model.py
-./.venv/bin/python -m scripts.compute_prediction_surprises    # -m, not a script path - see below
+./.venv/bin/python scripts/compute_prediction_surprises.py
 ```
-
-`compute_prediction_surprises.py` is the one script here that imports a
-sibling module the package-qualified way (`from scripts.train_model
-import ...`), so it needs the repo root on `sys.path` the way `-m`
-provides automatically; run as a plain script path instead
-(`python scripts/compute_prediction_surprises.py`), it fails with
-`ModuleNotFoundError: No module named 'scripts'`.
 
 `fetch_transfer_types.py`, `fetch_fotmob_stats.py`,
 `fetch_pretransfer_fotmob_stats.py`, and `fetch_current_fotmob_stats.py`

@@ -25,8 +25,14 @@ on:
 permissions:
   contents: write
 
-# Prevents two runs (a scheduled one overlapping a manual workflow_dispatch
-# test) from racing to commit/push at the same time.
+# Ensures two runs (a scheduled one overlapping a manual workflow_dispatch
+# test) never run at the same time, so they can't race to commit/push
+# together - the newer one queues behind whichever is in progress. If a
+# third run is queued while one is already waiting, GitHub cancels that
+# older *queued* one (never the in-progress one) rather than stacking a
+# second wait; harmless here since this only pushes real work once a run
+# actually starts, but worth knowing if a queued manual test run seems to
+# vanish.
 concurrency:
   group: monthly-data-refresh
   cancel-in-progress: false
@@ -38,12 +44,6 @@ jobs:
     # hour case described above; this just caps a genuinely stuck run
     # rather than trying to time a normal one.
     timeout-minutes: 300
-    env:
-      # compute_prediction_surprises.py imports scripts.train_model as a
-      # package (`from scripts.train_model import ...`), which needs the
-      # repo root on the path - plain `python scripts/foo.py` only puts
-      # scripts/ itself there. Matches pytest.ini's `pythonpath = .`.
-      PYTHONPATH: ${{ github.workspace }}
     steps:
       - uses: actions/checkout@v7
 
@@ -64,9 +64,20 @@ jobs:
           echo "TRANSFERMARKT_RAW_DIR=$RAW_DIR" >> "$GITHUB_ENV"
 
       - name: Fetch transfer types (loan detection)
+        env:
+          # Routed through env: rather than interpolated directly into the
+          # script below - GitHub substitutes ${{ }} as literal text before
+          # bash parses the script, so an unsanitized workflow_dispatch
+          # input spliced straight in is a script-injection risk even
+          # inside quotes. An env var is expanded by bash itself instead,
+          # which is safe. The `xargs` trim also treats an all-whitespace
+          # input (e.g. an accidental stray space) as blank, same as an
+          # empty one, rather than passing it through to fail argparse.
+          LIMIT: ${{ github.event.inputs.transfer_types_limit }}
         run: |
-          if [ -n "${{ github.event.inputs.transfer_types_limit }}" ]; then
-            python scripts/fetch_transfer_types.py --limit "${{ github.event.inputs.transfer_types_limit }}"
+          LIMIT="$(echo "$LIMIT" | xargs)"
+          if [ -n "$LIMIT" ]; then
+            python scripts/fetch_transfer_types.py --limit "$LIMIT"
           else
             python scripts/fetch_transfer_types.py
           fi
@@ -110,7 +121,22 @@ jobs:
           git add data/ app/model/
           if git diff --cached --quiet; then
             echo "No data changes this run - nothing to commit."
-          else
-            git commit -m "Monthly data refresh - $(date -u +'%Y-%m-%d')"
-            git push
+            exit 0
           fi
+          git commit -m "Monthly data refresh - $(date -u +'%Y-%m-%d')"
+          # main can move during this multi-hour run (someone pushes an
+          # unrelated commit while it's in progress); a plain `git push`
+          # would then reject as non-fast-forward and discard this whole
+          # run's output with no retry. Rebase onto whatever main is now
+          # and retry, up to 3 attempts total, before giving up.
+          attempt=0
+          until git push; do
+            attempt=$((attempt + 1))
+            if [ "$attempt" -ge 3 ]; then
+              echo "git push still rejected after $attempt attempts - giving up."
+              exit 1
+            fi
+            echo "Push rejected (attempt $attempt) - fetching and rebasing onto the current main."
+            git fetch origin main
+            git rebase origin/main
+          done

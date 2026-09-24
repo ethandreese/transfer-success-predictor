@@ -28,7 +28,7 @@ from sklearn.model_selection import KFold
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-from scripts.train_model import (
+from train_model import (
     CATEGORICAL_FEATURES, DATA_PATH, NUMERIC_FEATURES,
     PRETRANSFER_FOTMOB_COMPOSITES, PRETRANSFER_FOTMOB_HAS_DATA_FLAGS,
     TARGET, add_derived_features, add_height_vs_position,
