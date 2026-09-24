@@ -515,21 +515,27 @@ function renderAll() {
  * Predict/Compare already use for per-feature contributions - same
  * visual language (green raises the score, red lowers it), just applied
  * to the model's fixed, sitewide coefficients instead of one specific
- * prediction's swap-and-measure contributions. Bar width is relative to
- * the single largest |coefficient| in the list, not an absolute scale -
- * these are standardized-feature coefficients, useful for ranking
- * against each other but not meaningful as a raw percentage of anything.
+ * prediction's swap-and-measure contributions. Unlike Predict/Compare's
+ * bars (which grow rightward from a shared left edge, comparing factors
+ * to each other), these grow outward from a centered zero - the natural
+ * reading for a signed coefficient, where left/right is itself part of
+ * the meaning, not just magnitude - via .explain-bar-fill.centered's CSS.
+ * Bar length is relative to the single largest |coefficient| in the list,
+ * not an absolute scale - these are standardized-feature coefficients,
+ * useful for ranking against each other but not meaningful as a raw
+ * percentage of anything.
  */
 function renderFeatureImportance(importance) {
   const maxAbs = Math.max(...importance.map(f => Math.abs(f.coefficient)));
   document.getElementById("feature-importance-list").innerHTML = importance.map(f => {
     const positive = f.coefficient >= 0;
-    const width = Math.abs(f.coefficient) / maxAbs * 100;
+    const halfWidth = Math.abs(f.coefficient) / maxAbs * 50;
+    const side = positive ? `left:50%` : `right:50%`;
     return `
       <div class="explain-row">
         <span class="explain-label">${f.label}</span>
         <div class="explain-bar-track">
-          <div class="explain-bar-fill ${positive ? "pos" : "neg"}" style="width:${width}%"></div>
+          <div class="explain-bar-fill centered ${positive ? "pos" : "neg"}" style="${side}; width:${halfWidth}%"></div>
         </div>
         <span class="explain-value">${positive ? "+" : ""}${f.coefficient}</span>
       </div>

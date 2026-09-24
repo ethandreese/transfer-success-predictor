@@ -57,6 +57,11 @@
      from --accent with color-mix(), to match how every other color in this
      file is an explicit value per theme. */
   --accent-tint: rgba(67, 168, 115, 0.18);
+  /* A soft edge-of-content glow for horizontally-scrolling tables
+     (.table-wrap) - a translucent wash of --text so it reads as a hint of
+     more content rather than a hard shadow line, matching --accent-tint's
+     approach of an explicit rgba per theme instead of color-mix(). */
+  --scroll-hint: rgba(241, 236, 226, 0.16);
   --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
   --font-body: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-family: var(--font-body);
@@ -103,6 +108,7 @@
   --pos-midfield: #c2598a; /* ~3.8:1 */
   --pos-attack: #c97623; /* ~3.2:1 */
   --accent-tint: rgba(34, 147, 89, 0.12);
+  --scroll-hint: rgba(33, 29, 22, 0.16);
 }
 
 * { box-sizing: border-box; }
@@ -559,6 +565,37 @@ a.example-card:hover { border-color: var(--accent); }
 .explain-bar-fill.pos { background: var(--accent); }
 .explain-bar-fill.neg { background: var(--accent-bad); }
 
+/* Analytics' "What actually predicts success" bars (see renderFeatureImportance
+   in analytics.js) grow outward from a centered zero instead of from the
+   track's left edge - a thin center tick marks that zero point, and the
+   fill itself is positioned absolutely (left:50% growing right for a
+   positive coefficient, right:50% growing left for a negative one) rather
+   than sized by plain width like the left-aligned .explain-bar-fill. Only
+   the outer corner rounds, since the inner edge sits flush against zero.
+   The track's own overflow:hidden still applies - halfWidth is capped at
+   50% by construction, so the fill never reaches the track's own edges. */
+.explain-bar-fill.centered {
+  position: absolute;
+  top: 0;
+}
+.explain-bar-fill.centered.pos { border-radius: 0 4px 4px 0; }
+.explain-bar-fill.centered.neg { border-radius: 4px 0 0 4px; }
+.explain-bar-track:has(.explain-bar-fill.centered)::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  /* A flat mid-gray rather than --muted (which leans warm/tan and, sitting
+     on top of a red .neg bar, was reading as a stray green sliver) or
+     either accent color - this line marks a neutral "zero", not a value,
+     so it deliberately carries no color meaning of its own. One value
+     works for both themes since a middling gray has enough contrast
+     against both a near-black and a near-white panel. */
+  background: rgba(128, 128, 128, 0.65);
+}
+
 .explain-value { text-align: right; font-variant-numeric: tabular-nums; }
 
 /* The "N other factors combined" summary row under Predict's "Why this
@@ -903,7 +940,27 @@ button.predict-btn:disabled {
   font-size: 0.9rem;
 }
 
-.table-wrap { overflow-x: auto; }
+/* Hints that a table scrolls sideways (its min-width, set per-table below,
+   forces this on narrow screens) without JS or a scroll listener: an
+   opaque "cover" gradient is pinned to the scrolling content itself
+   (background-attachment: local), so it sits flush against whichever edge
+   hasn't been scrolled past and hides a second, viewport-pinned --scroll-
+   hint gradient (background-attachment: scroll) underneath it. Scrolling
+   away from an edge slides its cover out of the way and reveals that
+   edge's hint; a table that never overflows never uncovers either hint. */
+.table-wrap {
+  overflow-x: auto;
+  background-color: var(--panel);
+  background-repeat: no-repeat;
+  background-size: 40px 100%, 40px 100%, 16px 100%, 16px 100%;
+  background-position: left, right, left, right;
+  background-attachment: local, local, scroll, scroll;
+  background-image:
+    linear-gradient(to right, var(--panel), transparent),
+    linear-gradient(to left, var(--panel), transparent),
+    linear-gradient(to right, var(--scroll-hint), transparent),
+    linear-gradient(to left, var(--scroll-hint), transparent);
+}
 
 .transfers-table {
   width: 100%;
