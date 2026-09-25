@@ -499,14 +499,14 @@ function showCard(club) {
     ? ` Recruiting trend: <strong style="color:${totalColor(club.score_improvement)}">${club.score_improvement >= 0 ? "+" : ""}${club.score_improvement} pts</strong> (second half vs. first half of this club's incoming transfers, by date).`
     : "";
   const buyerSection = club.transfers_in ? `
-    <h3>As a buyer</h3>
+    <h3>As a Buyer</h3>
     <p>${club.transfers_in} incoming transfers, averaging <strong style="color:${scoreColor(club.avg_incoming_score)}">${club.avg_incoming_score}</strong> / 100, ${formatMoney(club.total_spent)} spent.${trendClause}</p>
     ${highlightLine("Best signing", club.best_signing)}
     ${highlightLine("Worst signing", club.worst_signing)}
-  ` : `<h3>As a buyer</h3><p>No scored incoming transfers.</p>`;
+  ` : `<h3>As a Buyer</h3><p>No scored incoming transfers.</p>`;
 
   const resaleSection = club.resales_count ? `
-    <h3>Buy, develop, resell</h3>
+    <h3>Buy, Develop, Resell</h3>
     <p>
       ${club.resales_count} of those signings were later resold, averaging
       <strong style="color:${scoreColor(club.avg_resale_profit_pct)}">${club.avg_resale_profit_pct}</strong> / 100 on the resale-profit percentile,
@@ -559,14 +559,14 @@ async function loadClubDetailCharts(clubName) {
     const data = await res.json();
     target.innerHTML = `
       ${data.by_year.length ? `
-        <h3>Spend vs. incoming quality by year</h3>
+        <h3>Spend vs. Incoming Quality by Year</h3>
         <div class="timeline-chart-wrap">${buildSpendQualityChart(data.by_year)}</div>
         <div class="timeline-legend">
           <span><span class="legend-dot" style="background:var(--accent-mid); border:none;"></span> Spend (indexed)</span>
           <span><span class="legend-dot" style="background:var(--accent); border:none;"></span> Avg incoming score (indexed)</span>
         </div>
       ` : ""}
-      ${data.position_breakdown.length ? `<h3>Recruiting by position</h3>${renderPositionBreakdown(data.position_breakdown)}` : ""}
+      ${data.position_breakdown.length ? `<h3>Recruiting by Position</h3>${renderPositionBreakdown(data.position_breakdown)}` : ""}
     `;
   } catch (e) {
     const target = document.getElementById("club-detail-charts");

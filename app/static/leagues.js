@@ -174,18 +174,18 @@ function showLeague(league) {
         </div>
         <p class="surprise-banner">${verdictSentence(league)}</p>
       ` : `<p class="surprise-banner">Not enough historical spread yet for a trend (needs at least 6 complete years of data).</p>`}
-      <h3>Cross-league flow</h3>
+      <h3>Cross-League Flow</h3>
       <div class="compare-grid">
         <div>
-          <h3>Buys from</h3>
+          <h3>Buys From</h3>
           ${renderLeagueFlow(league.buys_from)}
         </div>
         <div>
-          <h3>Sells to</h3>
+          <h3>Sells To</h3>
           ${renderLeagueFlow(league.sells_to)}
         </div>
       </div>
-      <h3>Position mix</h3>
+      <h3>Position Mix</h3>
       ${renderPositionMix(league.position_mix)}
     </div>
   `;

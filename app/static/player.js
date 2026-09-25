@@ -329,7 +329,7 @@ function renderSimilarCareers(entries) {
     return;
   }
   container.innerHTML = `
-    <h3>Similar career shape</h3>
+    <h3>Similar Career Shape</h3>
     <p class="surprises-intro">Other players whose career started, ended, and swung a similar way. Click one to compare them side by side.</p>
     ${entries.map(e => `<button type="button" class="similar-career-btn" data-player-id="${e.player_id}">${e.name}</button>`).join("")}
   `;

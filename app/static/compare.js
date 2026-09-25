@@ -363,7 +363,7 @@ function renderCompareResult(data) {
       </div>
       <div class="score-range-note">Likely range: ${r.score_range[0]}–${r.score_range[1]}</div>
       <div class="comparables">
-        <h3>Top factors</h3>
+        <h3>Top Factors</h3>
         <div>${renderExplanation(r.explanation)}</div>
       </div>
     </div>
@@ -414,7 +414,7 @@ function renderFactorComparison(results) {
     .join("");
 
   document.getElementById("factor-compare-wrap").innerHTML = `
-    <h2>Compare by factor</h2>
+    <h2>Compare by Factor</h2>
     <p class="surprises-intro">Every factor behind each option's score, most differentiating first. The highlighted cell is whichever option that specific factor favors most.</p>
     <table class="club-compare-table">
       <thead><tr><th></th>${results.map(r => `<th>${r.label}</th>`).join("")}</tr></thead>
