@@ -90,18 +90,13 @@ reuse `fetch_fotmob_stats.py`'s cache/matching directly, so they run in
 seconds once that cache is warm.
 
 `fetch_fotmob_stats.py`/`fetch_pretransfer_fotmob_stats.py` and
-`build_dataset.py` are circularly dependent - the fetches read
-`data/transfers_processed.csv` to know which transfers to fetch stats
-for, but that file is `build_dataset.py`'s own output, and
-`build_dataset.py` in turn reads the fetches' cache to merge FotMob
-features in. Run once, the fetches only see whichever transfer list was
-last committed, so a transfer that's brand-new in this run's Kaggle
-snapshot gets no fetch attempt and is built with imputed FotMob
-features. Running the fetches and `build_dataset.py` a second time (as
-above) closes that loop in one sitting: pass 1 gets `transfers_processed
-.csv` current, pass 2's fetches now see this run's new transfers and
-fetch their real stats, and pass 2's `build_dataset.py` merges those in
-- the same reason `build_lookups.py` also runs twice, below.
+`build_dataset.py` are circularly dependent - the fetches need
+`build_dataset.py`'s own output to know which transfers to fetch stats
+for, so run once, a transfer that's brand-new this run gets no fetch
+attempt and is built with imputed FotMob features instead. Running both
+a second time (as above) closes that loop in one pass: pass 1 makes the
+new transfer visible, pass 2 fetches its real stats and merges them in -
+the same reason `build_lookups.py` runs twice, below.
 
 `compute_prediction_surprises.py` is the one exception - **not
 optional**, since `app/main.py` loads its output
@@ -117,34 +112,23 @@ touch `model.joblib`.
 ### Automated monthly refresh
 
 [`.github/workflows/monthly-data-refresh.yml`](.github/workflows/monthly-data-refresh.yml)
-runs the exact sequence above on a schedule (06:00 UTC on the 1st of each
-month) so the site isn't static: latest Kaggle dataset snapshot →
-`fetch_transfer_types.py` → `fetch_fotmob_stats.py` +
-`fetch_pretransfer_fotmob_stats.py` + `build_dataset.py` (×2, to close
-their circular dependency in one run - see above) → `build_lookups.py`
-→ `fetch_current_fotmob_stats.py` → `build_lookups.py` again →
-`train_model.py` → `compute_prediction_surprises.py` → `pytest` as a
-gate → commit + push `data/` and `app/model/` if anything changed. A
-push to `main` is what triggers Render's deploy (`autoDeployTrigger:
-commit` in `render.yaml`), so a clean run reaches production with no
-extra step.
+runs the exact sequence above on a schedule (06:00 UTC on the 1st of
+each month), then commits + pushes `data/` and `app/model/` if anything
+changed and `pytest` passes first. A push to `main` triggers Render's
+deploy (`autoDeployTrigger: commit` in `render.yaml`), so a clean run
+reaches production with no extra step.
 
-Each fetch script's cache (`data/raw/*.csv`) is committed and
-id-keyed, so a routine month - the Kaggle dataset gaining however many
-transfers happened since last run - only fetches that delta, not the
-~23k-request full rebuild described above; that full-rebuild case only
-happens once, the first time the cache is empty. If `pytest` fails on the
-freshly trained model, the job stops before committing anything - the
-workflow shows red in the Actions tab and GitHub emails the repo owner by
-default for a failed scheduled run, which is the only alerting here.
+Each fetch script's cache is committed and id-keyed, so a routine month
+only fetches the delta since last run, not the ~23k-request full rebuild
+described above - that only happens once, from an empty cache. A failed
+`pytest` stops the job before anything's committed; GitHub's default
+failed-scheduled-run email is the only alerting here.
 
 Needs two repository secrets (**Settings → Secrets and variables →
-Actions**): `KAGGLE_USERNAME` and `KAGGLE_KEY`, from a Kaggle account's
-**Settings → API → Create New Token** (downloads a `kaggle.json` with
-both values). Test it on demand from the **Actions** tab → "Monthly data
-refresh" → **Run workflow**, optionally with a small
-`transfer_types_limit` so a test run finishes in minutes instead of
-however long the real monthly delta takes.
+Actions**): `KAGGLE_USERNAME`/`KAGGLE_KEY`, from a Kaggle account's
+**Settings → API → Create New Token**. Test on demand from the
+**Actions** tab → "Monthly data refresh" → **Run workflow**, optionally
+with a small `transfer_types_limit` for a quick run.
 
 ## Testing
 
@@ -560,13 +544,9 @@ the git history.
   fixed `league_context_note`'s unsupported fee-premium claim (r=+0.21,
   p=0.47 across leagues, not significant) - rest checked out clean.
 - Investigated a user report that a higher fee nudges the predicted
-  score up: real, but the effect is concentrated in high-value transfers
-  (95% CI crosses zero for the cheapest fifth of players) and an
-  explicit interaction term to fix it tested worse on every holdout
-  split. Added a caveat under the Predict page's fee slider, then
-  reconsidered and removed the slider and caveat entirely (see Known
-  limitations for where the explanation lives now) - simpler than
-  maintaining an on-page disclaimer for a second-order effect.
+  score up (confirmed real - see Known limitations for the full finding);
+  added an on-page caveat under Predict's fee slider, then removed both
+  the slider and the caveat in favor of documenting it here instead.
 - Fixed `position`/`sub_position` comparing every prediction against the
   wrong reference group in "why this score" (e.g. -13.7 for a real
   Left-Back vs. an actual ~1-point gap) - now swapped jointly against a
@@ -584,12 +564,12 @@ the git history.
   `Ridge`, which won on every one of 5 temporal splits (MAE
   12.40→12.26, R² 0.185→0.211); fixed thin-league overfitting via
   `OneHotEncoder(min_frequency=30)`.
-- Investigated feature interactions, a quadratic age term, polynomial
-  features, robust-loss regression, and nonlinear alternatives
-  (KernelRidge, SVR) - none beat the plain model.
-- Investigated several new feature/data ideas (manager tenure, squad
-  age/nationality mix, a newer Kaggle dataset version, Wikipedia
-  pageviews, injury history) - none produced a gain worth shipping.
+- Investigated several unsuccessful model/feature ideas: interaction
+  terms, a quadratic age term, polynomial features, robust-loss
+  regression, nonlinear alternatives (KernelRidge, SVR), manager tenure,
+  squad age/nationality mix, a newer Kaggle dataset version, Wikipedia
+  pageviews, and injury history - none beat the plain model or were
+  worth shipping.
 - Found `fee_to_value_ratio` was silently computed from a column missing
   for 38.7% of transfers; fixing it recovered 41% of training data (MAE
   12.65→12.40, R² 0.159→0.185).
@@ -642,24 +622,20 @@ the git history.
   recruiters" sort, League Trends' position-mix breakdown, Analytics'
   "What actually predicts success" feature-weight ranking, and Player
   Timelines' highest-scored-stop star.
-- Added an Analytics chart: height vs. success score, split into 4
-  per-position trend lines with a "Split by position" filter.
-- Added a two-player overlay comparison and "similar career shape"
-  suggestions to Player Timelines (nearest-neighbor on a z-scored
-  career-shape vector).
-- Added a cross-league flow breakdown to League Trends (top trading
-  partners by transfer count, incoming/outgoing).
-- Added three Club Report Cards features: head-to-head club comparison,
-  spend-vs-quality-by-year chart, and recruiting-by-position breakdown.
-- Added a predicted-vs-actual scatter chart to Model vs Reality, colored
-  by which side of the y=x line a transfer landed on.
+- Added a round of single-page features: an Analytics height-vs-score
+  chart split by position; Player Timelines' two-player overlay
+  comparison and nearest-neighbor "similar career shape" suggestions; a
+  League Trends cross-league flow breakdown; three Club Report Cards
+  additions (head-to-head comparison, spend-vs-quality-by-year chart,
+  recruiting-by-position breakdown); and a Model vs Reality
+  predicted-vs-actual scatter chart colored by which side of y=x a
+  transfer landed on.
 - Added fee/age range filters and CSV export to Browse/Loans, plus a
   "✓ Permanent" badge for loans that later converted to a permanent
   transfer.
-- Extended Compare from a fixed A/B pair to 2-4 scenarios, with a ranked
-  plain-English verdict.
-- Made a finished Compare comparison bookmarkable and shareable via URL
-  sync.
+- Extended Compare from a fixed A/B pair to 2-4 scenarios with a ranked
+  plain-English verdict, and made a finished comparison bookmarkable/
+  shareable via URL sync.
 - Added Predict's "Where this lands" section (prediction plotted against
   sitewide fee/age trend lines) and a live-updating fee slider.
 - Synced Browse/Loans/Model vs Reality/Club Report Cards/League Trends'
@@ -682,9 +658,8 @@ the git history.
   transfer breakdown card.
 - Restructured the nav into three dropdowns plus Home/About; split `/`
   into a real home page with Predict moved to its own URL.
-- Added League Trends (`/leagues.html`, fee vs. success trend by
-  league).
-- Added Player Timelines (`/player.html`, career-as-timeline chart).
+- Added League Trends (`/leagues.html`, fee vs. success trend by league)
+  and Player Timelines (`/player.html`, career-as-timeline chart).
 - Added Club Report Cards (`/clubs.html`, clubs ranked as recruiters,
   including the original `build_club_name_aliases`/
   `CLUB_NICKNAME_GROUPS` alias-merging system); fixed resale profit
