@@ -60,7 +60,7 @@
 
   <main>
     <section class="card">
-      <h2>What this is</h2>
+      <h2>What this site is</h2>
       <p>
         This site scores football (soccer) transfers on a 0&ndash;100 scale, trained on
         real historical data. Two different things live here:
@@ -119,6 +119,8 @@
         The underlying data is the <a href="https://github.com/dcaribou/transfermarkt-datasets" target="_blank" rel="noopener">transfermarkt-datasets</a>
         project (~50k players, ~175k transfers, ~1.9M appearances), supplemented with
         detailed match stats pulled from FotMob for the leagues and seasons it covers.
+        The whole pipeline - fresh data, re-fetched stats, and a retrained model - runs
+        automatically once a month, so this isn't a one-time snapshot.
         Every transfer needs a real track record before the move to be scored (a minimum
         number of appearances at the old club), which skews the whole dataset toward
         established first-team players rather than fringe squad moves. Permanent transfers
