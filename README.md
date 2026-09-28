@@ -2,6 +2,8 @@
 
 [![Tests](https://github.com/ethandreese/transfer-success-predictor/actions/workflows/tests.yml/badge.svg)](https://github.com/ethandreese/transfer-success-predictor/actions/workflows/tests.yml)
 
+This repository was created as a personal project to get hands-on experience co-developing with Claude code. Exploring prompt patterns, AI-assisted architecture, and iterative feature development while building something practical and fun related to an interest of mine.
+
 Predicts how a football (soccer) transfer is likely to go, trained on real
 historical transfer data rather than hand-picked examples like Haaland→City
 or Dembélé→Barça.
