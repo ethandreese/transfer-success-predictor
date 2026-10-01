@@ -54807,12 +54807,12 @@
   },
   "club_value_rating_regression": {
     "to": {
-      "slope": 8.522114058540888,
-      "intercept": -109.52974139272321
+      "slope": 8.523197022385396,
+      "intercept": -109.54948461076728
     },
     "from": {
-      "slope": 4.992424730014332,
-      "intercept": -41.30184459124763
+      "slope": 4.991995932172004,
+      "intercept": -41.29321669487659
     }
   },
   "pct_free_transfers": 0.433,
@@ -54878,7 +54878,7 @@
   },
   "foot_success_baseline": {
     "both": 50.3,
-    "left": 51.0,
+    "left": 50.9,
     "right": 48.8
   },
   "pretransfer_percentile_tables": {
